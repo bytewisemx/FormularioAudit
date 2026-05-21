@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ChevronDown, ChevronUp, Download, FileText, FileSpreadsheet, RefreshCw } from 'lucide-react';
 
 import { saveAs } from "file-saver";
@@ -18,7 +18,15 @@ import {
   ImageRun,
   ShadingType,
 } from "docx";
-import logoPng from "./assets/logo.png";
+import logoPng from "./assets/bytewise.mx.png";
+
+const GENERIC_EVALUATION_SCALE = [
+  '0 - No existe',
+  '1 - Existe informalmente',
+  '2 - Parcialmente documentado',
+  '3 - Documentado y aplicado',
+  '4 - Óptimo, aprobado y en mejora continua',
+];
 
 
 
@@ -29,6 +37,7 @@ const AuditForm = () => {
   const [expandedSections, setExpandedSections] = useState({ 'Información General': true });
   const [responses, setResponses] = useState({});
   const [generalComments, setGeneralComments] = useState('');
+  const [showScrollTop, setShowScrollTop] = useState(false);
   const [introData, setIntroData] = useState({
     nombreEmpresa: '',
     nombre: '',
@@ -45,8 +54,15 @@ const AuditForm = () => {
   });
   const [rewriting, setRewriting] = useState(false);
 
-const hasComments = (generalComments || '').trim().length > 0;
-const canRewrite = hasComments && !rewriting;
+  useEffect(() => {
+    const onScroll = () => setShowScrollTop(window.scrollY > 500);
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+ const hasComments = (generalComments || '').trim().length > 0;
+ const canRewrite = hasComments && !rewriting;
 
 
 const rewriteCommentsWithAI = async () => {
@@ -55,10 +71,8 @@ const rewriteCommentsWithAI = async () => {
     if (!userText) return alert("Primero escribe comentarios.");
 
     const avgScore = calculateTotalScore();
-    const totalQuestions = 46;
-    const answeredCount = Object.keys(responses).filter(
-      (k) => responses[k]?.evaluacion !== undefined
-    ).length;
+    const totalQuestions = getTotalQuestions();
+    const answeredCount = getAnsweredQuestions();
 
     const areaScores = calculateAreaScores();
 
@@ -184,64 +198,101 @@ const rewriteCommentsWithAI = async () => {
 
   const sections = {
     'Infraestructura del Site': [
-      { id: 1, pregunta: '¿El site cuenta con mecanismos que aseguren la continuidad operativa ante fallas de energía o conectividad (UPS, planta, enlaces redundantes)?', evidencia: 'Autonomía eléctrica, Enlaces de Internet disponibles, Proveedor/SLA', nota: 'Cubre: UPS, planta, enlaces, módems, balanceador' },
-      { id: 2, pregunta: '¿El site cuenta con condiciones físicas y ambientales adecuadas para la operación (ubicación controlada, climatización, racks, orden y limpieza)?', evidencia: 'Descripción del site, Fotos (opcional)', nota: 'Cubre: ubicación aislada, climatización, racks, cableado físico' },
-      { id: 3, pregunta: '¿La infraestructura tecnológica del site es suficiente, funcional y está correctamente implementada (red, servidores, almacenamiento, telecomunicaciones)?', evidencia: 'Descripción general de componentes, Arquitectura o listado resumido', nota: 'Cubre: switches, routers, firewall, servidores, NAS, PBX, SIP' },
-      { id: 4, pregunta: '¿Existen controles de seguridad física y lógica implementados para proteger el site y los activos (control de acceso, CCTV, seguridad perimetral, extinción)?', evidencia: 'Controles implementados, Responsables/proveedor', nota: 'Cubre: CCTV, control acceso, firewall/UTM, FM-200' },
-      { id: 5, pregunta: '¿El site cuenta con gestión formal que asegure su operación continua (inventario actualizado, mantenimiento, continuidad y control de accesos)?', evidencia: 'Inventario, Plan de continuidad, Procedimientos operativos', nota: 'Cubre: Inventario, Mantenimiento, Continuidad, Autorización de accesos' }
+      {
+        id: 1,
+        pregunta: '¿El site cuenta con mecanismos que aseguren la continuidad operativa ante fallas de energía o conectividad (UPS, planta, enlaces redundantes)?',
+        evidencia: 'Autonomía eléctrica, Enlaces de Internet disponibles, Proveedor/SLA',
+        nota: 'Cubre: UPS, planta, enlaces, módems, balanceador',
+        escalaEvaluacion: [
+          '0 - Sin respaldo eléctrico ni de conectividad.',
+          '1 - Respaldo básico sin formalizar.',
+          '2 - Respaldo parcial documentado.',
+          '3 - Respaldo documentado y operativo.',
+          '4 - Respaldo aprobado, probado y mejorado.',
+        ],
+      },
+      {
+        id: 2,
+        pregunta: '¿El site cuenta con condiciones físicas y ambientales adecuadas para alojar y proteger la infraestructura tecnológica?',
+        evidencia: 'Descripción del site, Fotos (opcional)',
+        nota: 'Cubre: ubicación aislada, climatización, racks, cableado físico',
+        escalaEvaluacion: [
+          '0 - Sin control físico ni ambiental.',
+          '1 - Control básico con varias deficiencias.',
+          '2 - Control parcial de ambiente, racks, orden y limpieza.',
+          '3 - Control adecuado, documentado y aplicado.',
+          '4 - Control óptimo, monitoreado y mejorado.',
+        ],
+      },
+      {
+        id: 3,
+        pregunta: '¿La infraestructura tecnológica del site es suficiente y funcional para soportar la operación?',
+        evidencia: 'Descripción general de componentes, Arquitectura o listado resumido',
+        nota: 'Cubre: switches, routers, firewall, servidores, NAS, PBX, SIP',
+        escalaEvaluacion: [
+          '0 - No existe infraestructura tecnológica suficiente.',
+          '1 - Infraestructura básica con deficiencias importantes.',
+          '2 - Infraestructura parcialmente suficiente y funcional.',
+          '3 - Infraestructura suficiente, funcional y documentada.',
+          '4 - Infraestructura óptima, monitoreada y mejorada.',
+        ],
+      },
+      { id: 4, pregunta: '¿Existen controles de seguridad física y lógica para proteger el acceso al site y los activos tecnológicos?', evidencia: 'Controles implementados, Responsables/proveedor', nota: 'Cubre: CCTV, control acceso, firewall/UTM, FM-200' },
+      {
+        id: 5,
+        pregunta: '¿La operación del site se gestiona de forma formal, con inventario actualizado, mantenimiento programado y responsables definidos?',
+        evidencia: 'Inventario, Plan de continuidad, Procedimientos operativos',
+        nota: 'Cubre: Inventario, Mantenimiento, Continuidad, Autorización de accesos',
+        escalaEvaluacion: [
+          '0 - Sin gestión del site.',
+          '1 - Gestión informal.',
+          '2 - Gestión parcialmente documentada.',
+          '3 - Gestión documentada y aplicada.',
+          '4 - Gestión monitoreada y mejorada.',
+        ],
+      }
     ],
-    'Seguridad de la Información': [
-      { id: 1, pregunta: '¿Existe una política formal de seguridad/ciberseguridad, aprobada y vigente, que ha sido comunicada a todo el personal y que especifica al menos: alcance, roles/responsables y sanciones por incumplimiento?', evidencia: 'documentado' },
-      { id: 2, pregunta: '¿Se realizan evaluaciones de riesgos y auditorías periódicas (mínimo anual)?', evidencia: '' },
-      { id: 3, pregunta: '¿El control de accesos y autenticación incluye MFA(Autenticación Multifactor, política de contraseña) y gestión de privilegios mínimos?', evidencia: '' },
-      { id: 4, pregunta: '¿Se mantiene un inventario actualizado de todos los activos tecnológicos?', evidencia: '' },
-      { id: 5, pregunta: '¿Existe y se prueba regularmente un Plan de Respuesta a Incidentes (IRP)?', evidencia: '' },
-      { id: 6, pregunta: '¿Se aplican medidas de protección de datos sensibles (cifrado, DLP(Data Lost Prevention), clasificación)?', evidencia: '' },
-      { id: 7, pregunta: '¿Se gestionan parches y actualizaciones de seguridad en tiempo oportuno?', evidencia: '' },
-      { id: 8, pregunta: '¿El personal recibe capacitación periódica y pruebas de concientización en ciberseguridad/phishing con seguimiento de resultados y acciones de mejora?', evidencia: '' },
-      { id: 9, pregunta: '¿Existen sistemas de monitoreo y detección de amenazas (SIEM, EDR, XDR)?', evidencia: '' },
-      { id: 10, pregunta: '¿Los equipos corporativos tienen instalado y actualizado un sistema de protección (antivirus/EDR) administrado de forma centralizada o por un tercero especializado?', evidencia: 'Política, evidencia técnica, registro' },
-      { id: 11, pregunta: '¿Existen lineamientos para trabajo remoto y dispositivos personales (acceso seguro, separación de datos, revocación de acceso)?', evidencia: 'Política, evidencia técnica, registro' },
-      { id: 12, pregunta: '¿Los proveedores que tratan información de la empresa tienen contratos con cláusulas de seguridad/SLA y evaluaciones periódicas?', evidencia: 'Política, evidencia técnica, registro' },
-      { id: 13, pregunta: 'Cuando se asigna un acceso, ¿el procedimiento exige la firma/aceptación de un acuerdo de confidencialidad que proteja la información crítica?', evidencia: 'Política, evidencia técnica, registro' },
-      { id: 14, pregunta: '¿La red inalámbrica está correctamente segmentada y controlada? — Invitados: aislada de la red corporativa, con control de ancho de banda y portal cautivo/credenciales temporales. — Corporativa: autenticación robusta (WPA2-Enterprise/802.1X) y rotación periódica de credenciales.', evidencia: 'Política, evidencia técnica, registro' },
-      { id: 15, pregunta: '¿Se revisan periódicamente los puertos de alto riesgo (p. ej. RDP 3389, SSH 22, SMB 445, DB 1433/3306, SMTP 25, VPN) y las aperturas de puertos o reglas cuentan con ticket, vigencia definida y cierre al finalizar el requerimiento?', evidencia: 'Política, evidencia técnica, registro' }
-    ],
-    'Cláusula 4: Contexto de la Organización': [
-      { id: '4.1', pregunta: '¿Tu organización tiene identificados los factores internos y externos que podrían afectar la seguridad de su información?', requisito: '4.1 Comprensión de la organización y su contexto' },
-      { id: '4.2', pregunta: '¿Conoces quiénes son las partes interesadas en la seguridad de la información (clientes, socios, empleados, reguladores)? ¿Tienes claridad sobre qué esperan respecto al manejo seguro de la información?', requisito: '4.2 Comprensión de las necesidades y expectativas de las partes interesadas' },
-      { id: '4.3', pregunta: '¿Tienes definido cuáles procesos, áreas o sistemas se deberían proteger si implementaras un SGSI? ¿Sabrías por dónde empezar?', requisito: '4.3 Determinación del alcance del SGSI' },
-      { id: '4.4', pregunta: '¿La organización ha intentado estructurar o formalizar algún tipo de sistema para proteger su información? Aunque no sea con base en normas, ¿existen esfuerzos aislados?', requisito: '4.4 Sistema de gestión de seguridad de la información' }
+    'Cláusula 4: Contexto de la organización': [
+      { id: '4.1', pregunta: '¿La organización tiene identificados los factores internos y externos que pueden afectar la seguridad de la información?', requisito: '4.1 Factores internos y externos', escalaEvaluacion: ['0 - No identificados.', '1 - Identificados informalmente.', '2 - Parcialmente documentados.', '3 - Documentados y considerados.', '4 - Revisados y actualizados periódicamente.'] },
+      { id: '4.2', pregunta: '¿La organización tiene identificadas las partes interesadas y sus expectativas respecto a la seguridad de la información?', requisito: '4.2 Partes interesadas', escalaEvaluacion: ['0 - No identificadas.', '1 - Identificadas informalmente.', '2 - Parcialmente documentadas.', '3 - Documentadas y consideradas.', '4 - Revisadas y actualizadas periódicamente.'] },
+      { id: '4.3', pregunta: '¿La organización tiene definido qué procesos, áreas, sistemas o información deben protegerse dentro del alcance del SGSI?', requisito: '4.3 Alcance del SGSI', escalaEvaluacion: ['0 - No definido.', '1 - Definido informalmente.', '2 - Parcialmente documentado.', '3 - Documentado y aplicado.', '4 - Revisado y mejorado periódicamente.'] },
     ],
     'Cláusula 5: Liderazgo': [
-      { id: '5.1', pregunta: '¿La alta dirección es consciente de los riesgos asociados a la seguridad de la información? ¿Están preocupados por pérdida de datos, ciberataques, errores internos?', requisito: '5.1 Liderazgo y compromiso' },
-      { id: '5.2', pregunta: '¿Existe alguna política, directriz o declaración que exprese cómo la organización protege su información? ¿O es algo implícito, informal o reactivo?', requisito: '5.2 Política de seguridad de la información' },
-      { id: '5.3', pregunta: '¿Hay responsables claros sobre quién toma decisiones o gestiona temas de seguridad? ¿O las responsabilidades están repartidas sin definición?', requisito: '5.3 Roles, responsabilidades y autoridades' }
+      { id: '5.1', pregunta: '¿La alta dirección reconoce los riesgos de seguridad de la información y participa en su gestión?', requisito: '5.1 Compromiso de la alta dirección', escalaEvaluacion: ['0 - Sin involucramiento.', '1 - Involucramiento informal.', '2 - Participación parcial.', '3 - Participación documentada.', '4 - Liderazgo activo y medido.'] },
+      { id: '5.2', pregunta: '¿La organización cuenta con una política de seguridad de la información aprobada, vigente y respaldada por la dirección?', requisito: '5.2 Política de seguridad', escalaEvaluacion: ['0 - No existe política.', '1 - Política informal.', '2 - Política parcialmente documentada.', '3 - Política aprobada y comunicada.', '4 - Política revisada y mejorada.'] },
+      { id: '5.3', pregunta: '¿Existen responsables definidos para tomar decisiones y gestionar temas de seguridad de la información?', requisito: '5.3 Roles y responsabilidades', escalaEvaluacion: ['0 - Sin responsables.', '1 - Responsables informales.', '2 - Responsabilidades parciales.', '3 - Responsables definidos y aplicados.', '4 - Responsabilidades revisadas y mejoradas.'] },
     ],
     'Cláusula 6: Planificación': [
-      { id: '6.1', pregunta: '¿Han identificado alguna vez riesgos que podrían afectar la confidencialidad, integridad o disponibilidad de su información? ¿Qué hacen cuando identifican uno?', requisito: '6.1 Acciones para abordar riesgos y oportunidades' },
-      { id: '6.2', pregunta: '¿La organización se ha planteado objetivos en torno a la mejora de la seguridad de la información? ¿Cómo miden si están mejorando o no?', requisito: '6.2 Objetivos de seguridad de la información y planificación para lograrlos' }
+      { id: '6.1', pregunta: '¿La organización identifica, evalúa y atiende riesgos que puedan afectar la confidencialidad, integridad o disponibilidad de la información?', requisito: '6.1 Gestión de riesgos', escalaEvaluacion: ['0 - No gestiona riesgos.', '1 - Gestión informal.', '2 - Gestión parcial.', '3 - Riesgos documentados y tratados.', '4 - Riesgos monitoreados y actualizados.'] },
+      { id: '6.2', pregunta: '¿La organización ha definido objetivos de seguridad de la información y mecanismos para medir su avance?', requisito: '6.2 Objetivos de seguridad', escalaEvaluacion: ['0 - Sin objetivos.', '1 - Objetivos informales.', '2 - Objetivos parciales.', '3 - Objetivos definidos y medidos.', '4 - Objetivos revisados y mejorados.'] },
     ],
     'Cláusula 7: Apoyo': [
-      { id: '7.1', pregunta: '¿Cuentan con recursos (humanos, tecnológicos, financieros) asignados para temas de seguridad? ¿O dependen de lo que se pueda en el momento?', requisito: '7.1 Recursos' },
-      { id: '7.2', pregunta: '¿El personal tiene conocimientos básicos sobre buenas prácticas de seguridad? ¿Han recibido alguna capacitación? ¿Saben cómo actuar frente a incidentes?', requisito: '7.2 Competencia' },
-      { id: '7.3', pregunta: '¿Los colaboradores entienden la importancia de proteger la información en su día a día?', requisito: '7.3 Toma de conciencia' },
-      { id: '7.4', pregunta: '¿Cómo se comunican actualmente los temas relacionados con la seguridad de la información dentro de la empresa?', requisito: '7.4 Comunicación' },
-      { id: '7.5', pregunta: '¿Dónde se documentan las políticas o procedimientos que se siguen respecto a la información? ¿Hay manuales, procedimientos, diagramas, instructivos?', requisito: '7.5 Información documentada' }
+      { id: '7.1', pregunta: '¿La organización cuenta con recursos humanos, tecnológicos o financieros asignados para gestionar la seguridad de la información?', requisito: '7.1 Recursos', escalaEvaluacion: ['0 - Sin recursos.', '1 - Recursos informales.', '2 - Recursos parciales.', '3 - Recursos asignados y evidenciados.', '4 - Recursos evaluados y optimizados.'] },
+      { id: '7.2', pregunta: '¿El personal recibe capacitación periódica en seguridad de la información, incluyendo concientización y pruebas de phishing cuando aplique?', requisito: '7.2 Competencia y concientización', escalaEvaluacion: ['0 - Sin capacitación.', '1 - Capacitación informal.', '2 - Capacitación parcial.', '3 - Capacitación periódica con evidencia.', '4 - Capacitación medida y mejorada.'] },
+      { id: '7.3', pregunta: '¿La organización comunica y documenta adecuadamente las políticas, procedimientos o lineamientos de seguridad de la información?', requisito: '7.3 Comunicación y documentación', escalaEvaluacion: ['0 - No se documenta ni comunica.', '1 - Comunicación informal.', '2 - Documentación parcial.', '3 - Documentado y comunicado.', '4 - Documentación controlada y actualizada.'] },
     ],
     'Cláusula 8: Operación': [
-      { id: '8.1', pregunta: '¿Existen procesos operativos definidos para manejar la seguridad de la información? Por ejemplo: acceso a sistemas, respaldo de datos, control de dispositivos, etc.', requisito: '8.1 Planificación y control operacional' },
-      { id: '8.2', pregunta: '¿Se han realizado evaluaciones formales o informales sobre posibles amenazas o vulnerabilidades?', requisito: '8.2 Evaluación de riesgos de seguridad de la información' },
-      { id: '8.3', pregunta: '¿Qué hace la empresa cuando detecta un riesgo o incidente de seguridad? ¿Existe un procedimiento o es una respuesta improvisada?', requisito: '8.3 Tratamiento de riesgos de seguridad de la información' }
+      { id: '8.1', pregunta: '¿Existen procesos definidos para operar y controlar la seguridad de la información en las actividades diarias?', requisito: '8.1 Procesos operativos del SGSI', escalaEvaluacion: ['0 - Sin procesos.', '1 - Procesos informales.', '2 - Procesos parciales.', '3 - Procesos documentados y aplicados.', '4 - Procesos monitoreados y mejorados.'] },
     ],
     'Cláusula 9: Evaluación del desempeño': [
-      { id: '9.1', pregunta: '¿Se hace algún seguimiento al rendimiento de las prácticas de seguridad? ¿Cómo saben si están funcionando?', requisito: '9.1 Seguimiento, medición, análisis y evaluación' },
-      { id: '9.2', pregunta: '¿Han hecho alguna auditoría o revisión de cómo se está manejando la información?', requisito: '9.2 Auditoría interna' },
-      { id: '9.3', pregunta: '¿La dirección revisa periódicamente temas relacionados con riesgos y seguridad?', requisito: '9.3 Revisión por la dirección' }
+      { id: '9.1', pregunta: '¿La organización mide o da seguimiento al desempeño de sus prácticas y controles de seguridad?', requisito: '9.1 Seguimiento y medición', escalaEvaluacion: ['0 - Sin seguimiento.', '1 - Seguimiento informal.', '2 - Seguimiento parcial.', '3 - Seguimiento documentado.', '4 - Indicadores revisados y mejorados.'] },
+      { id: '9.2', pregunta: '¿La organización realiza auditorías o revisiones periódicas sobre la gestión de seguridad de la información?', requisito: '9.2 Auditorías o revisiones', escalaEvaluacion: ['0 - Sin auditorías.', '1 - Revisiones informales.', '2 - Revisiones parciales.', '3 - Auditorías periódicas con evidencia.', '4 - Auditorías con seguimiento y mejora.'] },
+      { id: '9.3', pregunta: '¿La dirección revisa periódicamente los resultados, riesgos y necesidades de mejora en seguridad de la información?', requisito: '9.3 Revisión por la dirección', escalaEvaluacion: ['0 - Sin revisión directiva.', '1 - Revisión informal.', '2 - Revisión parcial.', '3 - Revisión documentada por dirección.', '4 - Revisión con decisiones y mejoras.'] },
     ],
     'Cláusula 10: Mejora': [
-      { id: '10.1', pregunta: '¿Se han presentado incidentes o fallos en la seguridad? ¿Qué se hizo al respecto? ¿Se aprendió algo? ¿Se cambió algo?', requisito: '10.1 No conformidad y acción correctiva' },
-      { id: '10.2', pregunta: '¿Existe interés o iniciativas por mejorar la seguridad, aunque no haya un sistema formal? ¿O es un tema que no se considera prioritario?', requisito: '10.2 Mejora continua' }
+      { id: '10.1', pregunta: '¿La organización analiza incidentes, fallos o desviaciones de seguridad y aplica acciones correctivas para evitar su repetición?', requisito: '10.1 Acciones correctivas', escalaEvaluacion: ['0 - Sin acciones correctivas.', '1 - Acciones reactivas.', '2 - Acciones parciales.', '3 - Acciones documentadas y aplicadas.', '4 - Acciones verificadas y mejoradas.'] },
+      { id: '10.2', pregunta: '¿La organización cuenta con iniciativas o acciones para mejorar continuamente la seguridad de la información?', requisito: '10.2 Mejora continua', escalaEvaluacion: ['0 - Sin mejora.', '1 - Mejoras informales.', '2 - Mejoras parciales.', '3 - Mejoras documentadas.', '4 - Mejora continua implementada.'] },
+    ],
+    'Seguridad de la Información: Controles técnicos y operativos': [
+      { id: 1, pregunta: '¿El control de accesos contempla alta, modificación y baja de usuarios, MFA, política de contraseñas, privilegios mínimos y aceptación de confidencialidad?', requisito: '1. Control de accesos y privilegios', escalaEvaluacion: ['0 - Sin control de accesos.', '1 - Accesos informales.', '2 - Controles parciales.', '3 - Accesos controlados y documentados.', '4 - Accesos revisados y mejorados.'] },
+      { id: 2, pregunta: '¿Se mantiene un inventario actualizado de los activos tecnológicos relevantes para la operación?', requisito: '2. Inventario de activos tecnológicos', escalaEvaluacion: ['0 - No existe inventario.', '1 - Inventario informal.', '2 - Inventario parcial.', '3 - Inventario actualizado y documentado.', '4 - Inventario revisado y controlado.'] },
+      { id: 3, pregunta: '¿Existe un Plan de Respuesta a Incidentes de seguridad, documentado y probado periódicamente?', requisito: '3. Respuesta a incidentes', escalaEvaluacion: ['0 - No existe plan.', '1 - Respuesta informal.', '2 - Plan parcial o sin pruebas.', '3 - Plan documentado y probado.', '4 - Plan actualizado y mejorado.'] },
+      { id: 4, pregunta: '¿Se aplican controles para proteger datos sensibles, como clasificación, cifrado, DLP o separación de información crítica?', requisito: '4. Protección de datos sensibles', escalaEvaluacion: ['0 - Sin protección de datos.', '1 - Protección informal.', '2 - Controles parciales.', '3 - Controles documentados y aplicados.', '4 - Controles monitoreados y mejorados.'] },
+      { id: 5, pregunta: '¿Se gestionan parches y actualizaciones de seguridad de forma oportuna y controlada?', requisito: '5. Gestión de parches y actualizaciones', escalaEvaluacion: ['0 - Sin gestión de parches.', '1 - Actualizaciones reactivas.', '2 - Gestión parcial.', '3 - Parches gestionados con evidencia.', '4 - Gestión monitoreada y optimizada.'] },
+      { id: 6, pregunta: '¿Existen mecanismos de monitoreo y detección de amenazas, como SIEM, EDR, XDR, SOC o servicios administrados de seguridad?', requisito: '6. Monitoreo y detección de amenazas', escalaEvaluacion: ['0 - Sin monitoreo.', '1 - Monitoreo básico.', '2 - Monitoreo parcial.', '3 - Monitoreo implementado y gestionado.', '4 - Monitoreo continuo y optimizado.'] },
+      { id: 7, pregunta: '¿Los equipos corporativos cuentan con protección contra malware o EDR, instalada, actualizada y administrada centralizadamente?', requisito: '7. Protección de equipos corporativos', escalaEvaluacion: ['0 - Equipos sin protección.', '1 - Protección básica.', '2 - Protección parcial.', '3 - Protección actualizada y administrada.', '4 - Protección monitoreada y optimizada.'] },
+      { id: 8, pregunta: '¿Existen controles para proteger la red, el acceso remoto y los servicios expuestos, incluyendo segmentación WiFi, BYOD, VPN, revisión de puertos y reglas autorizadas?', requisito: '8. Seguridad de red, acceso remoto y servicios expuestos', escalaEvaluacion: ['0 - Sin controles de red.', '1 - Controles básicos.', '2 - Controles parciales.', '3 - Controles documentados y aplicados.', '4 - Controles revisados y mejorados.'] },
+      { id: 9, pregunta: '¿Los proveedores que tratan información de la empresa cuentan con contratos, cláusulas de seguridad, SLA y evaluaciones periódicas?', requisito: '9. Gestión de proveedores', escalaEvaluacion: ['0 - Sin control de proveedores.', '1 - Gestión informal.', '2 - Control parcial.', '3 - Proveedores controlados contractualmente.', '4 - Proveedores evaluados y monitoreados.'] },
     ],
     'Inteligencia Artificial y LFPDPPP': [
       { id: 'IA-1', pregunta: '🧠 IA: ¿La organización utiliza o planea utilizar inteligencia artificial y con qué objetivo principal?', evidencia: 'Áreas impactadas, Casos de uso actuales o planeados (ej. Copilot, chatbots, automatización)', nota: 'Cubre: Uso actual de IA, Objetivo de IA, Áreas impactadas, Necesidad inmediata vs mediano plazo' },
@@ -288,16 +339,16 @@ const rewriteCommentsWithAI = async () => {
   const calculateAreaScores = () => {
     const areas = {
       'Infraestructura del Site': ['Infraestructura del Site'],
-      'Seguridad de la Información': ['Seguridad de la Información'],
       'Cláusulas ISO 27001': [
-        'Cláusula 4: Contexto de la Organización',
+        'Cláusula 4: Contexto de la organización',
         'Cláusula 5: Liderazgo',
         'Cláusula 6: Planificación',
         'Cláusula 7: Apoyo',
         'Cláusula 8: Operación',
         'Cláusula 9: Evaluación del desempeño',
-        'Cláusula 10: Mejora'
+        'Cláusula 10: Mejora',
       ],
+      'Seguridad de la Información': ['Seguridad de la Información: Controles técnicos y operativos'],
       'IA y LFPDPPP': ['Inteligencia Artificial y LFPDPPP']
     };
 
@@ -350,14 +401,28 @@ const rewriteCommentsWithAI = async () => {
     return count > 0 ? (total / count) : 0;
   };
 
+  const getTotalQuestions = () =>
+    Object.keys(sections).reduce((sum, section) => sum + (sections[section]?.length || 0), 0);
+
+  const getAnsweredQuestions = () => {
+    let answered = 0;
+    Object.keys(sections).forEach((section) => {
+      sections[section].forEach((q) => {
+        const key = `${section}-${q.id}`;
+        if (responses[key]?.evaluacion !== undefined) answered++;
+      });
+    });
+    return answered;
+  };
+
   const getScoreLevel = (score) => {
-    const totalScore = score * 46; // 46 preguntas en total * promedio
-    
-    if (totalScore <= 55) return { nivel: 'Crítico', descripcion: 'Urgente mejora en la postura de seguridad.', color: 'from-red-500 to-red-600' };
-    if (totalScore <= 85) return { nivel: 'Básico', descripcion: 'Existen medidas iniciales, pero faltan controles clave.', color: 'from-orange-500 to-orange-600' };
-    if (totalScore <= 110) return { nivel: 'Intermedio', descripcion: 'Buen nivel, requiere fortalecimiento y formalización.', color: 'from-yellow-500 to-yellow-600' };
-    if (totalScore <= 130) return { nivel: 'Avanzado', descripcion: 'Seguridad sólida, enfocarse en optimización.', color: 'from-blue-500 to-blue-600' };
-    return { nivel: 'Óptimo', descripcion: 'Seguridad madura, alineada con mejores prácticas.', color: 'from-green-500 to-green-600' };
+    // Mantiene los mismos niveles, pero normalizados por promedio (0-4),
+    // para que sigan siendo consistentes al reducir o aumentar preguntas.
+    if (score <= (55 / 46)) return { nivel: 'Crítico', descripcion: 'Urgente mejora en la postura de seguridad.', color: 'from-rose-950 to-slate-900' };
+    if (score <= (85 / 46)) return { nivel: 'Básico', descripcion: 'Existen medidas iniciales, pero faltan controles clave.', color: 'from-amber-950 to-slate-900' };
+    if (score <= (110 / 46)) return { nivel: 'Intermedio', descripcion: 'Buen nivel, requiere fortalecimiento y formalización.', color: 'from-sky-950 to-slate-900' };
+    if (score <= (130 / 46)) return { nivel: 'Avanzado', descripcion: 'Seguridad sólida, enfocarse en optimización.', color: 'from-indigo-950 to-slate-900' };
+    return { nivel: 'Óptimo', descripcion: 'Seguridad madura, alineada con mejores prácticas.', color: 'from-emerald-950 to-slate-900' };
   };
 
 
@@ -450,10 +515,8 @@ const rewriteCommentsWithAI = async () => {
 
     // ✅ Data
     const avgScore = calculateTotalScore();
-    const totalQuestions = 46;
-    const answeredCount = Object.keys(responses).filter(
-      (k) => responses[k]?.evaluacion !== undefined
-    ).length;
+    const totalQuestions = getTotalQuestions();
+    const answeredCount = getAnsweredQuestions();
 
     const projectedPoints = avgScore * totalQuestions;
     const level = getScoreLevel(avgScore);
@@ -654,7 +717,7 @@ const rewriteCommentsWithAI = async () => {
 
   const exportToExcel = () => {
   const avgScore = calculateTotalScore();
-  const totalScore = avgScore * 46;
+  const totalScore = avgScore * getTotalQuestions();
   const scoreLevel = getScoreLevel(avgScore);
   const areaScores = calculateAreaScores();
 
@@ -784,50 +847,60 @@ URL.revokeObjectURL(url);
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-cyan-900 to-blue-900 p-4 md:p-8">
-      <div className="max-w-6xl mx-auto">
+    <div className="min-h-screen relative overflow-hidden bg-slate-950 p-4 md:p-8">
+      <div className="absolute inset-0 pointer-events-none opacity-70 bg-[url('data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%22160%22%20height%3D%22160%22%3E%3Cdefs%3E%3Cpattern%20id%3D%22p%22%20width%3D%2232%22%20height%3D%2232%22%20patternUnits%3D%22userSpaceOnUse%22%3E%3Cpath%20d%3D%22M0%2032L32%200%22%20stroke%3D%22white%22%20stroke-opacity%3D%220.07%22%20stroke-width%3D%221%22/%3E%3Cpath%20d%3D%22M-8%2024L24%20-8%22%20stroke%3D%22white%22%20stroke-opacity%3D%220.05%22%20stroke-width%3D%221%22/%3E%3C/pattern%3E%3C/defs%3E%3Crect%20width%3D%22100%25%22%20height%3D%22100%25%22%20fill%3D%22url(%23p)%22/%3E%3C/svg%3E')]"></div>
+      <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(900px_circle_at_25%_10%,rgba(0,212,255,0.18),transparent_55%)]"></div>
+      <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(900px_circle_at_80%_90%,rgba(255,255,255,0.06),transparent_55%)]"></div>
+      {showScrollTop && (
+        <button
+          type="button"
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          className="fixed bottom-6 right-6 z-50 w-12 h-12 rounded-full bg-white/90 backdrop-blur shadow-xl border border-white/40 flex items-center justify-center hover:bg-white transition"
+          aria-label="Subir al inicio"
+          title="Subir al inicio"
+        >
+          <ChevronUp size={22} className="text-[#00d4ff]" />
+        </button>
+      )}
+      <div className="relative z-10 max-w-6xl mx-auto">
         {/* Portada */}
-        <div className="mb-6 rounded-2xl overflow-hidden shadow-2xl bg-gradient-to-r from-cyan-900 via-blue-800 to-cyan-900">
+        <div className="mb-6 rounded-lg overflow-hidden shadow-lg bg-slate-900/60 border border-white/10">
           <div className="relative w-full h-48 md:h-64 flex items-center justify-center">
             <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZGVmcz48cGF0dGVybiBpZD0iZ3JpZCIgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiBwYXR0ZXJuVW5pdHM9InVzZXJTcGFjZU9uVXNlIj48cGF0aCBkPSJNIDQwIDAgTCAwIDAgMCA0MCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJyZ2JhKDAsMjU1LDI1NSwwLjEpIiBzdHJva2Utd2lkdGg9IjEiLz48L3BhdHRlcm4+PC9kZWZzPjxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbGw9InVybCgjZ3JpZCkiLz48L3N2Zz4=')] opacity-30"></div>
             <div className="relative z-10 text-center px-4">
               <div className="flex items-center justify-center mb-4">
-                <svg className="w-20 h-20 md:w-24 md:h-24 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                </svg>
+                <img
+                  src={logoPng}
+                  alt="ByteWise"
+                  className="h-20 md:h-24 w-auto object-contain drop-shadow-[0_18px_34px_rgba(0,0,0,0.45)]"
+                />
               </div>
-              <h1 className="text-4xl md:text-5xl font-bold text-white mb-2 drop-shadow-lg">
-                ByteWise
-              </h1>
-              <p className="text-cyan-300 text-lg md:text-xl font-light tracking-wide">
-                DATA & CYBERSECURITY
-              </p>
             </div>
           </div>
         </div>
 
         {/* Header */}
-        <div className="bg-white rounded-2xl shadow-2xl p-6 md:p-8 mb-6">
-          <h1 className="text-3xl md:text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-500 to-blue-500 mb-2">
+        <div className="bg-white rounded-lg shadow-lg p-6 md:p-8 mb-6 border border-gray-200">
+          <h1 className="text-3xl md:text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-gray-900 via-gray-700 to-[#00d4ff] mb-2">
             Auditoría de TI
           </h1>
           <p className="text-gray-600">Evaluación integral de infraestructura, seguridad y cumplimiento</p>
           
           {/* Score Dashboard */}
           <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className={`bg-gradient-to-r ${getScoreLevel(calculateTotalScore()).color} rounded-xl p-6 text-white`}>
+            <div className={`bg-gradient-to-r ${getScoreLevel(calculateTotalScore()).color} rounded-md p-6 text-white shadow-sm border border-white/10`}>
               <div className="text-sm opacity-90">Puntuación Total</div>
-              <div className="text-4xl font-bold">{(calculateTotalScore() * 46).toFixed(0)} pts</div>
+              <div className="text-4xl font-bold">{(calculateTotalScore() * getTotalQuestions()).toFixed(0)} pts</div>
               <div className="text-sm mt-2 font-semibold">{getScoreLevel(calculateTotalScore()).nivel}</div>
               <div className="text-xs mt-1 opacity-90">{getScoreLevel(calculateTotalScore()).descripcion}</div>
             </div>
-            <div className="bg-gradient-to-r from-indigo-500 to-indigo-600 rounded-xl p-6 text-white">
+            <div className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-md p-6 text-white shadow-sm border border-white/10">
               <div className="text-sm opacity-90">Progreso de Evaluación</div>
               <div className="text-4xl font-bold">
-                {Object.keys(responses).filter(k => responses[k]?.evaluacion !== undefined).length}/46
+                {getAnsweredQuestions()}/{getTotalQuestions()}
               </div>
               <div className="text-sm mt-2">
-                {((Object.keys(responses).filter(k => responses[k]?.evaluacion !== undefined).length / 46) * 100).toFixed(0)}% Completado
+                {((getAnsweredQuestions() / getTotalQuestions()) * 100).toFixed(0)}% Completado
               </div>
             </div>
           </div>
@@ -865,7 +938,7 @@ URL.revokeObjectURL(url);
 
         <button
   onClick={exportToDocxPro}
-  className="mt-4 w-full md:w-auto flex items-center justify-center gap-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white px-6 py-3 rounded-lg hover:shadow-lg transition-all"
+  className="mt-4 w-full md:w-auto flex items-center justify-center gap-2 bg-slate-900 text-white px-6 py-3 rounded-md hover:bg-slate-800 hover:shadow-md transition-all border border-white/10"
 >
   <FileText size={20} />
   Exportar Word (.docx)
@@ -875,7 +948,7 @@ URL.revokeObjectURL(url);
           <button
             onClick={exportToExcel}
             
-             className="mt-4 w-full md:w-auto flex items-center justify-center gap-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white px-6 py-3 rounded-lg hover:shadow-lg transition-all"
+             className="mt-4 w-full md:w-auto flex items-center justify-center gap-2 bg-white text-slate-900 px-6 py-3 rounded-md hover:bg-slate-50 hover:shadow-md transition-all border border-slate-200"
           >
             <FileSpreadsheet size={20} />
             Exportar CSV/Excel
@@ -883,7 +956,7 @@ URL.revokeObjectURL(url);
 
           <button
             onClick={startNewEvaluation}
-            className="mt-4 ml-0 md:ml-3 w-full md:w-auto flex items-center justify-center gap-2 bg-gradient-to-r from-orange-500 to-red-600 text-white px-6 py-3 rounded-lg hover:shadow-lg transition-all"
+            className="mt-4 ml-0 md:ml-3 w-full md:w-auto flex items-center justify-center gap-2 bg-white text-slate-900 px-6 py-3 rounded-md hover:bg-slate-50 hover:shadow-md transition-all border border-slate-200"
           >
             <RefreshCw size={20} />
             Nueva Evaluación
@@ -891,73 +964,107 @@ URL.revokeObjectURL(url);
         </div>
 
         {/* Puntuación por Áreas */}
-        <div className="bg-white rounded-2xl shadow-2xl p-6 md:p-8 mb-6">
-          <h2 className="text-2xl font-bold text-gray-800 mb-6">📊 Puntuación por Áreas</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {Object.entries(calculateAreaScores()).map(([area, data]) => {
-              const getAreaIcon = (areaName) => {
-                if (areaName === 'Infraestructura del Site') return '🏢';
-                if (areaName === 'Seguridad de la Información') return '🔒';
-                if (areaName === 'Cláusulas ISO 27001') return '📋';
-                if (areaName === 'IA y LFPDPPP') return '🧠🔐';
-                return '📌';
-              };
-
-              const getAreaColor = (percentage) => {
-                if (percentage >= 75) return 'from-green-500 to-emerald-600';
-                if (percentage >= 50) return 'from-blue-500 to-blue-600';
-                if (percentage >= 25) return 'from-yellow-500 to-orange-500';
-                return 'from-red-500 to-red-600';
-              };
-
-
-              return (
-                <div key={area} className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-5 border border-gray-200 hover:shadow-lg transition-shadow">
-                  <div className="flex items-center gap-3 mb-3">
-                    <span className="text-3xl">{getAreaIcon(area)}</span>
-                    <h3 className="font-bold text-gray-800 text-sm">{area}</h3>
-                  </div>
-                  
-                  <div className={`bg-gradient-to-r ${getAreaColor(data.percentage)} rounded-lg p-4 text-white mb-3`}>
-                    <div className="text-3xl font-bold">{data.percentage}%</div>
-                    <div className="text-sm opacity-90">Promedio: {data.score}/4</div>
-                  </div>
-
-                  <div className="flex justify-between text-xs text-gray-600">
-                    <span>Respondidas: {data.answered}/{data.total}</span>
-                    <span>{((data.answered / data.total) * 100).toFixed(0)}%</span>
-                  </div>
-                  
-                  <div className="mt-2 bg-gray-200 rounded-full h-2">
-                    <div 
-                      className="bg-gradient-to-r from-cyan-500 to-blue-500 h-2 rounded-full transition-all duration-500"
-                      style={{ width: `${(data.answered / data.total) * 100}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
+        <div className="bg-white rounded-lg shadow-lg p-6 md:p-8 mb-6 border border-gray-200">
+          <div className="flex items-end justify-between mb-5">
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900">Puntuación por Áreas</h2>
+              <p className="text-sm text-gray-500">Resumen ejecutivo de avance y promedio</p>
+            </div>
+            <div className="hidden md:block text-xs text-gray-400">
+              Acento: <span className="font-semibold text-[#00d4ff]">#00d4ff</span>
+            </div>
           </div>
+
+          {(() => {
+            const getAreaIcon = (areaName) => {
+              if (areaName === 'Infraestructura del Site') return '🏢';
+              if (areaName === 'Seguridad de la Información') return '🔒';
+              if (areaName === 'Cláusulas ISO 27001') return '📋';
+              if (areaName === 'IA y LFPDPPP') return '🧠🔐';
+              return '📌';
+            };
+
+            const rows = Object.entries(calculateAreaScores());
+            return (
+              <div className="overflow-hidden rounded-md border border-gray-200">
+                <div className="hidden md:grid grid-cols-[1.5fr_.7fr_.7fr_.9fr] bg-gray-50 px-5 py-3 text-[11px] font-semibold text-gray-500">
+                  <div>Área</div>
+                  <div className="text-right">%</div>
+                  <div className="text-right">Promedio</div>
+                  <div className="text-right">Respondidas</div>
+                </div>
+
+                <div className="divide-y divide-gray-100">
+                  {rows.map(([area, data]) => {
+                    const answeredPct = data.total > 0 ? (data.answered / data.total) * 100 : 0;
+                    return (
+                      <div key={area} className="px-5 py-4">
+                        <div className="grid grid-cols-1 md:grid-cols-[1.5fr_.7fr_.7fr_.9fr] gap-3 items-center">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <span className="text-xl">{getAreaIcon(area)}</span>
+                            <div className="min-w-0">
+                              <div className="font-semibold text-gray-900 truncate">{area}</div>
+                              <div className="text-xs text-gray-500 md:hidden">
+                                {data.answered}/{data.total} respondidas
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="md:text-right">
+                            <div className="inline-flex items-center gap-2 md:justify-end">
+                              <span className="text-sm font-semibold text-gray-900">{data.percentage}%</span>
+                              <span className="hidden md:inline text-[11px] text-gray-400">avance</span>
+                            </div>
+                          </div>
+
+                          <div className="md:text-right">
+                            <span className="text-sm font-semibold text-gray-900">{data.score}/4</span>
+                            <span className="ml-2 text-[11px] text-gray-400">prom.</span>
+                          </div>
+
+                          <div className="hidden md:block text-right text-sm font-semibold text-gray-900">
+                            {data.answered}/{data.total}
+                          </div>
+                        </div>
+
+                        <div className="mt-3 h-2 rounded-full bg-gray-100 overflow-hidden">
+                          <div
+                            className="h-2 rounded-full bg-[#00d4ff] transition-all duration-500"
+                            style={{ width: `${answeredPct}%` }}
+                          />
+                        </div>
+
+                        <div className="mt-2 flex justify-between text-[11px] text-gray-500">
+                          <span>Progreso</span>
+                          <span className="font-medium text-gray-700">{answeredPct.toFixed(0)}%</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Sections */}
         {/* Sección de Información General */}
-        <div className="mb-4 bg-white rounded-xl shadow-lg overflow-hidden border-2 border-cyan-300">
+        <div className="mb-4 bg-white rounded-lg shadow-lg overflow-hidden border border-slate-200">
           <button
             onClick={() => toggleSection('Información General')}
-            className="w-full p-4 md:p-6 flex items-center justify-between bg-gradient-to-r from-cyan-50 to-blue-50 hover:from-cyan-100 hover:to-blue-100 transition-colors"
+            className="w-full p-4 md:p-6 flex items-center justify-between bg-slate-50 hover:bg-slate-100 transition-colors"
           >
             <div className="flex items-center gap-4">
               <div className="text-left">
-                <h2 className="text-lg md:text-xl font-bold text-cyan-800">📋 Información General</h2>
-                <p className="text-sm text-cyan-600">Datos de identificación (no generan puntuación)</p>
+                <h2 className="text-lg md:text-xl font-bold text-slate-900">📋 Información General</h2>
+                <p className="text-sm text-slate-600">Datos de identificación (no generan puntuación)</p>
               </div>
             </div>
-            {expandedSections['Información General'] ? <ChevronUp className="text-cyan-600" /> : <ChevronDown className="text-cyan-600" />}
+            {expandedSections['Información General'] ? <ChevronUp className="text-slate-500" /> : <ChevronDown className="text-slate-500" />}
           </button>
 
           {expandedSections['Información General'] && (
-            <div className="p-4 md:p-6 border-t bg-cyan-50/30 space-y-4">
+            <div className="p-4 md:p-6 border-t bg-white space-y-4">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Nombre de la empresa *
@@ -1181,11 +1288,9 @@ URL.revokeObjectURL(url);
                           </label>
                           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3 text-xs text-blue-800">
                             <div className="font-bold mb-1">Escala de Evaluación:</div>
-                            <div>0 - No existe</div>
-                            <div>1 - Existe informalmente</div>
-                            <div>2 - Parcialmente documentado</div>
-                            <div>3 - Documentado y aplicado</div>
-                            <div>4 - Óptimo, aprobado y en mejora continua</div>
+                            {(item.escalaEvaluacion || GENERIC_EVALUATION_SCALE).map((line, index) => (
+                              <div key={`${item.id}-${index}`}>{line}</div>
+                            ))}
                           </div>
                           <div className="flex gap-2">
                             {[0, 1, 2, 3, 4].map(score => (
