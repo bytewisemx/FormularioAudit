@@ -1051,11 +1051,13 @@ const startInlineDictation = (section, id) => {
 
 
 
-   if (step === 'gate') {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-cyan-900 to-blue-900 p-4 md:p-8 flex flex-col items-center justify-center gap-6">
-        
-        {/* NUEVA AUDITORIA */}
+    if (step === 'gate') {
+     return (
+       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-cyan-900 to-blue-900 p-4 md:p-8 flex flex-col items-center justify-center gap-6">
+         
+         <img src={logoPng} alt="ByteWise" className="h-12 md:h-16 w-auto object-contain drop-shadow-2xl brightness-0 invert" />
+
+         {/* NUEVA AUDITORIA */}
         <div className="w-full max-w-xl bg-white rounded-3xl shadow-2xl p-8 md:p-10 border-t-4 border-[#00d4ff]">
           <div className="flex flex-col items-center mb-8">
              <div className="w-16 h-16 bg-slate-900 rounded-2xl flex items-center justify-center shadow-lg mb-4">
@@ -1204,6 +1206,11 @@ const startInlineDictation = (section, id) => {
           {/* Columna 1: Resumen y Acciones */}
           <div className="lg:col-span-1 bg-white rounded-lg shadow-lg p-5 md:p-6 flex flex-col justify-between border border-gray-200">
             <div>
+              <img
+                src={logoPng}
+                alt="ByteWise"
+                className="h-10 md:h-12 w-auto object-contain mb-4"
+              />
               <div className="flex items-start justify-between mb-1 gap-2">
                 <h1 className="text-2xl md:text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-gray-900 via-gray-700 to-[#00d4ff] leading-tight">
                   Auditoría de TI
@@ -1276,11 +1283,6 @@ const startInlineDictation = (section, id) => {
                       </div>
                     )}
                   </div>
-                  <img
-                    src={logoPng}
-                    alt="ByteWise"
-                    className="h-7 md:h-9 w-auto object-contain mt-1 shrink-0"
-                  />
                 </div>
               </div>
               <p className="text-xs text-gray-500 mb-6">Evaluación integral de infraestructura y seguridad</p>
