@@ -1053,14 +1053,14 @@ const startInlineDictation = (section, id) => {
 
     if (step === 'gate') {
      return (
-       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-cyan-900 to-blue-900 p-4 md:p-8 flex flex-col items-center justify-center gap-6">
+       <div className="min-h-screen bg-white p-4 md:p-12 flex flex-col items-center justify-start gap-8 border-t-8 border-slate-900">
          
-         <img src={logoPng} alt="ByteWise" className="h-12 md:h-16 w-auto object-contain drop-shadow-2xl brightness-0 invert" />
+         <img src={logoPng} alt="ByteWise" className="h-12 md:h-16 w-auto object-contain drop-shadow-none brightness-0 invert" />
 
          {/* NUEVA AUDITORIA */}
-        <div className="w-full max-w-xl bg-white rounded-3xl shadow-2xl p-8 md:p-10 border-t-4 border-[#00d4ff]">
+        <div className="w-full max-w-3xl bg-white p-8 md:p-12 border border-slate-200">
           <div className="flex flex-col items-center mb-8">
-             <div className="w-16 h-16 bg-slate-900 rounded-2xl flex items-center justify-center shadow-lg mb-4">
+             <div className="w-16 h-16 bg-slate-900 rounded-none flex items-center justify-center shadow-none mb-4">
                 <Shield size={32} className="text-[#00d4ff]" />
              </div>
              <h1 className="text-2xl md:text-3xl font-extrabold text-slate-800 text-center">Auditoría de TI</h1>
@@ -1075,7 +1075,7 @@ const startInlineDictation = (section, id) => {
                 value={actor.nombreEmpresa}
                 onChange={(e) => setActor(prev => ({ ...prev, nombreEmpresa: e.target.value }))}
                 placeholder="Ej: ByteWise S.A. de C.V."
-                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#00d4ff] focus:border-transparent transition-all outline-none"
+                className="w-full px-3 py-2 bg-white border border-slate-300 focus:border-slate-800 focus:outline-none transition-colors rounded-none"
               />
             </div>
             
@@ -1086,7 +1086,7 @@ const startInlineDictation = (section, id) => {
                 value={actor.nombreAuditor}
                 onChange={(e) => setActor(prev => ({ ...prev, nombreAuditor: e.target.value }))}
                 placeholder="Ej: Oscar Pérez"
-                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#00d4ff] focus:border-transparent transition-all outline-none"
+                className="w-full px-3 py-2 bg-white border border-slate-300 focus:border-slate-800 focus:outline-none transition-colors rounded-none"
               />
             </div>
 
@@ -1095,7 +1095,7 @@ const startInlineDictation = (section, id) => {
               <select
                 value={actor.rol}
                 onChange={(e) => setActor(prev => ({ ...prev, rol: e.target.value }))}
-                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#00d4ff] focus:border-transparent transition-all outline-none appearance-none"
+                className="w-full px-3 py-2 bg-white border border-slate-300 focus:border-slate-800 focus:outline-none transition-colors rounded-none appearance-none"
               >
                 <option value="">Selecciona tu rol...</option>
                 <option value="Auditor">Auditor (Realiza la evaluación)</option>
@@ -1110,7 +1110,7 @@ const startInlineDictation = (section, id) => {
                 value={actor.contrasena}
                 onChange={(e) => setActor(prev => ({ ...prev, contrasena: e.target.value }))}
                 placeholder="Protege esta auditoría"
-                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#00d4ff] focus:border-transparent transition-all outline-none"
+                className="w-full px-3 py-2 bg-white border border-slate-300 focus:border-slate-800 focus:outline-none transition-colors rounded-none"
               />
             </div>
 
@@ -1126,7 +1126,7 @@ const startInlineDictation = (section, id) => {
                 setActor(prev => ({ ...prev, contrasenaHash: hashed, contrasena: '' }));
                 setStep('form');
               }}
-              className="w-full mt-4 flex items-center justify-center gap-2 bg-slate-900 text-white px-6 py-4 rounded-xl hover:bg-slate-800 transition-all font-bold shadow-lg shadow-slate-900/20"
+              className="w-full mt-4 flex items-center justify-center gap-2 bg-slate-900 text-white font-semibold border border-slate-900 hover:bg-slate-800 px-6 py-4 rounded-none hover:bg-slate-800 transition-all font-bold shadow-none shadow-none/20"
             >
               Comenzar Auditoría <ChevronRight size={18} />
             </button>
@@ -1135,11 +1135,11 @@ const startInlineDictation = (section, id) => {
 
         {/* AUDITORIAS GUARDADAS */}
         {savedAudits.length > 0 && (
-          <div className="w-full max-w-xl bg-white/10 backdrop-blur rounded-2xl shadow-2xl p-6 md:p-8 border border-white/20">
-             <h2 className="text-xl font-bold text-white mb-4">Auditorías Guardadas</h2>
+          <div className="w-full max-w-xl bg-white/10 backdrop-blur rounded-none shadow-none p-6 md:p-8 border border-white/20">
+             <h2 className="text-xl font-bold text-slate-100 mb-4">Auditorías Guardadas</h2>
              <div className="space-y-3 max-h-60 overflow-y-auto custom-scrollbar pr-2">
                {savedAudits.map(audit => (
-                 <div key={audit.id} className="bg-white rounded-xl p-4 flex items-center justify-between shadow-sm">
+                 <div key={audit.id} className="bg-white rounded-none p-4 flex items-center justify-between shadow-none">
                    <div className="min-w-0 pr-2">
                      <div className="font-bold text-slate-800 text-base truncate">{audit.nombreEmpresa}</div>
                      <div className="text-xs text-slate-500 mt-1">
@@ -1168,7 +1168,7 @@ const startInlineDictation = (section, id) => {
                          setActor(audit.data.actor || { nombreAuditor:'', rol:'', contrasenaHash: savedHash || '' });
                          setStep('form');
                        }}
-                       className="px-4 py-2 bg-slate-900 text-white text-xs font-semibold rounded-lg hover:bg-slate-800 transition shadow"
+                       className="px-4 py-2 bg-slate-900 text-white font-semibold border border-slate-900 hover:bg-slate-800 text-xs font-semibold rounded-none hover:bg-slate-800 transition shadow-none"
                      >
                        Cargar
                      </button>
@@ -1184,15 +1184,15 @@ const startInlineDictation = (section, id) => {
   }
 
   return (
-    <div className="min-h-screen relative overflow-hidden bg-slate-950 p-4 md:p-8">
-      <div className="absolute inset-0 pointer-events-none opacity-70 bg-[url('data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%22160%22%20height%3D%22160%22%3E%3Cdefs%3E%3Cpattern%20id%3D%22p%22%20width%3D%2232%22%20height%3D%2232%22%20patternUnits%3D%22userSpaceOnUse%22%3E%3Cpath%20d%3D%22M0%2032L32%200%22%20stroke%3D%22white%22%20stroke-opacity%3D%220.07%22%20stroke-width%3D%221%22/%3E%3Cpath%20d%3D%22M-8%2024L24%20-8%22%20stroke%3D%22white%22%20stroke-opacity%3D%220.05%22%20stroke-width%3D%221%22/%3E%3C/pattern%3E%3C/defs%3E%3Crect%20width%3D%22100%25%22%20height%3D%22100%25%22%20fill%3D%22url(%23p)%22/%3E%3C/svg%3E')]"></div>
-      <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(900px_circle_at_25%_10%,rgba(0,212,255,0.18),transparent_55%)]"></div>
-      <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(900px_circle_at_80%_90%,rgba(255,255,255,0.06),transparent_55%)]"></div>
+    <div className="min-h-screen relative bg-slate-50 p-4 md:p-8 text-slate-900">
+      
+      
+      
       {showScrollTop && (
         <button
           type="button"
           onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-          className="fixed bottom-6 right-6 z-50 w-12 h-12 rounded-full bg-white/90 backdrop-blur shadow-xl border border-white/40 flex items-center justify-center hover:bg-white transition"
+          className="fixed bottom-6 right-6 z-50 w-12 h-12 rounded-none bg-white/90 backdrop-blur shadow-none border border-white/40 flex items-center justify-center hover:bg-white transition"
           aria-label="Subir al inicio"
           title="Subir al inicio"
         >
@@ -1204,7 +1204,7 @@ const startInlineDictation = (section, id) => {
         <div className="mb-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
           
           {/* Columna 1: Resumen y Acciones */}
-          <div className="lg:col-span-1 bg-white rounded-lg shadow-lg p-5 md:p-6 flex flex-col justify-between border border-gray-200">
+          <div className="lg:col-span-1 bg-white border border-slate-300 p-6 flex flex-col justify-between">
             <div>
               <img
                 src={logoPng}
@@ -1216,15 +1216,15 @@ const startInlineDictation = (section, id) => {
                   Auditoría de TI
                 </h1>
                 <div className="flex items-center gap-3">
-                  <button onClick={() => setStep('gate')} className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-full transition" title="Volver al Inicio">
+                  <button onClick={() => setStep('gate')} className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-none transition" title="Volver al Inicio">
                     <Home size={20} />
                   </button>
                   <div className="relative">
-                    <button onClick={() => setShowExportMenu(!showExportMenu)} className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-full transition" title="Exportar">
+                    <button onClick={() => setShowExportMenu(!showExportMenu)} className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-none transition" title="Exportar">
                       <Download size={20} />
                     </button>
                     {showExportMenu && (
-                      <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-xl border border-slate-100 py-2 z-50">
+                      <div className="absolute right-0 mt-2 w-48 bg-white rounded-none shadow-none border border-slate-100 py-2 z-50">
                         <button onClick={() => { exportToDocxPro(); setShowExportMenu(false); }} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2">
                           <FileText size={16} /> Descargar en Word
                         </button>
@@ -1235,11 +1235,11 @@ const startInlineDictation = (section, id) => {
                     )}
                   </div>
                   <div className="relative">
-                    <button onClick={() => setShowSettings(!showSettings)} className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-full transition" title="Configuración">
+                    <button onClick={() => setShowSettings(!showSettings)} className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-none transition" title="Configuración">
                       <Settings size={20} />
                     </button>
                     {showSettings && (
-                      <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-xl border border-slate-100 py-2 z-50">
+                      <div className="absolute right-0 mt-2 w-48 bg-white rounded-none shadow-none border border-slate-100 py-2 z-50">
                         <button onClick={() => {
                           const url = window.location.origin + window.location.pathname + "?id=" + currentAuditId;
                           navigator.clipboard.writeText(url);
@@ -1289,19 +1289,19 @@ const startInlineDictation = (section, id) => {
               
               {/* Score Dashboard */}
               <div className="space-y-3">
-                <div className={`bg-gradient-to-r ${getScoreLevel(calculateTotalScore()).color} rounded-md p-4 text-white shadow-sm border border-white/10`}>
+                <div className={`bg-gradient-to-r ${getScoreLevel(calculateTotalScore()).color} rounded-none p-4 text-slate-100 shadow-none border border-white/10`}>
                   <div className="text-xs opacity-90 mb-1">Puntuación Total</div>
                   <div className="text-3xl font-bold">{(calculateTotalScore() * getTotalQuestions()).toFixed(0)} pts</div>
                   <div className="text-xs mt-1 font-semibold">{getScoreLevel(calculateTotalScore()).nivel}</div>
                 </div>
                 
-                <div className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-md p-4 text-white shadow-sm border border-white/10">
+                <div className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-none p-4 text-slate-100 shadow-none border border-white/10">
                   <div className="flex justify-between items-end mb-1">
                     <div className="text-xs opacity-90">Avance</div>
                     <div className="text-lg font-bold">{((getAnsweredQuestions() / getTotalQuestions()) * 100).toFixed(0)}%</div>
                   </div>
-                  <div className="h-1.5 rounded-full bg-slate-700 overflow-hidden mb-1.5">
-                    <div className="h-1.5 rounded-full bg-[#00d4ff] transition-all duration-500" style={{ width: `${(getAnsweredQuestions() / getTotalQuestions()) * 100}%` }} />
+                  <div className="h-2 bg-slate-100 border border-slate-200 overflow-hidden mb-1.5">
+                    <div className="h-2 bg-slate-800 transition-all duration-500" style={{ width: `${(getAnsweredQuestions() / getTotalQuestions()) * 100}%` }} />
                   </div>
                   <div className="text-[10px] text-gray-400 text-right">{getAnsweredQuestions()}/{getTotalQuestions()} respondidas</div>
                 </div>
@@ -1311,10 +1311,10 @@ const startInlineDictation = (section, id) => {
           </div>
 
           {/* Columna 2: Puntuación por Áreas */}
-          <div className="lg:col-span-2 bg-white rounded-lg shadow-lg p-5 md:p-6 border border-gray-200 flex flex-col">
+          <div className="lg:col-span-2 bg-white border border-slate-300 p-6 flex flex-col">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold text-gray-900">Desglose por Áreas</h2>
-              <span className="text-[10px] bg-cyan-50 text-cyan-700 px-2 py-1 rounded-full font-semibold">Tiempo Real</span>
+              <span className="text-[10px] bg-cyan-50 text-cyan-700 px-2 py-1 rounded-none font-semibold">Tiempo Real</span>
             </div>
             
             {(() => {
@@ -1340,8 +1340,8 @@ const startInlineDictation = (section, id) => {
                           <div className="min-w-0">
                             <div className="font-semibold text-sm text-gray-800 truncate pr-2" title={area}>{area}</div>
                             <div className="flex items-center gap-2 mt-1">
-                               <div className="w-20 h-1 bg-gray-100 rounded-full overflow-hidden">
-                                  <div className="h-1 bg-[#00d4ff] rounded-full transition-all duration-500" style={{ width: `${answeredPct}%` }} />
+                               <div className="w-20 h-1 bg-gray-100 rounded-none overflow-hidden">
+                                  <div className="h-1 bg-[#00d4ff] rounded-none transition-all duration-500" style={{ width: `${answeredPct}%` }} />
                                </div>
                                <span className="text-[10px] text-gray-400">{data.answered}/{data.total}</span>
                             </div>
@@ -1368,9 +1368,9 @@ const startInlineDictation = (section, id) => {
             
             <button
               onClick={() => setActiveSection('Información General')}
-              className={`w-full text-left px-4 py-3 rounded-lg text-sm font-semibold transition-all flex items-center justify-between ${
+              className={`w-full text-left px-4 py-3 rounded-none text-sm font-semibold transition-all flex items-center justify-between ${
                 activeSection === 'Información General' 
-                ? 'bg-cyan-50 text-cyan-700 border-l-4 border-cyan-500 shadow-sm' 
+                ? 'bg-cyan-50 text-cyan-700 border-l-4 border-slate-800 shadow-none' 
                 : 'text-gray-600 hover:bg-gray-100 border-l-4 border-transparent'
               }`}
             >
@@ -1389,14 +1389,14 @@ const startInlineDictation = (section, id) => {
                 <button
                   key={section}
                   onClick={() => setActiveSection(section)}
-                  className={`w-full text-left px-4 py-3 rounded-lg text-sm font-semibold transition-all flex items-center justify-between ${
+                  className={`w-full text-left px-4 py-3 rounded-none text-sm font-semibold transition-all flex items-center justify-between ${
                     activeSection === section 
-                    ? 'bg-purple-50 text-purple-700 border-l-4 border-purple-500 shadow-sm' 
+                    ? 'bg-purple-50 text-purple-700 border-l-4 border-purple-500 shadow-none' 
                     : 'text-gray-600 hover:bg-gray-100 border-l-4 border-transparent'
                   }`}
                 >
                   <span className="truncate mr-2" title={section}>{section}</span>
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full ${
+                  <span className={`text-[10px] px-2 py-0.5 rounded-none ${
                     isComplete ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-200 text-gray-500'
                   }`}>
                     {answered}/{questions.length}
@@ -1407,9 +1407,9 @@ const startInlineDictation = (section, id) => {
 
             <button
               onClick={() => setActiveSection('Reporte Final')}
-              className={`w-full text-left px-4 py-3 rounded-lg text-sm font-semibold transition-all flex items-center justify-between mt-6 ${
+              className={`w-full text-left px-4 py-3 rounded-none text-sm font-semibold transition-all flex items-center justify-between mt-6 ${
                 activeSection === 'Reporte Final' 
-                ? 'bg-amber-50 text-amber-700 border-l-4 border-amber-500 shadow-sm' 
+                ? 'bg-amber-50 text-amber-700 border-l-4 border-amber-500 shadow-none' 
                 : 'text-gray-600 hover:bg-gray-100 border-l-4 border-transparent'
               }`}
             >
@@ -1422,7 +1422,7 @@ const startInlineDictation = (section, id) => {
             
             {/* Sección de Información General Activa */}
             {activeSection === 'Información General' && (
-              <div className="mb-4 bg-white rounded-xl shadow-lg overflow-hidden border border-slate-200 animate-in fade-in slide-in-from-bottom-4 duration-300">
+              <div className="mb-4 bg-white rounded-none shadow-none overflow-hidden border border-slate-200 animate-in fade-in slide-in-from-bottom-4 duration-300">
                 <div className="p-6 bg-slate-50 border-b flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div>
                     <h2 className="text-xl font-bold text-slate-900">Información General</h2>
@@ -1439,7 +1439,7 @@ const startInlineDictation = (section, id) => {
                   value={introData.nombreEmpresa}
                   onChange={(e) => updateIntroData('nombreEmpresa', e.target.value)}
                   placeholder="Razón social o nombre comercial"
-                  className="w-full px-4 py-2 border-2 border-cyan-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent font-semibold"
+                  className="w-full px-4 py-2 border-2 border-cyan-300 rounded-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent font-semibold"
                 />
               </div>
 
@@ -1453,7 +1453,7 @@ const startInlineDictation = (section, id) => {
                     value={introData.nombre}
                     onChange={(e) => updateIntroData('nombre', e.target.value)}
                     placeholder="Nombre completo"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
                   />
                 </div>
 
@@ -1466,7 +1466,7 @@ const startInlineDictation = (section, id) => {
                     value={introData.puesto}
                     onChange={(e) => updateIntroData('puesto', e.target.value)}
                     placeholder="Cargo o posición"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
                   />
                 </div>
 
@@ -1479,7 +1479,7 @@ const startInlineDictation = (section, id) => {
                     value={introData.contacto}
                     onChange={(e) => updateIntroData('contacto', e.target.value)}
                     placeholder="email@ejemplo.com o +52 123 456 7890"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
                   />
                 </div>
 
@@ -1492,7 +1492,7 @@ const startInlineDictation = (section, id) => {
                     value={introData.giro}
                     onChange={(e) => updateIntroData('giro', e.target.value)}
                     placeholder="Sector o industria"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
                   />
                 </div>
 
@@ -1505,7 +1505,7 @@ const startInlineDictation = (section, id) => {
                     value={introData.colaboradores}
                     onChange={(e) => updateIntroData('colaboradores', e.target.value)}
                     placeholder="Número aproximado"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
                   />
                 </div>
 
@@ -1516,7 +1516,7 @@ const startInlineDictation = (section, id) => {
                   <select
                     value={introData.modalidad}
                     onChange={(e) => updateIntroData('modalidad', e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
                   >
                     <option value="">Seleccionar...</option>
                     <option value="Presencial">Presencial</option>
@@ -1532,7 +1532,7 @@ const startInlineDictation = (section, id) => {
                   <select
                     value={introData.proporcionaEquipos}
                     onChange={(e) => updateIntroData('proporcionaEquipos', e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
                   >
                     <option value="">Seleccionar...</option>
                     <option value="Sí, todos">Sí, todos</option>
@@ -1550,7 +1550,7 @@ const startInlineDictation = (section, id) => {
                     value={introData.tipoEquipos}
                     onChange={(e) => updateIntroData('tipoEquipos', e.target.value)}
                     placeholder="Laptops, desktops, tablets, smartphones..."
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
                   />
                 </div>
               </div>
@@ -1564,7 +1564,7 @@ const startInlineDictation = (section, id) => {
                   onChange={(e) => updateIntroData('estructuraTI', e.target.value)}
                   placeholder="Ej: Gerente TI, 2 analistas de soporte, 1 administrador de redes, outsourcing para desarrollo..."
                   rows="3"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent resize-none"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent resize-none"
                 />
               </div>
 
@@ -1575,7 +1575,7 @@ const startInlineDictation = (section, id) => {
                 <select
                   value={introData.dependenciaRed}
                   onChange={(e) => updateIntroData('dependenciaRed', e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
                 >
                   <option value="">Seleccionar...</option>
                   <option value="Totalmente dependiente - sin internet no hay operación">Totalmente dependiente - sin internet no hay operación</option>
@@ -1594,7 +1594,7 @@ const startInlineDictation = (section, id) => {
                   onChange={(e) => updateIntroData('incidenciasRecientes', e.target.value)}
                   placeholder="Descripción de incidentes: ransomware, caídas de red, pérdida de datos, ataques phishing, fallas de hardware, etc."
                   rows="3"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent resize-none"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent resize-none"
                 />
               </div>
             </div>
@@ -1603,7 +1603,7 @@ const startInlineDictation = (section, id) => {
 
             {/* Sección de Reporte Final */}
             {activeSection === 'Reporte Final' && (
-              <div className="mb-4 bg-white rounded-xl shadow-lg overflow-hidden border border-slate-200 animate-in fade-in slide-in-from-bottom-4 duration-300">
+              <div className="mb-4 bg-white rounded-none shadow-none overflow-hidden border border-slate-200 animate-in fade-in slide-in-from-bottom-4 duration-300">
                 <div className="p-6 bg-slate-50 border-b flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div>
                     <h2 className="text-xl font-bold text-slate-900">Reporte Final</h2>
@@ -1621,7 +1621,7 @@ const startInlineDictation = (section, id) => {
                     onChange={(e) => setGeneralComments(e.target.value)}
                     rows={12}
                     placeholder="Escribe o dicta las conclusiones de la auditoría..."
-                    className="w-full whitespace-pre-wrap px-4 py-3 border-2 border-gray-300 rounded-lg resize-y focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                    className="w-full whitespace-pre-wrap px-4 py-3 border-2 border-gray-300 rounded-none resize-y focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
                   />
 
                   <button
@@ -1630,9 +1630,9 @@ const startInlineDictation = (section, id) => {
                     disabled={!canRewrite}
                     title={!hasComments ? 'Escribe comentarios para habilitar' : (rewriting ? 'Mejorando...' : 'Mejorar con IA')}
                     className={[
-                      "absolute top-9 right-9 w-9 h-9 rounded-full flex items-center justify-center",
-                      "border border-gray-200 bg-white shadow-sm transition",
-                      canRewrite ? "hover:shadow-md hover:scale-105" : "opacity-40 cursor-not-allowed",
+                      "absolute top-9 right-9 w-9 h-9 rounded-none flex items-center justify-center",
+                      "border border-gray-200 bg-white shadow-none transition",
+                      canRewrite ? "hover:shadow-none hover:scale-105" : "opacity-40 cursor-not-allowed",
                       rewriting ? "animate-pulse" : ""
                     ].join(" ")}
                   >
@@ -1646,7 +1646,7 @@ const startInlineDictation = (section, id) => {
             {Object.keys(sections).map(section => {
               if (section !== activeSection) return null;
               return (
-                <div key={section} className="mb-4 bg-white rounded-xl shadow-lg overflow-hidden border border-slate-200 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                <div key={section} className="mb-4 bg-white rounded-none shadow-none overflow-hidden border border-slate-200 animate-in fade-in slide-in-from-bottom-4 duration-300">
                   <div className="p-6 bg-slate-50 border-b flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div>
                       <h2 className="text-xl font-bold text-gray-800">{section}</h2>
@@ -1662,9 +1662,9 @@ const startInlineDictation = (section, id) => {
                   const response = responses[key] || {};
                   
                   return (
-                    <div key={item.id} id={`question-${section}-${item.id}`} className="border-l-4 border-purple-500 pl-4 py-2 transition-all duration-500 rounded-r-lg">
+                    <div key={item.id} id={`question-${section}-${item.id}`} className="border-l-4 border-purple-500 pl-4 py-2 transition-all duration-500 rounded-none">
                       <div className="flex items-start gap-2 mb-3">
-                        <span className="bg-cyan-100 text-cyan-700 px-2 py-1 rounded text-sm font-semibold">
+                        <span className="bg-cyan-100 text-cyan-700 px-2 py-1 rounded-none text-sm font-semibold">
                           {item.id}
                         </span>
                         <p className="text-gray-700 flex-1">{item.pregunta}</p>
@@ -1675,7 +1675,7 @@ const startInlineDictation = (section, id) => {
                       )}
 
                       {item.nota && (
-                        <p className="text-xs text-green-700 bg-green-50 px-3 py-2 rounded mb-3 flex items-center gap-1.5">
+                        <p className="text-xs text-green-700 bg-green-50 px-3 py-2 rounded-none mb-3 flex items-center gap-1.5">
                           <CheckCircle size={14} className="shrink-0" /> {item.nota}
                         </p>
                       )}
@@ -1691,7 +1691,7 @@ const startInlineDictation = (section, id) => {
                           <label className="block text-sm font-semibold text-gray-700 mb-2">
                             Evaluación (0-4)
                           </label>
-                          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3 text-xs text-blue-800">
+                          <div className="bg-blue-50 border border-blue-200 rounded-none p-3 mb-3 text-xs text-blue-800">
                             <div className="font-bold mb-1">Escala de Evaluación:</div>
                             {(item.escalaEvaluacion || GENERIC_EVALUATION_SCALE).map((line, index) => (
                               <div key={`${item.id}-${index}`}>{line}</div>
@@ -1702,9 +1702,9 @@ const startInlineDictation = (section, id) => {
                               <button
                                 key={score}
                                 onClick={() => updateResponse(section, item.id, 'evaluacion', score)}
-                                className={`w-12 h-12 rounded-lg font-bold transition-all ${
+                                className={`w-12 h-12 rounded-none font-bold transition-all ${
                                   response.evaluacion === score
-                                    ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-white shadow-lg scale-110'
+                                    ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-slate-100 shadow-none scale-110'
                                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                                 }`}
                                 title={
@@ -1730,7 +1730,7 @@ const startInlineDictation = (section, id) => {
                             value={response.evidencia || ''}
                             onChange={(e) => updateResponse(section, item.id, 'evidencia', e.target.value)}
                             placeholder="Documentos, sistemas, procesos..."
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                            className="w-full px-4 py-2 border border-gray-300 rounded-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
                           />
                         </div>
                         
@@ -1744,7 +1744,7 @@ const startInlineDictation = (section, id) => {
                           <div className="flex gap-2">
                             <button
                               onClick={() => startInlineDictation(section, item.id)}
-                              className={`p-1.5 rounded-md transition-all shadow-sm flex items-center gap-1 text-xs font-semibold ${dictatingKey === key ? 'bg-red-500 text-white animate-pulse' : 'bg-white border border-gray-200 text-slate-600 hover:bg-slate-50'}`}
+                              className={`p-1.5 rounded-none transition-all shadow-none flex items-center gap-1 text-xs font-semibold ${dictatingKey === key ? 'bg-red-500 text-slate-100 animate-pulse' : 'bg-white border border-gray-200 text-slate-600 hover:bg-slate-50'}`}
                               title={dictatingKey === key ? "Detener dictado" : "Dictar observación"}
                             >
                               <Mic size={14} /> {dictatingKey === key ? "Escuchando..." : "Dictar"}
@@ -1752,7 +1752,7 @@ const startInlineDictation = (section, id) => {
                             <button
                               onClick={() => rewriteObservationWithAI(section, item)}
                               disabled={rewritingKey === key || !response.observaciones}
-                              className={`p-1.5 rounded-md transition-all shadow-sm flex items-center gap-1 text-xs font-semibold ${rewritingKey === key ? 'bg-purple-100 text-purple-600 animate-pulse' : !response.observaciones ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white hover:shadow-md hover:scale-105'}`}
+                              className={`p-1.5 rounded-none transition-all shadow-none flex items-center gap-1 text-xs font-semibold ${rewritingKey === key ? 'bg-purple-100 text-purple-600 animate-pulse' : !response.observaciones ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-slate-800 text-white font-medium border border-slate-800 hover:bg-slate-700 hover:shadow-none hover:scale-105'}`}
                               title="Mejorar redacción con IA"
                             >
                               <Sparkles size={14} /> IA
@@ -1764,7 +1764,7 @@ const startInlineDictation = (section, id) => {
                           onChange={(e) => updateResponse(section, item.id, 'observaciones', e.target.value)}
                           placeholder="Dicta o escribe tus hallazgos, luego presiona el botón IA para estructurarlo..."
                           rows="3"
-                          className={`w-full px-4 py-2 border-2 rounded-lg resize-y transition-colors ${dictatingKey === key ? 'border-red-400 bg-red-50/30' : 'border-gray-200 focus:ring-2 focus:ring-cyan-500 focus:border-transparent'}`}
+                          className={`w-full px-3 py-2 border border-slate-300 resize-y transition-colors focus:border-slate-800 focus:outline-none rounded-none ${dictatingKey === key ? 'border-red-400 bg-red-50/30' : 'border-gray-200 focus:ring-2 focus:ring-cyan-500 focus:border-transparent'}`}
                         />
                       </div>
                     </div>
