@@ -1411,9 +1411,11 @@ URL.revokeObjectURL(url);
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent resize-none"
                 />
               </div>
-            )}
+            </div>
+          </div>
+        )}
 
-            {/* Secciones de evaluación activas */}
+        {/* Secciones de evaluación activas */}
             {Object.keys(sections).map(section => {
               if (section !== activeSection) return null;
               return (
@@ -1542,6 +1544,7 @@ URL.revokeObjectURL(url);
           );
         })}
         </div>
+      </div>
       </div>
       
       {step === 'form' && (
