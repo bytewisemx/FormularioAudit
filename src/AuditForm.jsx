@@ -1391,7 +1391,7 @@ const startInlineDictation = (section, id) => {
                   onClick={() => setActiveSection(section)}
                   className={`w-full text-left px-4 py-3 rounded-none text-sm font-semibold transition-all flex items-center justify-between ${
                     activeSection === section 
-                    ? 'bg-purple-50 text-purple-700 border-l-4 border-purple-500 shadow-none' 
+                    ? 'bg-cyan-50 text-cyan-700 border-l-4 border-[#00d4ff] shadow-none' 
                     : 'text-gray-600 hover:bg-gray-100 border-l-4 border-transparent'
                   }`}
                 >
@@ -1662,7 +1662,7 @@ const startInlineDictation = (section, id) => {
                   const response = responses[key] || {};
                   
                   return (
-                    <div key={item.id} id={`question-${section}-${item.id}`} className="border-l-4 border-purple-500 pl-4 py-2 transition-all duration-500 rounded-none">
+                    <div key={item.id} id={`question-${section}-${item.id}`} className="border-l-4 border-slate-800 pl-4 py-2 transition-all duration-500 rounded-none">
                       <div className="flex items-start gap-2 mb-3">
                         <span className="bg-cyan-100 text-cyan-700 px-2 py-1 rounded-none text-sm font-semibold">
                           {item.id}
@@ -1752,7 +1752,7 @@ const startInlineDictation = (section, id) => {
                             <button
                               onClick={() => rewriteObservationWithAI(section, item)}
                               disabled={rewritingKey === key || !response.observaciones}
-                              className={`p-1.5 rounded-none transition-all shadow-none flex items-center gap-1 text-xs font-semibold ${rewritingKey === key ? 'bg-purple-100 text-purple-600 animate-pulse' : !response.observaciones ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-slate-800 text-white font-medium border border-slate-800 hover:bg-slate-700 hover:shadow-none hover:scale-105'}`}
+                              className={`p-1.5 rounded-none transition-all shadow-none flex items-center gap-1 text-xs font-semibold ${rewritingKey === key ? 'bg-cyan-100 text-cyan-700 animate-pulse' : !response.observaciones ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-slate-800 text-white font-medium border border-slate-800 hover:bg-slate-700 hover:shadow-none hover:scale-105'}`}
                               title="Mejorar redacción con IA"
                             >
                               <Sparkles size={14} /> IA
