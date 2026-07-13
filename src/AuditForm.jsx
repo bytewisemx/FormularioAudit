@@ -1,6 +1,8 @@
 
 import React, { useEffect, useState } from 'react';
 import { ChevronDown, ChevronUp, ChevronRight, Download, FileText, FileSpreadsheet, RefreshCw, Mic, Sparkles, Building2, Shield, Brain, Hash, CheckCircle, Search } from 'lucide-react';
+import { db } from "./firebase";
+import { collection, doc, setDoc, getDocs, deleteDoc } from "firebase/firestore";
 
 import { saveAs } from "file-saver";
 import ExcelJS from "exceljs";
@@ -65,10 +67,21 @@ const AuditForm = () => {
   const [actor, setActor] = useState({ nombreEmpresa: '', nombreAuditor: '', rol: '' });
 
   useEffect(() => {
-    const loaded = localStorage.getItem('auditoria_ti_saved_audits');
-    if (loaded) {
-      try { setSavedAudits(JSON.parse(loaded)); } catch (e) { console.error(e); }
-    }
+    const loadAudits = async () => {
+      try {
+        if (!db) return;
+        const querySnapshot = await getDocs(collection(db, "auditorias"));
+        const audits = [];
+        querySnapshot.forEach((docSnap) => {
+          audits.push(docSnap.data());
+        });
+        audits.sort((a, b) => new Date(b.lastModified) - new Date(a.lastModified));
+        setSavedAudits(audits);
+      } catch (e) {
+        console.error("Error cargando auditorías desde Firebase:", e);
+      }
+    };
+    loadAudits();
   }, []);
 
   const savedAuditsRef = React.useRef(savedAudits);
@@ -91,7 +104,13 @@ const AuditForm = () => {
          newList.push(auditData);
        }
        setSavedAudits(newList);
-       localStorage.setItem('auditoria_ti_saved_audits', JSON.stringify(newList));
+       
+       if (db) {
+         try {
+           const docRef = doc(db, "auditorias", currentAuditId);
+           setDoc(docRef, auditData).catch(e => console.error("Error al guardar en Firebase:", e));
+         } catch(e) {}
+       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [introData, responses, generalComments, actor, currentAuditId, step]);
@@ -1092,7 +1111,9 @@ const startInlineDictation = (section, id) => {
                          if(window.confirm(`¿Seguro que deseas borrar la auditoría de ${audit.nombreEmpresa}? Esta acción no se puede deshacer.`)) {
                            const newList = savedAudits.filter(a => a.id !== audit.id);
                            setSavedAudits(newList);
-                           localStorage.setItem('auditoria_ti_saved_audits', JSON.stringify(newList));
+                           if (db) {
+                             deleteDoc(doc(db, "auditorias", audit.id)).catch(e => console.error("Error borrando en Firebase:", e));
+                           }
                          }
                        }}
                        className="px-3 py-2 bg-red-100 text-red-600 text-xs font-semibold rounded-lg hover:bg-red-200 transition"
