@@ -1306,7 +1306,6 @@ const startInlineDictation = (section, id) => {
               </div>
             </div>
 
-            </div>
           </div>
 
           {/* Columna 2: Puntuación por Áreas */}
