@@ -120,9 +120,17 @@ const AudioAssistant = ({ pendingQuestions, onSuggestionClick }) => {
         updateVolume();
         setMicError(''); 
 
+        // Iniciar reconocimiento DESPUÉS de que getUserMedia desbloqueó el hardware
+        if (recognitionRef.current && isRecordingRef.current) {
+          try {
+            recognitionRef.current.start();
+          } catch (e) {}
+        }
+
       } catch (err) {
         console.error("No se pudo acceder al micrófono:", err);
         setMicError('Micrófono denegado u ocupado.');
+        setIsRecording(false);
       }
     };
 
@@ -144,11 +152,6 @@ const AudioAssistant = ({ pendingQuestions, onSuggestionClick }) => {
     };
 
     if (isRecording) {
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.start();
-        } catch (e) {}
-      }
       startAudioAnalyzer();
     } else {
       if (recognitionRef.current) {
