@@ -18,6 +18,8 @@ const AudioAssistant = ({ pendingQuestions, onSuggestionClick }) => {
   const microphoneRef = useRef(null);
   const animationFrameRef = useRef(null);
   const streamRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const [audioUrl, setAudioUrl] = useState(null);
 
   // Mantenemos isRecording en un ref para callbacks asíncronos (como onend)
   const isRecordingRef = useRef(isRecording);
@@ -91,6 +93,24 @@ const AudioAssistant = ({ pendingQuestions, onSuggestionClick }) => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
         streamRef.current = stream;
+        setAudioUrl(null); // Reset anterior
+
+        try {
+          const recorder = new MediaRecorder(stream);
+          const localChunks = [];
+          recorder.ondataavailable = (e) => {
+            if (e.data.size > 0) localChunks.push(e.data);
+          };
+          recorder.onstop = () => {
+            const blob = new Blob(localChunks, { type: 'audio/webm' });
+            const url = URL.createObjectURL(blob);
+            setAudioUrl(url);
+          };
+          recorder.start();
+          mediaRecorderRef.current = recorder;
+        } catch (e) {
+          console.error("No se pudo iniciar MediaRecorder", e);
+        }
         
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         audioContextRef.current = new AudioContext();
@@ -137,6 +157,9 @@ const AudioAssistant = ({ pendingQuestions, onSuggestionClick }) => {
     const stopAudioAnalyzer = () => {
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
+      }
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
       }
       if (microphoneRef.current) {
         microphoneRef.current.disconnect();
@@ -255,17 +278,33 @@ const AudioAssistant = ({ pendingQuestions, onSuggestionClick }) => {
 
         {/* CONTROLS (Top) */}
         <div className="p-4 bg-slate-800 border-b border-slate-700 flex flex-col items-center">
-          <button
-            onClick={toggleRecording}
-            className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold transition-all shadow-lg ${
-              isRecording 
-              ? 'bg-red-500 hover:bg-red-600 text-white shadow-red-500/30' 
-              : 'bg-cyan-500 text-slate-900 hover:bg-cyan-400'
-            }`}
-          >
-            {isRecording ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
-            {isRecording ? 'Detener Grabación' : 'Iniciar Plática'}
-          </button>
+                  <div className="flex flex-col gap-2 w-full mt-3">
+                    <button
+                      onClick={toggleRecording}
+                      className={`flex-1 py-3 px-4 rounded-xl flex items-center justify-center gap-2 text-white font-bold transition-all shadow-lg hover:scale-105 active:scale-95 border-b-4 ${
+                        isRecording 
+                        ? "bg-red-500 hover:bg-red-400 border-red-700 shadow-red-500/30" 
+                        : "bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 border-blue-800 shadow-blue-500/30"
+                      }`}
+                    >
+                      {isRecording ? <MicOff size={20} /> : <Mic size={20} />}
+                      <span>{isRecording ? "Detener" : "Iniciar Plática"}</span>
+                    </button>
+
+                    {audioUrl && !isRecording && (
+                      <button
+                        onClick={() => {
+                          const a = document.createElement('a');
+                          a.href = audioUrl;
+                          a.download = `grabacion_${new Date().getTime()}.webm`;
+                          a.click();
+                        }}
+                        className="w-full py-2 px-4 rounded-xl flex items-center justify-center gap-2 text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 transition-all font-semibold text-sm"
+                      >
+                        <Download size={16} /> Descargar Audio (.webm)
+                      </button>
+                    )}
+                  </div>
           
           {micError && (
             <div className="mt-3 text-xs text-red-400 text-center bg-red-900/30 p-2 rounded w-full flex items-center justify-center gap-1.5">

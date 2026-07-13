@@ -58,6 +58,43 @@ const AuditForm = () => {
   const [dictatingKey, setDictatingKey] = useState(null);
   const [rewritingKey, setRewritingKey] = useState(null);
   const [activeSection, setActiveSection] = useState('Información General');
+  
+  const [savedAudits, setSavedAudits] = useState([]);
+  const [currentAuditId, setCurrentAuditId] = useState(null);
+  const [step, setStep] = useState('gate'); // 'gate' | 'form'
+  const [actor, setActor] = useState({ nombreAuditor: '', rol: '' });
+
+  useEffect(() => {
+    const loaded = localStorage.getItem('auditoria_ti_saved_audits');
+    if (loaded) {
+      try { setSavedAudits(JSON.parse(loaded)); } catch (e) { console.error(e); }
+    }
+  }, []);
+
+  const savedAuditsRef = React.useRef(savedAudits);
+  useEffect(() => { savedAuditsRef.current = savedAudits; }, [savedAudits]);
+
+  useEffect(() => {
+    if (step === 'form' && currentAuditId) {
+       const prevList = savedAuditsRef.current;
+       const index = prevList.findIndex(a => a.id === currentAuditId);
+       let newList = [...prevList];
+       const auditData = {
+         id: currentAuditId,
+         lastModified: new Date().toISOString(),
+         nombreEmpresa: introData.nombreEmpresa || 'Empresa sin nombre',
+         data: { introData, responses, generalComments, actor }
+       };
+       if (index >= 0) {
+         newList[index] = auditData;
+       } else {
+         newList.push(auditData);
+       }
+       setSavedAudits(newList);
+       localStorage.setItem('auditoria_ti_saved_audits', JSON.stringify(newList));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [introData, responses, generalComments, actor, currentAuditId, step]);
 
   useEffect(() => {
     const onScroll = () => setShowScrollTop(window.scrollY > 500);
@@ -255,26 +292,10 @@ const startInlineDictation = (section, id) => {
  
  
 
- // =========================
+  // =========================
   // ✅ PASO PREVIO (AUDITOR / CLIENTE)
   // =========================
-  const [step, setStep] = useState('gate'); // 'gate' | 'form'
-  const [actor, setActor] = useState({
-    nombreAuditor: '',
-    rol: '' // 'Auditor' | 'Cliente'
-  });
-
-  const continueToForm = () => {
-    if (!actor.nombreAuditor.trim()) {
-      alert('Por favor escribe el nombre de quien audita.');
-      return;
-    }
-    if (!actor.rol) {
-      alert('Por favor selecciona si eres Auditor o Cliente.');
-      return;
-    }
-    setStep('form');
-  };
+  // (State moved to top for auto-save logic)
 
 
   const updateIntroData = (field, value) => {
@@ -973,16 +994,16 @@ const startInlineDictation = (section, id) => {
 
    if (step === 'gate') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-cyan-900 to-blue-900 p-4 md:p-8 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-cyan-900 to-blue-900 p-4 md:p-8 flex flex-col items-center justify-center gap-6">
+        
+        {/* NUEVA AUDITORIA */}
         <div className="w-full max-w-xl bg-white rounded-2xl shadow-2xl p-6 md:p-8">
-          <h1 className="text-2xl md:text-3xl font-bold text-gray-800">Antes de iniciar</h1>
+          <h1 className="text-2xl md:text-3xl font-bold text-gray-800">Nueva Auditoría</h1>
           <p className="text-gray-600 mt-1">Identifica quién realiza la evaluación y el rol.</p>
 
           <div className="mt-6 space-y-4">
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Nombre de quien audita *
-              </label>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Nombre de quien audita *</label>
               <input
                 type="text"
                 value={actor.nombreAuditor}
@@ -993,9 +1014,7 @@ const startInlineDictation = (section, id) => {
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Rol *
-              </label>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Rol *</label>
               <select
                 value={actor.rol}
                 onChange={(e) => setActor(prev => ({ ...prev, rol: e.target.value }))}
@@ -1005,19 +1024,73 @@ const startInlineDictation = (section, id) => {
                 <option value="Auditor">Auditor</option>
                 <option value="Cliente">Cliente</option>
               </select>
-              <div className="mt-2 text-xs text-gray-500">
-                * Auditor: evalúa. Cliente: contesta y aporta evidencia.
-              </div>
+              <div className="mt-2 text-xs text-gray-500">* Auditor: evalúa. Cliente: contesta y aporta evidencia.</div>
             </div>
 
             <button
-              onClick={continueToForm}
+              onClick={() => {
+                if (!actor.nombreAuditor.trim() || !actor.rol) {
+                  alert("Llena los campos para continuar.");
+                  return;
+                }
+                setCurrentAuditId(Date.now().toString());
+                setIntroData(prev => ({...prev, nombre: actor.nombreAuditor}));
+                setStep('form');
+              }}
               className="w-full mt-2 flex items-center justify-center gap-2 bg-gradient-to-r from-cyan-500 to-blue-600 text-white px-6 py-3 rounded-lg hover:shadow-lg transition-all font-semibold"
             >
-              Continuar al formulario
+              Iniciar Nueva Auditoría
             </button>
           </div>
         </div>
+
+        {/* AUDITORIAS GUARDADAS */}
+        {savedAudits.length > 0 && (
+          <div className="w-full max-w-xl bg-white/10 backdrop-blur rounded-2xl shadow-2xl p-6 md:p-8 border border-white/20">
+             <h2 className="text-xl font-bold text-white mb-4">Auditorías Guardadas</h2>
+             <div className="space-y-3 max-h-60 overflow-y-auto custom-scrollbar pr-2">
+               {savedAudits.map(audit => (
+                 <div key={audit.id} className="bg-white rounded-xl p-4 flex items-center justify-between shadow-sm">
+                   <div className="min-w-0 pr-2">
+                     <div className="font-bold text-slate-800 text-base truncate">{audit.nombreEmpresa}</div>
+                     <div className="text-xs text-slate-500 mt-1">
+                        Modificado: {new Date(audit.lastModified).toLocaleDateString()} {new Date(audit.lastModified).toLocaleTimeString()} <br/>
+                        Auditor: {audit.data?.actor?.nombreAuditor || 'N/A'}
+                     </div>
+                   </div>
+                   <div className="flex gap-2 shrink-0">
+                     <button
+                       onClick={() => {
+                         setCurrentAuditId(audit.id);
+                         setIntroData(audit.data.introData || {});
+                         setResponses(audit.data.responses || {});
+                         setGeneralComments(audit.data.generalComments || '');
+                         setActor(audit.data.actor || { nombreAuditor:'', rol:'' });
+                         setStep('form');
+                       }}
+                       className="px-4 py-2 bg-slate-900 text-white text-xs font-semibold rounded-lg hover:bg-slate-800 transition shadow"
+                     >
+                       Cargar
+                     </button>
+                     <button
+                       onClick={() => {
+                         if(window.confirm(`¿Seguro que deseas borrar la auditoría de ${audit.nombreEmpresa}? Esta acción no se puede deshacer.`)) {
+                           const newList = savedAudits.filter(a => a.id !== audit.id);
+                           setSavedAudits(newList);
+                           localStorage.setItem('auditoria_ti_saved_audits', JSON.stringify(newList));
+                         }
+                       }}
+                       className="px-3 py-2 bg-red-100 text-red-600 text-xs font-semibold rounded-lg hover:bg-red-200 transition"
+                     >
+                       Borrar
+                     </button>
+                   </div>
+                 </div>
+               ))}
+             </div>
+          </div>
+        )}
+
       </div>
     );
   }
