@@ -56,6 +56,7 @@ const AuditForm = () => {
   const [rewriting, setRewriting] = useState(false);
   const [dictatingKey, setDictatingKey] = useState(null);
   const [rewritingKey, setRewritingKey] = useState(null);
+  const [activeSection, setActiveSection] = useState('Información General');
 
   useEffect(() => {
     const onScroll = () => setShowScrollTop(window.scrollY > 500);
@@ -427,9 +428,8 @@ const startInlineDictation = (section, id) => {
   }, [responses]);
 
   const handleSuggestionClick = (section, id) => {
-    if (!expandedSections[section]) {
-      setExpandedSections(prev => ({ ...prev, [section]: true }));
-    }
+    setActiveSection(section);
+
     setTimeout(() => {
       const el = document.getElementById(`question-${section}-${id}`);
       if (el) {
@@ -1185,24 +1185,65 @@ URL.revokeObjectURL(url);
           })()}
         </div>
 
-        {/* Sections */}
-        {/* Sección de Información General */}
-        <div className="mb-4 bg-white rounded-lg shadow-lg overflow-hidden border border-slate-200">
-          <button
-            onClick={() => toggleSection('Información General')}
-            className="w-full p-4 md:p-6 flex items-center justify-between bg-slate-50 hover:bg-slate-100 transition-colors"
-          >
-            <div className="flex items-center gap-4">
-              <div className="text-left">
-                <h2 className="text-lg md:text-xl font-bold text-slate-900">📋 Información General</h2>
-                <p className="text-sm text-slate-600">Datos de identificación (no generan puntuación)</p>
-              </div>
-            </div>
-            {expandedSections['Información General'] ? <ChevronUp className="text-slate-500" /> : <ChevronDown className="text-slate-500" />}
-          </button>
+        {/* Secciones y Navegación Lateral */}
+        <div className="flex flex-col md:flex-row gap-6">
+          {/* Menú Lateral (Sidebar) */}
+          <div className="w-full md:w-1/4 flex-shrink-0 space-y-2 sticky top-4 self-start max-h-[90vh] overflow-y-auto pr-2 custom-scrollbar">
+            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 ml-2">Navegación</h3>
+            
+            <button
+              onClick={() => setActiveSection('Información General')}
+              className={`w-full text-left px-4 py-3 rounded-lg text-sm font-semibold transition-all flex items-center justify-between ${
+                activeSection === 'Información General' 
+                ? 'bg-cyan-50 text-cyan-700 border-l-4 border-cyan-500 shadow-sm' 
+                : 'text-gray-600 hover:bg-gray-100 border-l-4 border-transparent'
+              }`}
+            >
+              <span className="truncate">📋 Información General</span>
+            </button>
 
-          {expandedSections['Información General'] && (
-            <div className="p-4 md:p-6 border-t bg-white space-y-4">
+            {Object.keys(sections).map((section) => {
+              const questions = sections[section];
+              let answered = 0;
+              questions.forEach(q => {
+                if (responses[`${section}-${q.id}`]?.evaluacion !== undefined) answered++;
+              });
+              const isComplete = answered === questions.length && questions.length > 0;
+
+              return (
+                <button
+                  key={section}
+                  onClick={() => setActiveSection(section)}
+                  className={`w-full text-left px-4 py-3 rounded-lg text-sm font-semibold transition-all flex items-center justify-between ${
+                    activeSection === section 
+                    ? 'bg-purple-50 text-purple-700 border-l-4 border-purple-500 shadow-sm' 
+                    : 'text-gray-600 hover:bg-gray-100 border-l-4 border-transparent'
+                  }`}
+                >
+                  <span className="truncate mr-2" title={section}>{section}</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full ${
+                    isComplete ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-200 text-gray-500'
+                  }`}>
+                    {answered}/{questions.length}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Área de Contenido Principal */}
+          <div className="w-full md:w-3/4 flex-grow">
+            
+            {/* Sección de Información General Activa */}
+            {activeSection === 'Información General' && (
+              <div className="mb-4 bg-white rounded-xl shadow-lg overflow-hidden border border-slate-200 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                <div className="p-6 bg-slate-50 border-b flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-900">📋 Información General</h2>
+                    <p className="text-sm text-slate-600">Datos de identificación (no generan puntuación)</p>
+                  </div>
+                </div>
+                <div className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Nombre de la empresa *
@@ -1370,30 +1411,23 @@ URL.revokeObjectURL(url);
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent resize-none"
                 />
               </div>
-            </div>
-          )}
-        </div>
+            )}
 
-        {/* Secciones de evaluación */}
-        {Object.keys(sections).map(section => (
-          <div key={section} className="mb-4 bg-white rounded-xl shadow-lg overflow-hidden">
-            <button
-              onClick={() => toggleSection(section)}
-              className="w-full p-4 md:p-6 flex items-center justify-between hover:bg-gray-50 transition-colors"
-            >
-              <div className="flex items-center gap-4">
-                <div className="text-left">
-                  <h2 className="text-lg md:text-xl font-bold text-gray-800">{section}</h2>
-                  <p className="text-sm text-gray-500">
-                    {sections[section].length} preguntas • Promedio: {calculateSectionScore(section)}/4
-                  </p>
-                </div>
-              </div>
-              {expandedSections[section] ? <ChevronUp /> : <ChevronDown />}
-            </button>
+            {/* Secciones de evaluación activas */}
+            {Object.keys(sections).map(section => {
+              if (section !== activeSection) return null;
+              return (
+                <div key={section} className="mb-4 bg-white rounded-xl shadow-lg overflow-hidden border border-slate-200 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                  <div className="p-6 bg-slate-50 border-b flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                      <h2 className="text-xl font-bold text-gray-800">{section}</h2>
+                      <p className="text-sm text-gray-500">
+                        {sections[section].length} preguntas • Promedio actual: <span className="font-bold text-cyan-600">{calculateSectionScore(section)}/4</span>
+                      </p>
+                    </div>
+                  </div>
 
-            {expandedSections[section] && (
-              <div className="p-4 md:p-6 border-t space-y-6">
+                  <div className="p-6 space-y-8">
                 {sections[section].map(item => {
                   const key = `${section}-${item.id}`;
                   const response = responses[key] || {};
@@ -1504,10 +1538,10 @@ URL.revokeObjectURL(url);
                   );
                 })}
               </div>
-              
-            )}
-          </div>
-        ))}
+            </div>
+          );
+        })}
+        </div>
       </div>
       
       {step === 'form' && (
