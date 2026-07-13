@@ -1072,28 +1072,28 @@ URL.revokeObjectURL(url);
 
               const rows = Object.entries(calculateAreaScores());
               return (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 h-full content-start">
+                <div className="flex flex-col gap-4 h-full content-start mt-2">
                   {rows.map(([area, data]) => {
                     const answeredPct = data.total > 0 ? (data.answered / data.total) * 100 : 0;
                     return (
-                      <div key={area} className="p-3 border border-gray-100 rounded-lg bg-gray-50 flex flex-col justify-center relative overflow-hidden group hover:border-cyan-200 transition-colors">
-                        {/* Progress Background Hint */}
-                        <div className="absolute bottom-0 left-0 h-1 bg-[#00d4ff]/80 transition-all duration-500" style={{ width: `${answeredPct}%` }} />
-                        
-                        <div className="flex items-center justify-between mb-1">
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <div className="flex items-center justify-center w-8 h-8 bg-white border border-gray-200 shadow-sm rounded-full shrink-0">
-                              {getAreaIcon(area)}
-                            </div>
-                            <div className="min-w-0">
-                              <div className="font-semibold text-xs text-gray-900 truncate pr-2" title={area}>{area}</div>
-                              <div className="text-[10px] text-gray-500">{data.answered}/{data.total} resp.</div>
+                      <div key={area} className="flex items-center justify-between pb-3 border-b border-gray-100 last:border-0 last:pb-0">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="flex items-center justify-center shrink-0">
+                            {getAreaIcon(area)}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="font-semibold text-sm text-gray-800 truncate pr-2" title={area}>{area}</div>
+                            <div className="flex items-center gap-2 mt-1">
+                               <div className="w-20 h-1 bg-gray-100 rounded-full overflow-hidden">
+                                  <div className="h-1 bg-[#00d4ff] rounded-full transition-all duration-500" style={{ width: `${answeredPct}%` }} />
+                               </div>
+                               <span className="text-[10px] text-gray-400">{data.answered}/{data.total}</span>
                             </div>
                           </div>
-                          <div className="text-right shrink-0">
-                            <div className="font-bold text-sm text-cyan-700">{data.percentage}%</div>
-                            <div className="text-[10px] text-gray-500 font-medium">({data.score}/4)</div>
-                          </div>
+                        </div>
+                        <div className="text-right shrink-0 pl-2">
+                          <div className="font-bold text-sm text-slate-800">{data.percentage}%</div>
+                          <div className="text-[10px] text-gray-500 font-medium">{data.score} / 4</div>
                         </div>
                       </div>
                     );
