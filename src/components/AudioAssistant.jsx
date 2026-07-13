@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, MicOff, BrainCircuit, Minimize2, Loader2, ChevronRight, Menu, AlertTriangle } from 'lucide-react';
+import { Mic, MicOff, BrainCircuit, Minimize2, Loader2, ChevronRight, Menu, AlertTriangle, Download } from 'lucide-react';
 
 const AudioAssistant = ({ pendingQuestions, onSuggestionClick }) => {
   const [isRecording, setIsRecording] = useState(false);
