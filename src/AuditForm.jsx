@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState } from 'react';
-import { ChevronDown, ChevronUp, ChevronRight, Download, FileText, FileSpreadsheet, RefreshCw, Mic, Sparkles, Building2, Shield, Brain, Hash, CheckCircle, Search } from 'lucide-react';
+import { ChevronDown, ChevronUp, ChevronRight, Download, FileText, FileSpreadsheet, RefreshCw, Mic, Sparkles, Building2, Shield, Brain, Hash, CheckCircle, Search, Settings, Share2, KeyRound, Trash2 } from 'lucide-react';
 import { db } from "./firebase";
 import { collection, doc, setDoc, getDocs, deleteDoc } from "firebase/firestore";
 
@@ -71,6 +71,7 @@ const AuditForm = () => {
   const [savedAudits, setSavedAudits] = useState([]);
   const [currentAuditId, setCurrentAuditId] = useState(null);
   const [step, setStep] = useState('gate'); // 'gate' | 'form'
+  const [showSettings, setShowSettings] = useState(false);
   const [actor, setActor] = useState({ nombreEmpresa: '', nombreAuditor: '', rol: '', contrasena: '', contrasenaHash: '' });
 
   useEffect(() => {
@@ -84,6 +85,37 @@ const AuditForm = () => {
         });
         audits.sort((a, b) => new Date(b.lastModified) - new Date(a.lastModified));
         setSavedAudits(audits);
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const auditId = urlParams.get('id');
+        if (auditId) {
+          const targetAudit = audits.find(a => a.id === auditId);
+          if (targetAudit) {
+            const savedHash = targetAudit.data?.actor?.contrasenaHash;
+            let accessGranted = true;
+            if (savedHash) {
+              const pin = window.prompt(`Ingresa el PIN para acceder a la auditoría de ${targetAudit.nombreEmpresa}:`);
+              if (pin === null) accessGranted = false;
+              else {
+                const enteredHash = await hashPassword(pin);
+                if (enteredHash !== savedHash) {
+                  alert("PIN incorrecto. Acceso denegado.");
+                  accessGranted = false;
+                }
+              }
+            }
+            if (accessGranted) {
+              setCurrentAuditId(targetAudit.id);
+              setIntroData(targetAudit.data.introData || {});
+              setResponses(targetAudit.data.responses || {});
+              setGeneralComments(targetAudit.data.generalComments || '');
+              setActor(targetAudit.data.actor || { nombreAuditor:'', rol:'', contrasenaHash: savedHash || '' });
+              setStep('form');
+            }
+            window.history.replaceState({}, document.title, window.location.pathname);
+          }
+        }
+
       } catch (e) {
         console.error("Error cargando auditorías desde Firebase:", e);
       }
@@ -1137,20 +1169,6 @@ const startInlineDictation = (section, id) => {
                      >
                        Cargar
                      </button>
-                     <button
-                       onClick={() => {
-                         if(window.confirm(`¿Seguro que deseas borrar la auditoría de ${audit.nombreEmpresa}? Esta acción no se puede deshacer.`)) {
-                           const newList = savedAudits.filter(a => a.id !== audit.id);
-                           setSavedAudits(newList);
-                           if (db) {
-                             deleteDoc(doc(db, "auditorias", audit.id)).catch(e => console.error("Error borrando en Firebase:", e));
-                           }
-                         }
-                       }}
-                       className="px-3 py-2 bg-red-100 text-red-600 text-xs font-semibold rounded-lg hover:bg-red-200 transition"
-                     >
-                       Borrar
-                     </button>
                    </div>
                  </div>
                ))}
@@ -1189,11 +1207,62 @@ const startInlineDictation = (section, id) => {
                 <h1 className="text-2xl md:text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-gray-900 via-gray-700 to-[#00d4ff] leading-tight">
                   Auditoría de TI
                 </h1>
-                <img
-                  src={logoPng}
-                  alt="ByteWise"
-                  className="h-7 md:h-9 w-auto object-contain mt-1 shrink-0"
-                />
+                <div className="flex items-center gap-3">
+                  <div className="relative">
+                    <button onClick={() => setShowSettings(!showSettings)} className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-full transition">
+                      <Settings size={20} />
+                    </button>
+                    {showSettings && (
+                      <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-xl border border-slate-100 py-2 z-50">
+                        <button onClick={() => {
+                          const url = window.location.origin + window.location.pathname + "?id=" + currentAuditId;
+                          navigator.clipboard.writeText(url);
+                          alert("Enlace copiado al portapapeles.");
+                          setShowSettings(false);
+                        }} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2">
+                          <Share2 size={16} /> Compartir Enlace
+                        </button>
+                        <button onClick={async () => {
+                          const oldPin = prompt("Ingresa el PIN actual:");
+                          if (oldPin === null) return;
+                          const oldHash = await hashPassword(oldPin);
+                          if (oldHash !== actor.contrasenaHash) {
+                            alert("PIN incorrecto.");
+                            return;
+                          }
+                          const newPin = prompt("Ingresa el nuevo PIN:");
+                          if (newPin) {
+                            const newHash = await hashPassword(newPin);
+                            setActor(prev => ({...prev, contrasenaHash: newHash}));
+                            alert("PIN actualizado correctamente.");
+                          }
+                          setShowSettings(false);
+                        }} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2">
+                          <KeyRound size={16} /> Cambiar PIN
+                        </button>
+                        <hr className="my-1 border-slate-100" />
+                        <button onClick={async () => {
+                          if (window.confirm("¿Seguro que deseas eliminar esta auditoría permanentemente?")) {
+                            if (db) {
+                              try {
+                                await deleteDoc(doc(db, "auditorias", currentAuditId));
+                              } catch(e) { console.error(e) }
+                            }
+                            setSavedAudits(prev => prev.filter(a => a.id !== currentAuditId));
+                            setStep('gate');
+                          }
+                        }} className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 font-medium">
+                          <Trash2 size={16} /> Eliminar Auditoría
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <img
+                    src={logoPng}
+                    alt="ByteWise"
+                    className="h-7 md:h-9 w-auto object-contain mt-1 shrink-0"
+                  />
+                </div>
               </div>
               <p className="text-xs text-gray-500 mb-6">Evaluación integral de infraestructura y seguridad</p>
               
