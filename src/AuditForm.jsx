@@ -1001,31 +1001,22 @@ URL.revokeObjectURL(url);
         </button>
       )}
       <div className="relative z-10 max-w-6xl mx-auto">
-        {/* Portada */}
-        <div className="mb-6 rounded-lg overflow-hidden shadow-lg bg-slate-900/60 border border-white/10">
-          <div className="relative w-full h-48 md:h-64 flex items-center justify-center">
-            <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZGVmcz48cGF0dGVybiBpZD0iZ3JpZCIgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiBwYXR0ZXJuVW5pdHM9InVzZXJTcGFjZU9uVXNlIj48cGF0aCBkPSJNIDQwIDAgTCAwIDAgMCA0MCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJyZ2JhKDAsMjU1LDI1NSwwLjEpIiBzdHJva2Utd2lkdGg9IjEiLz48L3BhdHRlcm4+PC9kZWZzPjxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbGw9InVybCgjZ3JpZCkiLz48L3N2Zz4=')] opacity-30"></div>
-            <div className="relative z-10 text-center px-4">
-              <div className="flex items-center justify-center mb-4">
-                <img
-                  src={logoPng}
-                  alt="ByteWise"
-                  className="h-20 md:h-24 w-auto object-contain drop-shadow-[0_18px_34px_rgba(0,0,0,0.45)]"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-
         {/* Dashboard Compacto */}
         <div className="mb-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
           
           {/* Columna 1: Resumen y Acciones */}
           <div className="lg:col-span-1 bg-white rounded-lg shadow-lg p-5 md:p-6 flex flex-col justify-between border border-gray-200">
             <div>
-              <h1 className="text-2xl md:text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-gray-900 via-gray-700 to-[#00d4ff] mb-1">
-                Auditoría de TI
-              </h1>
+              <div className="flex items-start justify-between mb-1 gap-2">
+                <h1 className="text-2xl md:text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-gray-900 via-gray-700 to-[#00d4ff] leading-tight">
+                  Auditoría de TI
+                </h1>
+                <img
+                  src={logoPng}
+                  alt="ByteWise"
+                  className="h-7 md:h-9 w-auto object-contain mt-1 shrink-0"
+                />
+              </div>
               <p className="text-xs text-gray-500 mb-6">Evaluación integral de infraestructura y seguridad</p>
               
               {/* Score Dashboard */}
