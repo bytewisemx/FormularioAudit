@@ -1213,6 +1213,21 @@ const startInlineDictation = (section, id) => {
                     <Home size={20} />
                   </button>
                   <div className="relative">
+                    <button onClick={() => setShowExportMenu(!showExportMenu)} className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-full transition" title="Exportar">
+                      <Download size={20} />
+                    </button>
+                    {showExportMenu && (
+                      <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-xl border border-slate-100 py-2 z-50">
+                        <button onClick={() => { exportToDocxPro(); setShowExportMenu(false); }} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2">
+                          <FileText size={16} /> Descargar en Word
+                        </button>
+                        <button onClick={() => { exportToExcel(); setShowExportMenu(false); }} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2">
+                          <FileSpreadsheet size={16} /> Descargar en Excel
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <div className="relative">
                     <button onClick={() => setShowSettings(!showSettings)} className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-full transition" title="Configuración">
                       <Settings size={20} />
                     </button>
@@ -1291,21 +1306,6 @@ const startInlineDictation = (section, id) => {
               </div>
             </div>
 
-            {/* Acciones Rápidas */}
-            <div className="mt-6 flex flex-wrap gap-2 relative">
-              <button onClick={() => setShowExportMenu(!showExportMenu)} className="w-full text-xs items-center justify-center gap-1.5 bg-slate-900 text-white px-3 py-2.5 rounded-md hover:bg-slate-800 transition-all flex shadow-sm">
-                <Download size={14} /> Exportar Auditoría
-              </button>
-              {showExportMenu && (
-                <div className="absolute top-full left-0 mt-2 w-full bg-white rounded-md shadow-xl border border-slate-200 py-1 z-50 overflow-hidden">
-                  <button onClick={() => { exportToDocxPro(); setShowExportMenu(false); }} className="w-full text-left px-4 py-3 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2">
-                    <FileText size={16} /> Descargar en Word
-                  </button>
-                  <button onClick={() => { exportToExcel(); setShowExportMenu(false); }} className="w-full text-left px-4 py-3 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 border-t border-slate-100">
-                    <FileSpreadsheet size={16} /> Descargar en Excel
-                  </button>
-                </div>
-              )}
             </div>
           </div>
 
