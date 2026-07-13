@@ -62,7 +62,7 @@ const AuditForm = () => {
   const [savedAudits, setSavedAudits] = useState([]);
   const [currentAuditId, setCurrentAuditId] = useState(null);
   const [step, setStep] = useState('gate'); // 'gate' | 'form'
-  const [actor, setActor] = useState({ nombreAuditor: '', rol: '' });
+  const [actor, setActor] = useState({ nombreEmpresa: '', nombreAuditor: '', rol: '' });
 
   useEffect(() => {
     const loaded = localStorage.getItem('auditoria_ti_saved_audits');
@@ -997,49 +997,64 @@ const startInlineDictation = (section, id) => {
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-cyan-900 to-blue-900 p-4 md:p-8 flex flex-col items-center justify-center gap-6">
         
         {/* NUEVA AUDITORIA */}
-        <div className="w-full max-w-xl bg-white rounded-2xl shadow-2xl p-6 md:p-8">
-          <h1 className="text-2xl md:text-3xl font-bold text-gray-800">Nueva Auditoría</h1>
-          <p className="text-gray-600 mt-1">Identifica quién realiza la evaluación y el rol.</p>
+        <div className="w-full max-w-xl bg-white rounded-3xl shadow-2xl p-8 md:p-10 border-t-4 border-[#00d4ff]">
+          <div className="flex flex-col items-center mb-8">
+             <div className="w-16 h-16 bg-slate-900 rounded-2xl flex items-center justify-center shadow-lg mb-4">
+                <Shield size={32} className="text-[#00d4ff]" />
+             </div>
+             <h1 className="text-2xl md:text-3xl font-extrabold text-slate-800 text-center">Auditoría de TI</h1>
+             <p className="text-slate-500 mt-2 text-center text-sm font-medium">Configura tu nueva sesión de evaluación</p>
+          </div>
 
-          <div className="mt-6 space-y-4">
+          <div className="space-y-5">
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Nombre de quien audita *</label>
+              <label className="block text-sm font-bold text-slate-700 mb-1.5">Nombre de la Empresa *</label>
+              <input
+                type="text"
+                value={actor.nombreEmpresa}
+                onChange={(e) => setActor(prev => ({ ...prev, nombreEmpresa: e.target.value }))}
+                placeholder="Ej: ByteWise S.A. de C.V."
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#00d4ff] focus:border-transparent transition-all outline-none"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-1.5">Nombre de quien audita *</label>
               <input
                 type="text"
                 value={actor.nombreAuditor}
                 onChange={(e) => setActor(prev => ({ ...prev, nombreAuditor: e.target.value }))}
                 placeholder="Ej: Oscar Pérez"
-                className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#00d4ff] focus:border-transparent transition-all outline-none"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Rol *</label>
+              <label className="block text-sm font-bold text-slate-700 mb-1.5">Rol en la evaluación *</label>
               <select
                 value={actor.rol}
                 onChange={(e) => setActor(prev => ({ ...prev, rol: e.target.value }))}
-                className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#00d4ff] focus:border-transparent transition-all outline-none appearance-none"
               >
-                <option value="">Seleccionar...</option>
-                <option value="Auditor">Auditor</option>
-                <option value="Cliente">Cliente</option>
+                <option value="">Selecciona tu rol...</option>
+                <option value="Auditor">Auditor (Realiza la evaluación)</option>
+                <option value="Cliente">Cliente (Contesta y aporta evidencia)</option>
               </select>
-              <div className="mt-2 text-xs text-gray-500">* Auditor: evalúa. Cliente: contesta y aporta evidencia.</div>
             </div>
 
             <button
               onClick={() => {
-                if (!actor.nombreAuditor.trim() || !actor.rol) {
-                  alert("Llena los campos para continuar.");
+                if (!actor.nombreEmpresa.trim() || !actor.nombreAuditor.trim() || !actor.rol) {
+                  alert("Por favor llena todos los campos obligatorios para continuar.");
                   return;
                 }
                 setCurrentAuditId(Date.now().toString());
-                setIntroData(prev => ({...prev, nombre: actor.nombreAuditor}));
+                setIntroData(prev => ({...prev, nombreEmpresa: actor.nombreEmpresa, nombre: actor.nombreAuditor}));
                 setStep('form');
               }}
-              className="w-full mt-2 flex items-center justify-center gap-2 bg-gradient-to-r from-cyan-500 to-blue-600 text-white px-6 py-3 rounded-lg hover:shadow-lg transition-all font-semibold"
+              className="w-full mt-4 flex items-center justify-center gap-2 bg-slate-900 text-white px-6 py-4 rounded-xl hover:bg-slate-800 transition-all font-bold shadow-lg shadow-slate-900/20"
             >
-              Iniciar Nueva Auditoría
+              Comenzar Auditoría <ChevronRight size={18} />
             </button>
           </div>
         </div>
