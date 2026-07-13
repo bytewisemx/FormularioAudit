@@ -1017,174 +1017,100 @@ URL.revokeObjectURL(url);
           </div>
         </div>
 
-        {/* Header */}
-        <div className="bg-white rounded-lg shadow-lg p-6 md:p-8 mb-6 border border-gray-200">
-          <h1 className="text-3xl md:text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-gray-900 via-gray-700 to-[#00d4ff] mb-2">
-            Auditoría de TI
-          </h1>
-          <p className="text-gray-600">Evaluación integral de infraestructura, seguridad y cumplimiento</p>
+        {/* Dashboard Compacto */}
+        <div className="mb-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
           
-          {/* Score Dashboard */}
-          <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className={`bg-gradient-to-r ${getScoreLevel(calculateTotalScore()).color} rounded-md p-6 text-white shadow-sm border border-white/10`}>
-              <div className="text-sm opacity-90">Puntuación Total</div>
-              <div className="text-4xl font-bold">{(calculateTotalScore() * getTotalQuestions()).toFixed(0)} pts</div>
-              <div className="text-sm mt-2 font-semibold">{getScoreLevel(calculateTotalScore()).nivel}</div>
-              <div className="text-xs mt-1 opacity-90">{getScoreLevel(calculateTotalScore()).descripcion}</div>
-            </div>
-            <div className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-md p-6 text-white shadow-sm border border-white/10">
-              <div className="text-sm opacity-90">Progreso de Evaluación</div>
-              <div className="text-4xl font-bold">
-                {getAnsweredQuestions()}/{getTotalQuestions()}
-              </div>
-              <div className="text-sm mt-2">
-                {((getAnsweredQuestions() / getTotalQuestions()) * 100).toFixed(0)}% Completado
-              </div>
-            </div>
-          </div>
-<div className="mt-6 relative">
-  <label className="block text-sm font-bold text-gray-700 mb-2">
-    Comentarios Generales para el Reporte
-  </label>
-
-<textarea
-  value={generalComments}
-  onChange={(e) => setGeneralComments(e.target.value)}
-  rows={10}
-  className="w-full whitespace-pre-wrap px-4 py-3 border-2 border-gray-300 rounded-lg resize-y"
-/>
-
-
-  <button
-    type="button"
-    onClick={rewriteCommentsWithAI}
-    disabled={!canRewrite}
-    title={!hasComments ? 'Escribe comentarios para habilitar' : (rewriting ? 'Mejorando...' : 'Mejorar con IA')}
-    className={[
-      "absolute top-9 right-3 w-9 h-9 rounded-full flex items-center justify-center",
-      "border border-gray-200 bg-white shadow-sm transition",
-      canRewrite ? "hover:shadow-md hover:scale-105" : "opacity-40 cursor-not-allowed",
-      rewriting ? "animate-pulse" : ""
-    ].join(" ")}
-  >
-    <Sparkles size={18} className={canRewrite ? "text-indigo-600" : "text-gray-400"} />
-  </button>
-</div>
-
-
-
-
-        <button
-  onClick={exportToDocxPro}
-  className="mt-4 w-full md:w-auto flex items-center justify-center gap-2 bg-slate-900 text-white px-6 py-3 rounded-md hover:bg-slate-800 hover:shadow-md transition-all border border-white/10"
->
-  <FileText size={20} />
-  Exportar Word (.docx)
-</button>
-
-
-          <button
-            onClick={exportToExcel}
-            
-             className="mt-4 w-full md:w-auto flex items-center justify-center gap-2 bg-white text-slate-900 px-6 py-3 rounded-md hover:bg-slate-50 hover:shadow-md transition-all border border-slate-200"
-          >
-            <FileSpreadsheet size={20} />
-            Exportar CSV/Excel
-          </button>
-
-          <button
-            onClick={startNewEvaluation}
-            className="mt-4 ml-0 md:ml-3 w-full md:w-auto flex items-center justify-center gap-2 bg-white text-slate-900 px-6 py-3 rounded-md hover:bg-slate-50 hover:shadow-md transition-all border border-slate-200"
-          >
-            <RefreshCw size={20} />
-            Nueva Evaluación
-          </button>
-        </div>
-
-        {/* Puntuación por Áreas */}
-        <div className="bg-white rounded-lg shadow-lg p-6 md:p-8 mb-6 border border-gray-200">
-          <div className="flex items-end justify-between mb-5">
+          {/* Columna 1: Resumen y Acciones */}
+          <div className="lg:col-span-1 bg-white rounded-lg shadow-lg p-5 md:p-6 flex flex-col justify-between border border-gray-200">
             <div>
-              <h2 className="text-2xl font-bold text-gray-900">Puntuación por Áreas</h2>
-              <p className="text-sm text-gray-500">Resumen ejecutivo de avance y promedio</p>
+              <h1 className="text-2xl md:text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-gray-900 via-gray-700 to-[#00d4ff] mb-1">
+                Auditoría de TI
+              </h1>
+              <p className="text-xs text-gray-500 mb-6">Evaluación integral de infraestructura y seguridad</p>
+              
+              {/* Score Dashboard */}
+              <div className="space-y-3">
+                <div className={`bg-gradient-to-r ${getScoreLevel(calculateTotalScore()).color} rounded-md p-4 text-white shadow-sm border border-white/10`}>
+                  <div className="text-xs opacity-90 mb-1">Puntuación Total</div>
+                  <div className="text-3xl font-bold">{(calculateTotalScore() * getTotalQuestions()).toFixed(0)} pts</div>
+                  <div className="text-xs mt-1 font-semibold">{getScoreLevel(calculateTotalScore()).nivel}</div>
+                </div>
+                
+                <div className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-md p-4 text-white shadow-sm border border-white/10">
+                  <div className="flex justify-between items-end mb-1">
+                    <div className="text-xs opacity-90">Avance</div>
+                    <div className="text-lg font-bold">{((getAnsweredQuestions() / getTotalQuestions()) * 100).toFixed(0)}%</div>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-slate-700 overflow-hidden mb-1.5">
+                    <div className="h-1.5 rounded-full bg-[#00d4ff] transition-all duration-500" style={{ width: `${(getAnsweredQuestions() / getTotalQuestions()) * 100}%` }} />
+                  </div>
+                  <div className="text-[10px] text-gray-400 text-right">{getAnsweredQuestions()}/{getTotalQuestions()} respondidas</div>
+                </div>
+              </div>
             </div>
-            <div className="hidden md:block text-xs text-gray-400">
-              Acento: <span className="font-semibold text-[#00d4ff]">#00d4ff</span>
+
+            {/* Acciones Rápidas */}
+            <div className="mt-6 flex flex-wrap gap-2">
+              <button onClick={exportToDocxPro} className="flex-1 text-xs items-center justify-center gap-1.5 bg-slate-900 text-white px-3 py-2.5 rounded-md hover:bg-slate-800 transition-all flex shadow-sm">
+                <FileText size={14} /> Word
+              </button>
+              <button onClick={exportToExcel} className="flex-1 text-xs items-center justify-center gap-1.5 bg-white text-slate-900 px-3 py-2.5 rounded-md hover:bg-slate-50 transition-all border border-slate-200 flex shadow-sm">
+                <FileSpreadsheet size={14} /> Excel
+              </button>
+              <button onClick={startNewEvaluation} className="w-full mt-1 text-xs items-center justify-center gap-1.5 bg-white text-red-600 px-3 py-2.5 rounded-md hover:bg-red-50 transition-all border border-red-200 flex shadow-sm">
+                <RefreshCw size={14} /> Reiniciar
+              </button>
             </div>
           </div>
 
-          {(() => {
-            const getAreaIcon = (areaName) => {
-              if (areaName === 'Infraestructura del Site') return <Building2 size={24} className="text-cyan-600" />;
-              if (areaName === 'Seguridad de la Información') return <Shield size={24} className="text-cyan-600" />;
-              if (areaName === 'Cláusulas ISO 27001') return <FileText size={24} className="text-cyan-600" />;
-              if (areaName === 'IA y LFPDPPP') return <Brain size={24} className="text-cyan-600" />;
-              return <Hash size={24} className="text-cyan-600" />;
-            };
+          {/* Columna 2: Puntuación por Áreas */}
+          <div className="lg:col-span-2 bg-white rounded-lg shadow-lg p-5 md:p-6 border border-gray-200 flex flex-col">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-gray-900">Desglose por Áreas</h2>
+              <span className="text-[10px] bg-cyan-50 text-cyan-700 px-2 py-1 rounded-full font-semibold">Tiempo Real</span>
+            </div>
+            
+            {(() => {
+              const getAreaIcon = (areaName) => {
+                if (areaName === 'Infraestructura del Site') return <Building2 size={16} className="text-cyan-600" />;
+                if (areaName === 'Seguridad de la Información') return <Shield size={16} className="text-cyan-600" />;
+                if (areaName === 'Cláusulas ISO 27001') return <FileText size={16} className="text-cyan-600" />;
+                if (areaName === 'IA y LFPDPPP') return <Brain size={16} className="text-cyan-600" />;
+                return <Hash size={16} className="text-cyan-600" />;
+              };
 
-            const rows = Object.entries(calculateAreaScores());
-            return (
-              <div className="overflow-hidden rounded-md border border-gray-200">
-                <div className="hidden md:grid grid-cols-[1.5fr_.7fr_.7fr_.9fr] bg-gray-50 px-5 py-3 text-[11px] font-semibold text-gray-500">
-                  <div>Área</div>
-                  <div className="text-right">%</div>
-                  <div className="text-right">Promedio</div>
-                  <div className="text-right">Respondidas</div>
-                </div>
-
-                <div className="divide-y divide-gray-100">
+              const rows = Object.entries(calculateAreaScores());
+              return (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 h-full content-start">
                   {rows.map(([area, data]) => {
                     const answeredPct = data.total > 0 ? (data.answered / data.total) * 100 : 0;
                     return (
-                      <div key={area} className="px-5 py-4">
-                        <div className="grid grid-cols-1 md:grid-cols-[1.5fr_.7fr_.7fr_.9fr] gap-3 items-center">
-                          <div className="flex items-center gap-3 min-w-0">
-                            <div className="flex items-center justify-center w-10 h-10 bg-cyan-50 rounded-full shrink-0">
+                      <div key={area} className="p-3 border border-gray-100 rounded-lg bg-gray-50 flex flex-col justify-center relative overflow-hidden group hover:border-cyan-200 transition-colors">
+                        {/* Progress Background Hint */}
+                        <div className="absolute bottom-0 left-0 h-1 bg-[#00d4ff]/80 transition-all duration-500" style={{ width: `${answeredPct}%` }} />
+                        
+                        <div className="flex items-center justify-between mb-1">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="flex items-center justify-center w-8 h-8 bg-white border border-gray-200 shadow-sm rounded-full shrink-0">
                               {getAreaIcon(area)}
                             </div>
                             <div className="min-w-0">
-                              <div className="font-semibold text-gray-900 truncate">{area}</div>
-                              <div className="text-xs text-gray-500 md:hidden">
-                                {data.answered}/{data.total} respondidas
-                              </div>
+                              <div className="font-semibold text-xs text-gray-900 truncate pr-2" title={area}>{area}</div>
+                              <div className="text-[10px] text-gray-500">{data.answered}/{data.total} resp.</div>
                             </div>
                           </div>
-
-                          <div className="md:text-right">
-                            <div className="inline-flex items-center gap-2 md:justify-end">
-                              <span className="text-sm font-semibold text-gray-900">{data.percentage}%</span>
-                              <span className="hidden md:inline text-[11px] text-gray-400">avance</span>
-                            </div>
+                          <div className="text-right shrink-0">
+                            <div className="font-bold text-sm text-cyan-700">{data.percentage}%</div>
+                            <div className="text-[10px] text-gray-500 font-medium">({data.score}/4)</div>
                           </div>
-
-                          <div className="md:text-right">
-                            <span className="text-sm font-semibold text-gray-900">{data.score}/4</span>
-                            <span className="ml-2 text-[11px] text-gray-400">prom.</span>
-                          </div>
-
-                          <div className="hidden md:block text-right text-sm font-semibold text-gray-900">
-                            {data.answered}/{data.total}
-                          </div>
-                        </div>
-
-                        <div className="mt-3 h-2 rounded-full bg-gray-100 overflow-hidden">
-                          <div
-                            className="h-2 rounded-full bg-[#00d4ff] transition-all duration-500"
-                            style={{ width: `${answeredPct}%` }}
-                          />
-                        </div>
-
-                        <div className="mt-2 flex justify-between text-[11px] text-gray-500">
-                          <span>Progreso</span>
-                          <span className="font-medium text-gray-700">{answeredPct.toFixed(0)}%</span>
                         </div>
                       </div>
                     );
                   })}
                 </div>
-              </div>
-            );
-          })()}
+              );
+            })()}
+          </div>
         </div>
 
         {/* Secciones y Navegación Lateral */}
@@ -1231,6 +1157,17 @@ URL.revokeObjectURL(url);
                 </button>
               );
             })}
+
+            <button
+              onClick={() => setActiveSection('Reporte Final')}
+              className={`w-full text-left px-4 py-3 rounded-lg text-sm font-semibold transition-all flex items-center justify-between mt-6 ${
+                activeSection === 'Reporte Final' 
+                ? 'bg-amber-50 text-amber-700 border-l-4 border-amber-500 shadow-sm' 
+                : 'text-gray-600 hover:bg-gray-100 border-l-4 border-transparent'
+              }`}
+            >
+              <span className="truncate">Reporte Final</span>
+            </button>
           </div>
 
           {/* Área de Contenido Principal */}
@@ -1416,6 +1353,47 @@ URL.revokeObjectURL(url);
             </div>
           </div>
         )}
+
+            {/* Sección de Reporte Final */}
+            {activeSection === 'Reporte Final' && (
+              <div className="mb-4 bg-white rounded-xl shadow-lg overflow-hidden border border-slate-200 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                <div className="p-6 bg-slate-50 border-b flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-900">Reporte Final</h2>
+                    <p className="text-sm text-slate-600">Conclusiones, hallazgos principales y comentarios de cierre.</p>
+                  </div>
+                </div>
+                
+                <div className="p-6 relative">
+                  <label className="block text-sm font-bold text-gray-700 mb-2">
+                    Comentarios Generales para el Reporte
+                  </label>
+
+                  <textarea
+                    value={generalComments}
+                    onChange={(e) => setGeneralComments(e.target.value)}
+                    rows={12}
+                    placeholder="Escribe o dicta las conclusiones de la auditoría..."
+                    className="w-full whitespace-pre-wrap px-4 py-3 border-2 border-gray-300 rounded-lg resize-y focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={rewriteCommentsWithAI}
+                    disabled={!canRewrite}
+                    title={!hasComments ? 'Escribe comentarios para habilitar' : (rewriting ? 'Mejorando...' : 'Mejorar con IA')}
+                    className={[
+                      "absolute top-9 right-9 w-9 h-9 rounded-full flex items-center justify-center",
+                      "border border-gray-200 bg-white shadow-sm transition",
+                      canRewrite ? "hover:shadow-md hover:scale-105" : "opacity-40 cursor-not-allowed",
+                      rewriting ? "animate-pulse" : ""
+                    ].join(" ")}
+                  >
+                    <Sparkles size={18} className={canRewrite ? "text-indigo-600" : "text-gray-400"} />
+                  </button>
+                </div>
+              </div>
+            )}
 
         {/* Secciones de evaluación activas */}
             {Object.keys(sections).map(section => {
