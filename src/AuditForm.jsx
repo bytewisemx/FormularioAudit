@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState } from 'react';
-import { ChevronDown, ChevronUp, ChevronRight, Download, FileText, FileSpreadsheet, RefreshCw, Mic, Sparkles, Building2, Shield, Brain, Hash, CheckCircle, Search, Settings, Share2, KeyRound, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, ChevronRight, Download, FileText, FileSpreadsheet, RefreshCw, Mic, Sparkles, Building2, Shield, Brain, Hash, CheckCircle, Search, Settings, Share2, KeyRound, Trash2, Home } from 'lucide-react';
 import { db } from "./firebase";
 import { collection, doc, setDoc, getDocs, deleteDoc } from "firebase/firestore";
 
@@ -1208,8 +1208,11 @@ const startInlineDictation = (section, id) => {
                   Auditoría de TI
                 </h1>
                 <div className="flex items-center gap-3">
+                  <button onClick={() => setStep('gate')} className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-full transition" title="Volver al Inicio">
+                    <Home size={20} />
+                  </button>
                   <div className="relative">
-                    <button onClick={() => setShowSettings(!showSettings)} className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-full transition">
+                    <button onClick={() => setShowSettings(!showSettings)} className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-full transition" title="Configuración">
                       <Settings size={20} />
                     </button>
                     {showSettings && (
