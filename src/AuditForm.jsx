@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { ChevronDown, ChevronUp, Download, FileText, FileSpreadsheet, RefreshCw, Mic, Sparkles, Building2, Shield, Brain, Hash, CheckCircle, Search } from 'lucide-react';
 
 import { saveAs } from "file-saver";
+import ExcelJS from "exceljs";
 import {
   Document,
   Packer,
@@ -853,81 +854,118 @@ const startInlineDictation = (section, id) => {
 
 
 
-  const exportToExcel = () => {
-  const avgScore = calculateTotalScore();
-  const totalScore = avgScore * getTotalQuestions();
-  const scoreLevel = getScoreLevel(avgScore);
-  const areaScores = calculateAreaScores();
+  const exportToExcel = async () => {
+    try {
+      const avgScore = calculateTotalScore();
+      const totalScore = avgScore * getTotalQuestions();
+      const scoreLevel = getScoreLevel(avgScore);
+      const areaScores = calculateAreaScores();
 
-  let csvContent = "";
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = 'Auditoría de TI';
+      workbook.created = new Date();
 
-  // Encabezado
-  csvContent += "REPORTE DE AUDITORÍA DE TI\n\n";
+      const sheet = workbook.addWorksheet('Reporte de Auditoría');
 
-  // Información General
-  csvContent += "INFORMACIÓN GENERAL\n";
-  csvContent += `Empresa,${introData.nombreEmpresa || 'N/A'}\n`;
-  csvContent += `Nombre,${introData.nombre || 'N/A'}\n`;
-  csvContent += `Puesto,${introData.puesto || 'N/A'}\n`;
-  csvContent += `Contacto,${introData.contacto || 'N/A'}\n`;
-  csvContent += `Giro de la empresa,${introData.giro || 'N/A'}\n`;
-  csvContent += `Colaboradores,${introData.colaboradores || 'N/A'}\n`;
-  csvContent += `Modalidad,${introData.modalidad || 'N/A'}\n`;
-  csvContent += `Proporciona equipos,${introData.proporcionaEquipos || 'N/A'}\n`;
-  csvContent += `Tipo de equipos,${introData.tipoEquipos || 'N/A'}\n`;
-  csvContent += `Estructura TI,${introData.estructuraTI || 'N/A'}\n`;
-  csvContent += `Dependencia de red,${introData.dependenciaRed || 'N/A'}\n`;
-  csvContent += `Incidencias recientes,${introData.incidenciasRecientes || 'N/A'}\n\n`;
+      // Helper to add a styled title
+      const addHeader = (title) => {
+        const row = sheet.addRow([title]);
+        row.getCell(1).font = { size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
+        row.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0070C0' } };
+        sheet.mergeCells(row.number, 1, row.number, 6);
+        return row;
+      };
 
-  // Puntuación General
-  csvContent += "PUNTUACIÓN GENERAL\n";
-  csvContent += `Puntuación Total,${totalScore.toFixed(0)}\n`;
-  csvContent += `Promedio,${avgScore.toFixed(2)}\n`;
-  csvContent += `Nivel,${scoreLevel.nivel}\n`;
-  csvContent += `Descripción,${scoreLevel.descripcion}\n\n`;
+      // 1. Información General
+      addHeader('INFORMACIÓN GENERAL');
+      sheet.addRow(['Empresa', introData.nombreEmpresa || 'N/A']);
+      sheet.addRow(['Nombre', introData.nombre || 'N/A']);
+      sheet.addRow(['Puesto', introData.puesto || 'N/A']);
+      sheet.addRow(['Contacto', introData.contacto || 'N/A']);
+      sheet.addRow(['Giro de la empresa', introData.giro || 'N/A']);
+      sheet.addRow(['Colaboradores', introData.colaboradores || 'N/A']);
+      sheet.addRow(['Modalidad', introData.modalidad || 'N/A']);
+      sheet.addRow(['Proporciona equipos', introData.proporcionaEquipos || 'N/A']);
+      sheet.addRow(['Tipo de equipos', introData.tipoEquipos || 'N/A']);
+      sheet.addRow(['Estructura TI', introData.estructuraTI || 'N/A']);
+      sheet.addRow(['Dependencia de red', introData.dependenciaRed || 'N/A']);
+      sheet.addRow(['Incidencias recientes', introData.incidenciasRecientes || 'N/A']);
+      sheet.addRow([]);
 
-  // Puntuación por Áreas
-  csvContent += "PUNTUACIÓN POR ÁREAS\n";
-  csvContent += "Área,Porcentaje,Promedio,Respondidas,Total\n";
-  Object.entries(areaScores).forEach(([area, data]) => {
-    csvContent += `${area},${data.percentage}%,${data.score},${data.answered},${data.total}\n`;
-  });
-  csvContent += "\n";
+      // 2. Puntuación General
+      addHeader('PUNTUACIÓN GENERAL');
+      sheet.addRow(['Puntuación Total', totalScore.toFixed(0)]);
+      sheet.addRow(['Promedio', avgScore.toFixed(2)]);
+      sheet.addRow(['Nivel', scoreLevel.nivel]);
+      sheet.addRow(['Descripción', scoreLevel.descripcion]);
+      sheet.addRow([]);
 
-  // Detalle
-  csvContent += "DETALLE DE EVALUACIÓN\n";
-  csvContent += "Sección,ID,Pregunta,Evaluación,Evidencia,Observaciones\n";
+      // 3. Puntuación por Áreas
+      addHeader('PUNTUACIÓN POR ÁREAS');
+      const areaHeader = sheet.addRow(['Área', 'Porcentaje', 'Promedio', 'Respondidas', 'Total']);
+      areaHeader.eachCell(c => { 
+        c.font = { bold: true }; 
+        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E0E0' } }; 
+      });
+      Object.entries(areaScores).forEach(([area, data]) => {
+        sheet.addRow([area, `${data.percentage}%`, data.score, data.answered, data.total]);
+      });
+      sheet.addRow([]);
 
-  Object.keys(sections).forEach(section => {
-    sections[section].forEach(q => {
-      const key = `${section}-${q.id}`;
-      const r = responses[key] || {};
-      csvContent += `"${section}","${q.id}","${q.pregunta.replace(/"/g,'""')}",` +
-                    `"${r.evaluacion ?? ''}","${(r.evidencia || '').replace(/"/g,'""')}",` +
-                    `"${(r.observaciones || '').replace(/"/g,'""')}"\n`;
-    });
-  });
+      // 4. Detalle
+      addHeader('DETALLE DE EVALUACIÓN');
+      const detailHeader = sheet.addRow(['Sección', 'ID', 'Pregunta', 'Evaluación', 'Evidencia', 'Observaciones']);
+      detailHeader.eachCell(c => { 
+        c.font = { bold: true }; 
+        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E0E0' } }; 
+      });
 
-  // 🔥 DESCARGA SEGURA
- // 🔧 Forzar UTF-8 para Excel (BOM)
-const BOM = '\uFEFF';
-const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
-const url = URL.createObjectURL(blob);
+      Object.keys(sections).forEach(section => {
+        sections[section].forEach(q => {
+          const key = `${section}-${q.id}`;
+          const r = responses[key] || {};
+          const row = sheet.addRow([
+            section,
+            q.id,
+            q.pregunta,
+            r.evaluacion || 'Sin evaluar',
+            r.evidencia || '',
+            r.observaciones || ''
+          ]);
+          // Wrap text
+          row.eachCell(c => { c.alignment = { wrapText: true, vertical: 'top' }; });
+        });
+      });
 
-const link = document.createElement('a');
-link.href = url;
-link.download = 'auditoria-ti.csv';
-document.body.appendChild(link);
-link.click();
-document.body.removeChild(link);
+      // 5. Comentarios Generales
+      if (generalComments) {
+        sheet.addRow([]);
+        addHeader('COMENTARIOS GENERALES (REPORTE FINAL)');
+        const commentRow = sheet.addRow([generalComments]);
+        sheet.mergeCells(commentRow.number, 1, commentRow.number, 6);
+        commentRow.height = 100;
+        commentRow.getCell(1).alignment = { wrapText: true, vertical: 'top' };
+      }
 
-URL.revokeObjectURL(url);
+      // Format Columns
+      sheet.getColumn(1).width = 25; // Sección / Área
+      sheet.getColumn(2).width = 10; // ID / Porcentaje
+      sheet.getColumn(3).width = 50; // Pregunta
+      sheet.getColumn(4).width = 20; // Evaluación
+      sheet.getColumn(5).width = 30; // Evidencia
+      sheet.getColumn(6).width = 40; // Observaciones
 
+      // Save file
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const nombreEmpresa = introData.nombreEmpresa ? introData.nombreEmpresa.replace(/[^a-z0-9]/gi, '_').toLowerCase() : 'empresa';
+      saveAs(blob, `Auditoria_TI_${nombreEmpresa}.xlsx`);
 
-
-
-
-};
+    } catch (error) {
+      console.error("Error al exportar Excel:", error);
+      alert("Hubo un error al generar el archivo Excel.");
+    }
+  };
 
  
 
