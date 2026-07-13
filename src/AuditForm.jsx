@@ -72,6 +72,7 @@ const AuditForm = () => {
   const [currentAuditId, setCurrentAuditId] = useState(null);
   const [step, setStep] = useState('gate'); // 'gate' | 'form'
   const [showSettings, setShowSettings] = useState(false);
+  const [showExportMenu, setShowExportMenu] = useState(false);
   const [actor, setActor] = useState({ nombreEmpresa: '', nombreAuditor: '', rol: '', contrasena: '', contrasenaHash: '' });
 
   useEffect(() => {
@@ -1291,16 +1292,20 @@ const startInlineDictation = (section, id) => {
             </div>
 
             {/* Acciones Rápidas */}
-            <div className="mt-6 flex flex-wrap gap-2">
-              <button onClick={exportToDocxPro} className="flex-1 text-xs items-center justify-center gap-1.5 bg-slate-900 text-white px-3 py-2.5 rounded-md hover:bg-slate-800 transition-all flex shadow-sm">
-                <FileText size={14} /> Word
+            <div className="mt-6 flex flex-wrap gap-2 relative">
+              <button onClick={() => setShowExportMenu(!showExportMenu)} className="w-full text-xs items-center justify-center gap-1.5 bg-slate-900 text-white px-3 py-2.5 rounded-md hover:bg-slate-800 transition-all flex shadow-sm">
+                <Download size={14} /> Exportar Auditoría
               </button>
-              <button onClick={exportToExcel} className="flex-1 text-xs items-center justify-center gap-1.5 bg-white text-slate-900 px-3 py-2.5 rounded-md hover:bg-slate-50 transition-all border border-slate-200 flex shadow-sm">
-                <FileSpreadsheet size={14} /> Excel
-              </button>
-              <button onClick={startNewEvaluation} className="w-full mt-1 text-xs items-center justify-center gap-1.5 bg-white text-red-600 px-3 py-2.5 rounded-md hover:bg-red-50 transition-all border border-red-200 flex shadow-sm">
-                <RefreshCw size={14} /> Reiniciar
-              </button>
+              {showExportMenu && (
+                <div className="absolute top-full left-0 mt-2 w-full bg-white rounded-md shadow-xl border border-slate-200 py-1 z-50 overflow-hidden">
+                  <button onClick={() => { exportToDocxPro(); setShowExportMenu(false); }} className="w-full text-left px-4 py-3 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2">
+                    <FileText size={16} /> Descargar en Word
+                  </button>
+                  <button onClick={() => { exportToExcel(); setShowExportMenu(false); }} className="w-full text-left px-4 py-3 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 border-t border-slate-100">
+                    <FileSpreadsheet size={16} /> Descargar en Excel
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
