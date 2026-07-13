@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState } from 'react';
-import { ChevronDown, ChevronUp, Download, FileText, FileSpreadsheet, RefreshCw } from 'lucide-react';
+import { ChevronDown, ChevronUp, Download, FileText, FileSpreadsheet, RefreshCw, Mic, Sparkles } from 'lucide-react';
 
 import { saveAs } from "file-saver";
 import {
@@ -54,6 +54,8 @@ const AuditForm = () => {
     incidenciasRecientes: ''
   });
   const [rewriting, setRewriting] = useState(false);
+  const [dictatingKey, setDictatingKey] = useState(null);
+  const [rewritingKey, setRewritingKey] = useState(null);
 
   useEffect(() => {
     const onScroll = () => setShowScrollTop(window.scrollY > 500);
@@ -135,7 +137,115 @@ const rewriteCommentsWithAI = async () => {
   } catch (err) {
     console.error(err);
     alert("Error al reescribir con IA");
+  } finally {
+    setRewriting(false);
   }
+};
+
+
+const rewriteObservationWithAI = async (section, item) => {
+  const key = `${section}-${item.id}`;
+  const userText = (responses[key]?.observaciones || "").trim();
+  if (!userText) return alert("Escribe o dicta algo en la observación primero.");
+
+  setRewritingKey(key);
+  try {
+    const res = await fetch(
+      "https://n8n-n8n.bg5sbc.easypanel.host/webhook/rewrite-comments",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": "bw_ai_comments_9F3xL8Qp_2026",
+        },
+        body: JSON.stringify({
+          text: userText,
+          context: {
+            tipo: "observacion_especifica",
+            pregunta: item.pregunta,
+            requisito: item.requisito || "",
+            empresa: introData.nombreEmpresa || "",
+          }
+        }),
+      }
+    );
+
+    if (!res.ok) throw new Error("Error al llamar IA");
+
+    const data = await res.json();
+    let cleanText = String(data.rewritten || "")
+      .replace(/^({\s*)?"?rewritten"?\s*:\s*"?/i, "") 
+      .replace(/"}\s*$/, "")                          
+      .replace(/\\n/g, "\n")                           
+      .replace(/\\r/g, "")
+      .replace(/"\s*$/, "")  
+      .replace(/\s*}\s*$/, "") 
+      .trim();
+
+    updateResponse(section, item.id, 'observaciones', cleanText);
+  } catch (err) {
+    console.error(err);
+    alert("Error al mejorar la observación con IA");
+  } finally {
+    setRewritingKey(null);
+  }
+};
+
+const startInlineDictation = (section, id) => {
+  const key = `${section}-${id}`;
+  
+  if (dictatingKey === key) {
+    setDictatingKey(null);
+    if (window.inlineRecognition) window.inlineRecognition.stop();
+    return;
+  }
+
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) return alert("Dictado no soportado en este navegador.");
+  
+  if (window.inlineRecognition) {
+    window.inlineRecognition.stop();
+  }
+
+  const recognition = new SpeechRecognition();
+  recognition.continuous = false;
+  recognition.interimResults = true;
+  recognition.lang = 'es-MX';
+
+  setDictatingKey(key);
+
+  recognition.onresult = (event) => {
+    let finalChunk = '';
+    for (let i = event.resultIndex; i < event.results.length; ++i) {
+      if (event.results[i].isFinal) {
+        finalChunk += event.results[i][0].transcript + ' ';
+      }
+    }
+    if (finalChunk) {
+      setResponses(prev => {
+         const current = prev[key]?.observaciones || '';
+         const separator = current && !current.endsWith(' ') ? ' ' : '';
+         return {
+           ...prev,
+           [key]: {
+             ...prev[key],
+             observaciones: current + separator + finalChunk.trim()
+           }
+         }
+      });
+    }
+  };
+
+  recognition.onerror = () => {
+    setDictatingKey(null);
+  };
+
+  recognition.onend = () => {
+    setDictatingKey(null);
+  };
+
+  recognition.start();
+  window.inlineRecognition = recognition;
 };
 
 
@@ -1360,15 +1470,34 @@ URL.revokeObjectURL(url);
                       </div>
 
                       <div className="mt-3">
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">
-                          Observaciones
-                        </label>
+                        <div className="flex justify-between items-end mb-2">
+                          <label className="block text-sm font-semibold text-gray-700">
+                            Observaciones
+                          </label>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => startInlineDictation(section, item.id)}
+                              className={`p-1.5 rounded-md transition-all shadow-sm flex items-center gap-1 text-xs font-semibold ${dictatingKey === key ? 'bg-red-500 text-white animate-pulse' : 'bg-white border border-gray-200 text-slate-600 hover:bg-slate-50'}`}
+                              title={dictatingKey === key ? "Detener dictado" : "Dictar observación"}
+                            >
+                              <Mic size={14} /> {dictatingKey === key ? "Escuchando..." : "Dictar"}
+                            </button>
+                            <button
+                              onClick={() => rewriteObservationWithAI(section, item)}
+                              disabled={rewritingKey === key || !response.observaciones}
+                              className={`p-1.5 rounded-md transition-all shadow-sm flex items-center gap-1 text-xs font-semibold ${rewritingKey === key ? 'bg-purple-100 text-purple-600 animate-pulse' : !response.observaciones ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white hover:shadow-md hover:scale-105'}`}
+                              title="Mejorar redacción con IA"
+                            >
+                              <Sparkles size={14} /> IA
+                            </button>
+                          </div>
+                        </div>
                         <textarea
                           value={response.observaciones || ''}
                           onChange={(e) => updateResponse(section, item.id, 'observaciones', e.target.value)}
-                          placeholder="Notas adicionales, hallazgos, recomendaciones..."
-                          rows="2"
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent resize-none"
+                          placeholder="Dicta o escribe tus hallazgos, luego presiona el botón IA para estructurarlo..."
+                          rows="3"
+                          className={`w-full px-4 py-2 border-2 rounded-lg resize-y transition-colors ${dictatingKey === key ? 'border-red-400 bg-red-50/30' : 'border-gray-200 focus:ring-2 focus:ring-cyan-500 focus:border-transparent'}`}
                         />
                       </div>
                     </div>
