@@ -33,9 +33,16 @@ const GENERIC_EVALUATION_SCALE = [
 ];
 
 
+const hashPassword = async (password) => {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password);
+  const hash = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(hash))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+};
 
 const AuditForm = () => {
- 
 
 
   const [expandedSections, setExpandedSections] = useState({ 'Información General': true });
@@ -64,7 +71,7 @@ const AuditForm = () => {
   const [savedAudits, setSavedAudits] = useState([]);
   const [currentAuditId, setCurrentAuditId] = useState(null);
   const [step, setStep] = useState('gate'); // 'gate' | 'form'
-  const [actor, setActor] = useState({ nombreEmpresa: '', nombreAuditor: '', rol: '' });
+  const [actor, setActor] = useState({ nombreEmpresa: '', nombreAuditor: '', rol: '', contrasena: '', contrasenaHash: '' });
 
   useEffect(() => {
     const loadAudits = async () => {
@@ -1061,14 +1068,27 @@ const startInlineDictation = (section, id) => {
               </select>
             </div>
 
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-1.5">Contraseña de acceso (PIN) *</label>
+              <input
+                type="password"
+                value={actor.contrasena}
+                onChange={(e) => setActor(prev => ({ ...prev, contrasena: e.target.value }))}
+                placeholder="Protege esta auditoría"
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#00d4ff] focus:border-transparent transition-all outline-none"
+              />
+            </div>
+
             <button
-              onClick={() => {
-                if (!actor.nombreEmpresa.trim() || !actor.nombreAuditor.trim() || !actor.rol) {
-                  alert("Por favor llena todos los campos obligatorios para continuar.");
+              onClick={async () => {
+                if (!actor.nombreEmpresa.trim() || !actor.nombreAuditor.trim() || !actor.rol || !actor.contrasena.trim()) {
+                  alert("Por favor llena todos los campos obligatorios, incluyendo la contraseña, para continuar.");
                   return;
                 }
+                const hashed = await hashPassword(actor.contrasena);
                 setCurrentAuditId(Date.now().toString());
                 setIntroData(prev => ({...prev, nombreEmpresa: actor.nombreEmpresa, nombre: actor.nombreAuditor}));
+                setActor(prev => ({ ...prev, contrasenaHash: hashed, contrasena: '' }));
                 setStep('form');
               }}
               className="w-full mt-4 flex items-center justify-center gap-2 bg-slate-900 text-white px-6 py-4 rounded-xl hover:bg-slate-800 transition-all font-bold shadow-lg shadow-slate-900/20"
@@ -1094,12 +1114,23 @@ const startInlineDictation = (section, id) => {
                    </div>
                    <div className="flex gap-2 shrink-0">
                      <button
-                       onClick={() => {
+                       onClick={async () => {
+                         const savedHash = audit.data?.actor?.contrasenaHash;
+                         if (savedHash) {
+                           const pin = window.prompt("Ingresa la contraseña de esta auditoría para acceder:");
+                           if (pin === null) return; 
+                           const enteredHash = await hashPassword(pin);
+                           if (enteredHash !== savedHash) {
+                             alert("Contraseña incorrecta. Acceso denegado.");
+                             return;
+                           }
+                         }
+
                          setCurrentAuditId(audit.id);
                          setIntroData(audit.data.introData || {});
                          setResponses(audit.data.responses || {});
                          setGeneralComments(audit.data.generalComments || '');
-                         setActor(audit.data.actor || { nombreAuditor:'', rol:'' });
+                         setActor(audit.data.actor || { nombreAuditor:'', rol:'', contrasenaHash: savedHash || '' });
                          setStep('form');
                        }}
                        className="px-4 py-2 bg-slate-900 text-white text-xs font-semibold rounded-lg hover:bg-slate-800 transition shadow"
