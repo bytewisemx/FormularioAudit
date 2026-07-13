@@ -19,6 +19,7 @@ import {
   ShadingType,
 } from "docx";
 import logoPng from "./assets/bytewise.mx.png";
+import AudioAssistant from "./components/AudioAssistant";
 
 const GENERIC_EVALUATION_SCALE = [
   '0 - No existe',
@@ -300,6 +301,33 @@ const rewriteCommentsWithAI = async () => {
       { id: 'DP-1', pregunta: '🔐 LFPDPPP: ¿La organización cumple con los requisitos básicos de la LFPDPPP (aviso de privacidad vigente, finalidades claras y consentimiento adecuado)?', evidencia: 'Aviso de privacidad, Fecha de actualización, Diferenciación de tipos de datos', nota: 'Cubre: Aviso de privacidad, Finalidades, Consentimiento expreso/tácito' },
       { id: 'DP-2', pregunta: '🔐 LFPDPPP: ¿La organización cuenta con medidas y procedimientos formales para la protección de datos personales (seguridad, ARCO, responsables y transferencias)?', evidencia: 'Procedimiento ARCO, Responsable designado, Medidas administrativas/técnicas/físicas, Contratos/cláusulas de transferencia', nota: 'Cubre: Procedimiento ARCO, Responsable de datos, Medidas de seguridad, Transferencias nacionales/internacionales' }
     ]
+  };
+
+  const pendingQuestions = React.useMemo(() => {
+    const list = [];
+    Object.entries(sections).forEach(([section, questions]) => {
+      questions.forEach(q => {
+        const key = `${section}-${q.id}`;
+        if (responses[key]?.evaluacion === undefined) {
+          list.push({ ...q, section });
+        }
+      });
+    });
+    return list;
+  }, [responses]);
+
+  const handleSuggestionClick = (section, id) => {
+    if (!expandedSections[section]) {
+      setExpandedSections(prev => ({ ...prev, [section]: true }));
+    }
+    setTimeout(() => {
+      const el = document.getElementById(`question-${section}-${id}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.classList.add('bg-cyan-50/50', 'transition-colors', 'duration-500');
+        setTimeout(() => el.classList.remove('bg-cyan-50/50'), 2000);
+      }
+    }, 100);
   };
 
   const toggleSection = (section) => {
@@ -1261,7 +1289,7 @@ URL.revokeObjectURL(url);
                   const response = responses[key] || {};
                   
                   return (
-                    <div key={item.id} className="border-l-4 border-purple-500 pl-4 py-2">
+                    <div key={item.id} id={`question-${section}-${item.id}`} className="border-l-4 border-purple-500 pl-4 py-2 transition-all duration-500 rounded-r-lg">
                       <div className="flex items-start gap-2 mb-3">
                         <span className="bg-cyan-100 text-cyan-700 px-2 py-1 rounded text-sm font-semibold">
                           {item.id}
@@ -1352,6 +1380,13 @@ URL.revokeObjectURL(url);
           </div>
         ))}
       </div>
+      
+      {step === 'form' && (
+        <AudioAssistant 
+          pendingQuestions={pendingQuestions} 
+          onSuggestionClick={handleSuggestionClick} 
+        />
+      )}
     </div>
   );
 };
