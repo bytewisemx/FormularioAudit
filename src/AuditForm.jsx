@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState } from 'react';
-import { ChevronDown, ChevronUp, Download, FileText, FileSpreadsheet, RefreshCw, Mic, Sparkles } from 'lucide-react';
+import { ChevronDown, ChevronUp, Download, FileText, FileSpreadsheet, RefreshCw, Mic, Sparkles, Building2, Shield, Brain, Hash, CheckCircle, Search } from 'lucide-react';
 
 import { saveAs } from "file-saver";
 import {
@@ -407,8 +407,8 @@ const startInlineDictation = (section, id) => {
       { id: 9, pregunta: '¿Los proveedores que tratan información de la empresa cuentan con contratos, cláusulas de seguridad, SLA y evaluaciones periódicas?', requisito: '9. Gestión de proveedores', escalaEvaluacion: ['0 - Sin control de proveedores.', '1 - Gestión informal.', '2 - Control parcial.', '3 - Proveedores controlados contractualmente.', '4 - Proveedores evaluados y monitoreados.'] },
     ],
     'Inteligencia Artificial y LFPDPPP': [
-      { id: 'IA-1', pregunta: '🧠 IA: ¿La organización utiliza o planea utilizar inteligencia artificial y con qué objetivo principal?', evidencia: 'Áreas impactadas, Casos de uso actuales o planeados (ej. Copilot, chatbots, automatización)', nota: 'Cubre: Uso actual de IA, Objetivo de IA, Áreas impactadas, Necesidad inmediata vs mediano plazo' },
-      { id: 'IA-2', pregunta: '🧠 IA: ¿Qué nivel de automatización con IA se tiene o se planea implementar y qué riesgos o inquietudes se han identificado?', evidencia: 'Nivel: Automatización básica / Asistente con IA / Integración con sistemas internos. Riesgos percibidos (privacidad, control, errores, impacto laboral)', nota: 'Cubre: Chatbot completo, Inquietudes y temores, Nivel de autonomía, Integración con sistemas' },
+      { id: 'IA-1', pregunta: 'IA: ¿La organización utiliza o planea utilizar inteligencia artificial y con qué objetivo principal?', evidencia: 'Áreas impactadas, Casos de uso actuales o planeados (ej. Copilot, chatbots, automatización)', nota: 'Cubre: Uso actual de IA, Objetivo de IA, Áreas impactadas, Necesidad inmediata vs mediano plazo' },
+      { id: 'IA-2', pregunta: 'IA: ¿Qué nivel de automatización con IA se tiene o se planea implementar y qué riesgos o inquietudes se han identificado?', evidencia: 'Nivel: Automatización básica / Asistente con IA / Integración con sistemas internos. Riesgos percibidos (privacidad, control, errores, impacto laboral)', nota: 'Cubre: Chatbot completo, Inquietudes y temores, Nivel de autonomía, Integración con sistemas' },
       { id: 'DP-1', pregunta: '🔐 LFPDPPP: ¿La organización cumple con los requisitos básicos de la LFPDPPP (aviso de privacidad vigente, finalidades claras y consentimiento adecuado)?', evidencia: 'Aviso de privacidad, Fecha de actualización, Diferenciación de tipos de datos', nota: 'Cubre: Aviso de privacidad, Finalidades, Consentimiento expreso/tácito' },
       { id: 'DP-2', pregunta: '🔐 LFPDPPP: ¿La organización cuenta con medidas y procedimientos formales para la protección de datos personales (seguridad, ARCO, responsables y transferencias)?', evidencia: 'Procedimiento ARCO, Responsable designado, Medidas administrativas/técnicas/físicas, Contratos/cláusulas de transferencia', nota: 'Cubre: Procedimiento ARCO, Responsable de datos, Medidas de seguridad, Transferencias nacionales/internacionales' }
     ]
@@ -1067,7 +1067,7 @@ URL.revokeObjectURL(url);
       rewriting ? "animate-pulse" : ""
     ].join(" ")}
   >
-    <span className="text-lg">⭐</span>
+    <Sparkles size={18} className={canRewrite ? "text-indigo-600" : "text-gray-400"} />
   </button>
 </div>
 
@@ -1115,11 +1115,11 @@ URL.revokeObjectURL(url);
 
           {(() => {
             const getAreaIcon = (areaName) => {
-              if (areaName === 'Infraestructura del Site') return '🏢';
-              if (areaName === 'Seguridad de la Información') return '🔒';
-              if (areaName === 'Cláusulas ISO 27001') return '📋';
-              if (areaName === 'IA y LFPDPPP') return '🧠🔐';
-              return '📌';
+              if (areaName === 'Infraestructura del Site') return <Building2 size={24} className="text-cyan-600" />;
+              if (areaName === 'Seguridad de la Información') return <Shield size={24} className="text-cyan-600" />;
+              if (areaName === 'Cláusulas ISO 27001') return <FileText size={24} className="text-cyan-600" />;
+              if (areaName === 'IA y LFPDPPP') return <Brain size={24} className="text-cyan-600" />;
+              return <Hash size={24} className="text-cyan-600" />;
             };
 
             const rows = Object.entries(calculateAreaScores());
@@ -1139,7 +1139,9 @@ URL.revokeObjectURL(url);
                       <div key={area} className="px-5 py-4">
                         <div className="grid grid-cols-1 md:grid-cols-[1.5fr_.7fr_.7fr_.9fr] gap-3 items-center">
                           <div className="flex items-center gap-3 min-w-0">
-                            <span className="text-xl">{getAreaIcon(area)}</span>
+                            <div className="flex items-center justify-center w-10 h-10 bg-cyan-50 rounded-full shrink-0">
+                              {getAreaIcon(area)}
+                            </div>
                             <div className="min-w-0">
                               <div className="font-semibold text-gray-900 truncate">{area}</div>
                               <div className="text-xs text-gray-500 md:hidden">
@@ -1199,7 +1201,7 @@ URL.revokeObjectURL(url);
                 : 'text-gray-600 hover:bg-gray-100 border-l-4 border-transparent'
               }`}
             >
-              <span className="truncate">📋 Información General</span>
+              <span className="truncate">Información General</span>
             </button>
 
             {Object.keys(sections).map((section) => {
@@ -1239,7 +1241,7 @@ URL.revokeObjectURL(url);
               <div className="mb-4 bg-white rounded-xl shadow-lg overflow-hidden border border-slate-200 animate-in fade-in slide-in-from-bottom-4 duration-300">
                 <div className="p-6 bg-slate-50 border-b flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div>
-                    <h2 className="text-xl font-bold text-slate-900">📋 Información General</h2>
+                    <h2 className="text-xl font-bold text-slate-900">Información General</h2>
                     <p className="text-sm text-slate-600">Datos de identificación (no generan puntuación)</p>
                   </div>
                 </div>
@@ -1444,15 +1446,19 @@ URL.revokeObjectURL(url);
                       </div>
 
                       {item.requisito && (
-                        <p className="text-xs text-gray-500 italic mb-3">📋 {item.requisito}</p>
+                        <p className="text-xs text-gray-500 italic mb-3 flex items-center gap-1.5"><FileText size={14} className="shrink-0" /> {item.requisito}</p>
                       )}
 
                       {item.nota && (
-                        <p className="text-xs text-green-700 bg-green-50 px-3 py-2 rounded mb-3">✅ {item.nota}</p>
+                        <p className="text-xs text-green-700 bg-green-50 px-3 py-2 rounded mb-3 flex items-center gap-1.5">
+                          <CheckCircle size={14} className="shrink-0" /> {item.nota}
+                        </p>
                       )}
 
                       {item.evidencia && (
-                        <p className="text-xs text-blue-600 mb-3">🔍 Evidencia sugerida: {item.evidencia}</p>
+                        <p className="text-xs text-blue-600 mb-3 flex items-center gap-1.5">
+                          <Search size={14} className="shrink-0" /> Evidencia sugerida: {item.evidencia}
+                        </p>
                       )}
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

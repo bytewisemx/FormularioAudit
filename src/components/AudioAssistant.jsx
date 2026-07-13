@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, MicOff, BrainCircuit, Minimize2, Loader2, ChevronRight, Menu } from 'lucide-react';
+import { Mic, MicOff, BrainCircuit, Minimize2, Loader2, ChevronRight, Menu, AlertTriangle } from 'lucide-react';
 
 const AudioAssistant = ({ pendingQuestions, onSuggestionClick }) => {
   const [isRecording, setIsRecording] = useState(false);
@@ -268,8 +268,8 @@ const AudioAssistant = ({ pendingQuestions, onSuggestionClick }) => {
           </button>
           
           {micError && (
-            <div className="mt-3 text-xs text-red-400 text-center bg-red-900/30 p-2 rounded w-full">
-              ⚠️ {micError}
+            <div className="mt-3 text-xs text-red-400 text-center bg-red-900/30 p-2 rounded w-full flex items-center justify-center gap-1.5">
+              <AlertTriangle size={14} className="shrink-0" /> {micError}
             </div>
           )}
 
