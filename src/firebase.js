@@ -4,12 +4,13 @@ import { getFirestore } from "firebase/firestore";
 // TODO: REEMPLAZA ESTO CON LA CONFIGURACIÓN DE TU PROYECTO FIREBASE
 // Ve a Console > Configuración del Proyecto > General > Mis Apps (Web)
 const firebaseConfig = {
-  apiKey: "TU_API_KEY",
-  authDomain: "TU_PROYECTO.firebaseapp.com",
-  projectId: "TU_PROYECTO",
-  storageBucket: "TU_PROYECTO.appspot.com",
-  messagingSenderId: "123456789",
-  appId: "1:123456789:web:abcdef123456"
+  apiKey: "AIzaSyCQ0p9ENCMCGtiI-BzZCxJMq_EprZDJTU4",
+  authDomain: "auditoriati-def46.firebaseapp.com",
+  projectId: "auditoriati-def46",
+  storageBucket: "auditoriati-def46.firebasestorage.app",
+  messagingSenderId: "185258021886",
+  appId: "1:185258021886:web:37a4d8aaa03124e96726af",
+  measurementId: "G-0BB5CV6R1B"
 };
 
 // Inicializar Firebase
