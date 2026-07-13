@@ -1058,7 +1058,7 @@ const startInlineDictation = (section, id) => {
          <img src={logoPng} alt="ByteWise" className="h-12 md:h-16 w-auto object-contain drop-shadow-none brightness-0 invert" />
 
          {/* NUEVA AUDITORIA */}
-        <div className="w-full max-w-3xl bg-white p-8 md:p-12 border border-slate-200">
+        <div className="w-full max-w-3xl bg-white p-8 md:p-12 border border-slate-200 border-t-4 border-t-[#00d4ff] shadow-sm">
           <div className="flex flex-col items-center mb-8">
              <div className="w-16 h-16 bg-slate-900 rounded-none flex items-center justify-center shadow-none mb-4">
                 <Shield size={32} className="text-[#00d4ff]" />
@@ -1204,7 +1204,7 @@ const startInlineDictation = (section, id) => {
         <div className="mb-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
           
           {/* Columna 1: Resumen y Acciones */}
-          <div className="lg:col-span-1 bg-white border border-slate-300 p-6 flex flex-col justify-between">
+          <div className="lg:col-span-1 bg-white border border-slate-200 border-t-2 border-t-[#00d4ff] p-6 flex flex-col justify-between shadow-sm">
             <div>
               <img
                 src={logoPng}
@@ -1212,7 +1212,7 @@ const startInlineDictation = (section, id) => {
                 className="h-10 md:h-12 w-auto object-contain mb-4"
               />
               <div className="flex items-start justify-between mb-1 gap-2">
-                <h1 className="text-2xl md:text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-gray-900 via-gray-700 to-[#00d4ff] leading-tight">
+                <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight leading-tight">
                   Auditoría de TI
                 </h1>
                 <div className="flex items-center gap-3">
@@ -1289,21 +1289,21 @@ const startInlineDictation = (section, id) => {
               
               {/* Score Dashboard */}
               <div className="space-y-3">
-                <div className={`bg-gradient-to-r ${getScoreLevel(calculateTotalScore()).color} rounded-none p-4 text-slate-100 shadow-none border border-white/10`}>
-                  <div className="text-xs opacity-90 mb-1">Puntuación Total</div>
-                  <div className="text-3xl font-bold">{(calculateTotalScore() * getTotalQuestions()).toFixed(0)} pts</div>
-                  <div className="text-xs mt-1 font-semibold">{getScoreLevel(calculateTotalScore()).nivel}</div>
+                <div className="bg-slate-50 border border-slate-200 border-l-4 border-l-[#00d4ff] p-5 shadow-sm">
+                  <div className="text-xs text-slate-500 font-semibold mb-1 uppercase tracking-wider">Puntuación Total</div>
+                  <div className="text-3xl font-bold text-slate-900 tracking-tight">{(calculateTotalScore() * getTotalQuestions()).toFixed(0)} pts</div>
+                  <div className="text-xs mt-1 font-semibold text-slate-700">{getScoreLevel(calculateTotalScore()).nivel}</div>
                 </div>
                 
-                <div className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-none p-4 text-slate-100 shadow-none border border-white/10">
-                  <div className="flex justify-between items-end mb-1">
-                    <div className="text-xs opacity-90">Avance</div>
-                    <div className="text-lg font-bold">{((getAnsweredQuestions() / getTotalQuestions()) * 100).toFixed(0)}%</div>
+                <div className="bg-slate-50 border border-slate-200 border-l-4 border-l-cyan-600 p-5 shadow-sm mt-3">
+                  <div className="flex justify-between items-end mb-2">
+                    <div className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Avance</div>
+                    <div className="text-2xl font-bold text-slate-900 tracking-tight">{((getAnsweredQuestions() / getTotalQuestions()) * 100).toFixed(0)}%</div>
                   </div>
-                  <div className="h-2 bg-slate-100 border border-slate-200 overflow-hidden mb-1.5">
-                    <div className="h-2 bg-slate-800 transition-all duration-500" style={{ width: `${(getAnsweredQuestions() / getTotalQuestions()) * 100}%` }} />
+                  <div className="h-2 bg-slate-200 overflow-hidden mb-1.5 rounded-none">
+                    <div className="h-2 bg-cyan-600 transition-all duration-500" style={{ width: `${(getAnsweredQuestions() / getTotalQuestions()) * 100}%` }} />
                   </div>
-                  <div className="text-[10px] text-gray-400 text-right">{getAnsweredQuestions()}/{getTotalQuestions()} respondidas</div>
+                  <div className="text-xs text-slate-500 font-medium text-right mt-1">{getAnsweredQuestions()} de {getTotalQuestions()} completadas</div>
                 </div>
               </div>
             </div>
@@ -1311,7 +1311,7 @@ const startInlineDictation = (section, id) => {
           </div>
 
           {/* Columna 2: Puntuación por Áreas */}
-          <div className="lg:col-span-2 bg-white border border-slate-300 p-6 flex flex-col">
+          <div className="lg:col-span-2 bg-white border border-slate-200 border-t-2 border-t-[#00d4ff] p-6 flex flex-col shadow-sm">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold text-gray-900">Desglose por Áreas</h2>
               <span className="text-[10px] bg-cyan-50 text-cyan-700 px-2 py-1 rounded-none font-semibold">Tiempo Real</span>
@@ -1422,8 +1422,8 @@ const startInlineDictation = (section, id) => {
             
             {/* Sección de Información General Activa */}
             {activeSection === 'Información General' && (
-              <div className="mb-4 bg-white rounded-none shadow-none overflow-hidden border border-slate-200 animate-in fade-in slide-in-from-bottom-4 duration-300">
-                <div className="p-6 bg-slate-50 border-b flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="mb-8 bg-white rounded-none shadow-sm overflow-hidden border border-slate-200 border-t-2 border-t-[#00d4ff] animate-in fade-in slide-in-from-bottom-4 duration-300">
+                <div className="px-6 py-4 bg-white border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div>
                     <h2 className="text-xl font-bold text-slate-900">Información General</h2>
                     <p className="text-sm text-slate-600">Datos de identificación (no generan puntuación)</p>
