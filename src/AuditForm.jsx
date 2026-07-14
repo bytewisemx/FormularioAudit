@@ -1120,11 +1120,13 @@ const startInlineDictation = (section, id) => {
                     <Home size={20} />
                   </button>
                   <div className="relative">
-                    <button onClick={() => setShowExportMenu(!showExportMenu)} className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-none transition" title="Exportar">
+                    <button onClick={() => { setShowExportMenu(!showExportMenu); setShowSettings(false); }} className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-none transition" title="Exportar">
                       <Download size={20} />
                     </button>
                     {showExportMenu && (
-                      <div className="absolute right-0 mt-2 w-48 bg-white rounded-none shadow-none border border-slate-100 py-2 z-50">
+                      <>
+                        <div className="fixed inset-0 z-40" onClick={() => setShowExportMenu(false)}></div>
+                        <div className="absolute right-0 mt-2 w-48 bg-white rounded-none shadow-none border border-slate-100 py-2 z-50">
                         <button onClick={() => { exportToDocxPro(); setShowExportMenu(false); }} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2">
                           <FileText size={16} /> Descargar en Word
                         </button>
@@ -1132,14 +1134,17 @@ const startInlineDictation = (section, id) => {
                           <FileSpreadsheet size={16} /> Descargar en Excel
                         </button>
                       </div>
+                      </>
                     )}
                   </div>
                   <div className="relative">
-                    <button onClick={() => setShowSettings(!showSettings)} className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-none transition" title="Configuración">
+                    <button onClick={() => { setShowSettings(!showSettings); setShowExportMenu(false); }} className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-none transition" title="Configuración">
                       <Settings size={20} />
                     </button>
                     {showSettings && (
-                      <div className="absolute right-0 mt-2 w-48 bg-white rounded-none shadow-none border border-slate-100 py-2 z-50">
+                      <>
+                        <div className="fixed inset-0 z-40" onClick={() => setShowSettings(false)}></div>
+                        <div className="absolute right-0 mt-2 w-48 bg-white rounded-none shadow-none border border-slate-100 py-2 z-50">
                         <button onClick={() => {
                           const url = window.location.origin + window.location.pathname + "?id=" + currentAuditId;
                           navigator.clipboard.writeText(url);
@@ -1184,6 +1189,7 @@ const startInlineDictation = (section, id) => {
                           <Trash2 size={16} /> Eliminar Auditoría
                         </button>
                       </div>
+                      </>
                     )}
                   </div>
                 </div>
