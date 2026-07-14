@@ -1166,6 +1166,9 @@ const startInlineDictation = (section, id) => {
                         }} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2">
                           <KeyRound size={16} /> Cambiar PIN
                         </button>
+                        <button onClick={() => { setShowEditModal(true); setShowSettings(false); }} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2">
+                          <Edit2 size={16} /> Editar Preguntas
+                        </button>
                         <hr className="my-1 border-slate-100" />
                         <button onClick={async () => {
                           if (window.confirm("¿Seguro que deseas eliminar esta auditoría permanentemente?")) {
@@ -1684,6 +1687,15 @@ const startInlineDictation = (section, id) => {
           onSuggestionClick={handleSuggestionClick} 
         />
       )}
+
+      <EditQuestionsModal
+        isOpen={showEditModal}
+        onClose={() => setShowEditModal(false)}
+        initialSections={customSections}
+        onSave={(newSections) => {
+          setCustomSections(newSections);
+        }}
+      />
     </div>
   );
 };
