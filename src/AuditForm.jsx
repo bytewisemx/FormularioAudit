@@ -395,6 +395,66 @@ const startInlineDictation = (section, id) => {
     }
   };
 
+  const pendingQuestions = React.useMemo(() => {
+    const list = [];
+    Object.entries(customSections).forEach(([section, questions]) => {
+      questions.forEach(q => {
+        const key = `${section}-${q.id}`;
+        if (responses[key]?.evaluacion === undefined) {
+          list.push({ ...q, section });
+        }
+      });
+    });
+    return list;
+  }, [responses]);
+
+  const handleSuggestionClick = (section, id) => {
+    setActiveSection(section);
+
+    setTimeout(() => {
+      const el = document.getElementById(`question-${section}-${id}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.classList.add('bg-cyan-50/50', 'transition-colors', 'duration-500');
+        setTimeout(() => el.classList.remove('bg-cyan-50/50'), 2000);
+      }
+    }, 100);
+  };
+
+  const toggleSection = (section) => {
+    setExpandedSections(prev => ({
+      ...prev,
+      [section]: !prev[section]
+    }));
+  };
+
+  const updateResponse = (section, id, field, value) => {
+    const key = `${section}-${id}`;
+    setResponses(prev => ({
+      ...prev,
+      [key]: {
+        ...prev[key],
+        [field]: value
+      }
+    }));
+  };
+
+  const calculateSectionScore = (section) => {
+    const questions = customSections[section];
+    let total = 0;
+    let count = 0;
+    
+    questions.forEach(q => {
+      const key = `${section}-${q.id}`;
+      if (responses[key]?.evaluacion !== undefined) {
+        total += parseInt(responses[key].evaluacion);
+        count++;
+      }
+    });
+    
+    return count > 0 ? (total / count).toFixed(1) : 'N/A';
+  };
+
   const calculateAreaScores = () => {
     const areas = {
       'Infraestructura del Site': ['Infraestructura del Site'],
