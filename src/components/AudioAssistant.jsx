@@ -207,6 +207,17 @@ const AudioAssistant = ({ pendingQuestions, onSuggestionClick }) => {
     }
   };
 
+  const downloadTranscript = () => {
+    if (!transcript) return;
+    const blob = new Blob([transcript], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Transcripcion_${new Date().toLocaleDateString().replace(/\//g, '-')}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const toggleRecording = () => {
     setIsRecording(!isRecording);
     if (isMinimized) setIsMinimized(false); // Abrir al grabar
@@ -294,14 +305,19 @@ const AudioAssistant = ({ pendingQuestions, onSuggestionClick }) => {
 
         {/* TRANSCRIPT AREA */}
         <div className="flex-1 p-4 overflow-y-auto bg-slate-800/50 text-sm font-light leading-relaxed border-b border-slate-700 relative flex flex-col">
-          <div className="flex justify-between items-center mb-2">
-            <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Transcripción en vivo</h4>
-            {transcript && (
-              <button onClick={() => setTranscript('')} className="text-[10px] text-slate-500 hover:text-white">
-                Limpiar Texto
-              </button>
-            )}
-          </div>
+            <div className="flex justify-between items-center mb-2">
+              <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Transcripción en vivo</h4>
+              {transcript && (
+                <div className="flex items-center gap-3">
+                  <button onClick={downloadTranscript} className="text-[10px] text-cyan-400 hover:text-cyan-300 flex items-center gap-1 transition-colors" title="Descargar redacción">
+                    <Download size={12} /> Descargar
+                  </button>
+                  <button onClick={() => setTranscript('')} className="text-[10px] text-slate-500 hover:text-white transition-colors">
+                    Limpiar Texto
+                  </button>
+                </div>
+              )}
+            </div>
           <div className="flex-1">
             {!transcript && !interimTranscript && (
               <p className="text-slate-500 italic text-center mt-10 text-xs">
