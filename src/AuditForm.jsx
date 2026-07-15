@@ -4,8 +4,9 @@ import React, { useEffect, useState } from 'react';
 import { ChevronDown, ChevronUp, ChevronRight, Download, FileText, FileSpreadsheet, RefreshCw, Mic, Sparkles, Building2, Shield, Brain, Hash, CheckCircle, Search, Settings, Share2, KeyRound, Trash2, Home } from 'lucide-react';
 import { db, auth } from "./firebase";
 import { collection, doc, setDoc, getDocs, deleteDoc } from "firebase/firestore";
-import { onAuthStateChanged } from "firebase/auth";
+import { onAuthStateChanged, signOut } from "firebase/auth";
 import LoginScreen from "./components/LoginScreen";
+import AccessManagement from "./components/AccessManagement";
 
 import { saveAs } from "file-saver";
 import ExcelJS from "exceljs";
@@ -972,10 +973,23 @@ const startInlineDictation = (section, id) => {
     return <LoginScreen onLoginSuccess={setUser} />;
   }
 
-    if (step === 'gate') {
+  if (step === 'access_management') {
+    return <AccessManagement onBack={() => setStep('gate')} />;
+  }
+
+  if (step === 'gate') {
      return (
-       <div className="min-h-screen bg-white p-4 md:p-12 flex flex-col items-center justify-start gap-8 border-t-8 border-slate-900">
+       <div className="min-h-screen bg-white p-4 md:p-12 flex flex-col items-center justify-start gap-8 border-t-8 border-slate-900 relative">
          
+         <div className="absolute top-4 right-4 flex items-center gap-4">
+            <button onClick={() => setStep('access_management')} className="text-sm font-bold text-slate-500 hover:text-slate-800 transition flex items-center gap-2">
+              <Shield size={16} /> Accesos
+            </button>
+            <button onClick={() => { signOut(auth); setStep('gate'); }} className="text-sm font-bold text-slate-500 hover:text-red-600 transition flex items-center gap-2">
+              <Settings size={16} className="hidden" /> Cerrar Sesión
+            </button>
+         </div>
+
          <img src={logoPng} alt="ByteWise" className="h-12 md:h-16 w-auto object-contain drop-shadow-none brightness-0 invert" />
 
          {/* NUEVA AUDITORIA */}

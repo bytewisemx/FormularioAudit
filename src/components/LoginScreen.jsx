@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Shield, ChevronRight } from 'lucide-react';
-import { auth, googleProvider } from '../firebase';
-import { signInWithPopup } from 'firebase/auth';
+import { auth, googleProvider, db } from '../firebase';
+import { signInWithPopup, signOut } from 'firebase/auth';
+import { doc, getDoc, collection, getDocs, setDoc } from 'firebase/firestore';
 
 export default function LoginScreen({ onLoginSuccess }) {
   const [error, setError] = useState('');
@@ -12,7 +13,36 @@ export default function LoginScreen({ onLoginSuccess }) {
     setLoading(true);
     try {
       const userCredential = await signInWithPopup(auth, googleProvider);
-      onLoginSuccess(userCredential.user);
+      const user = userCredential.user;
+      const email = user.email;
+
+      if (!email) {
+        await signOut(auth);
+        setError('No se pudo obtener el correo de la cuenta de Google.');
+        setLoading(false);
+        return;
+      }
+
+      // Check if allowed
+      const emailDocRef = doc(db, 'allowed_emails', email);
+      const emailDoc = await getDoc(emailDocRef);
+
+      if (emailDoc.exists()) {
+        // Allowed
+        onLoginSuccess(user);
+      } else {
+        // Check if collection is completely empty (first time setup)
+        const snapshot = await getDocs(collection(db, 'allowed_emails'));
+        if (snapshot.empty) {
+          // Add this user as the first admin automatically
+          await setDoc(emailDocRef, { role: 'admin', addedAt: new Date().toISOString() });
+          onLoginSuccess(user);
+        } else {
+          // Not allowed
+          await signOut(auth);
+          setError(`Acceso denegado: El correo ${email} no está autorizado para ingresar.`);
+        }
+      }
     } catch (err) {
       console.error(err);
       setError('Error al iniciar sesión con Google. ' + err.message);
@@ -40,7 +70,7 @@ export default function LoginScreen({ onLoginSuccess }) {
 
         <div className="space-y-5">
           <p className="text-sm text-slate-600 text-center mb-6">
-            Inicia sesión con tu cuenta de Google. Tu cuenta ya debe contar con Autenticación Multifactor (MFA) configurada en los ajustes de seguridad de Google para mantener protegido el sistema.
+            Inicia sesión con tu cuenta de Google. Tu cuenta debe estar previamente autorizada por el administrador.
           </p>
 
           <button
