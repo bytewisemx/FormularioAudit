@@ -965,7 +965,11 @@ const startInlineDictation = (section, id) => {
 
 
   if (authChecking || (isGuestMode && auditsLoading)) {
-    return <div className="min-h-screen bg-slate-50 flex items-center justify-center">Cargando...</div>;
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="loader"></div>
+      </div>
+    );
   }
 
   if (!isGuestMode && !user) {
