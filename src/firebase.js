@@ -1,7 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
-import { getStorage } from "firebase/storage";
 
 // TODO: REEMPLAZA ESTO CON LA CONFIGURACIÓN DE TU PROYECTO FIREBASE
 // Ve a Console > Configuración del Proyecto > General > Mis Apps (Web)
@@ -19,17 +18,15 @@ const firebaseConfig = {
 let app;
 let db;
 let auth;
-let storage;
 let googleProvider;
 
 try {
   app = initializeApp(firebaseConfig);
   db = getFirestore(app);
   auth = getAuth(app);
-  storage = getStorage(app);
   googleProvider = new GoogleAuthProvider();
 } catch(e) {
   console.error("Error al inicializar Firebase. Asegúrate de haber llenado tus credenciales en src/firebase.js");
 }
 
-export { db, auth, storage, googleProvider };
+export { db, auth, googleProvider };

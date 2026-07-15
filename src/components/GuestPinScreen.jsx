@@ -1,7 +1,5 @@
 import React, { useState } from 'react';
 import { Shield, ChevronRight, Lock } from 'lucide-react';
-import { auth } from '../firebase';
-import { signInAnonymously } from 'firebase/auth';
 import logoPng from '../assets/bytewise.mx.png';
 
 // Import hashPassword from where it's defined, or define it locally here if we can't easily export it.
@@ -36,9 +34,6 @@ export default function GuestPinScreen({ targetAudit, onAccessGranted }) {
       const enteredHash = await hashPassword(pin);
 
       if (enteredHash === savedHash) {
-        // Authenticate anonymously so they can upload files to Firebase Storage
-        await signInAnonymously(auth);
-        
         sessionStorage.removeItem(`pin_attempts_${targetAudit.id}`);
         onAccessGranted(targetAudit);
       } else {
