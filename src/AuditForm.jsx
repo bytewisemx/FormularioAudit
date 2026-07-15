@@ -2,8 +2,10 @@ import { DEFAULT_SECTIONS } from "./defaultSections";
 
 import React, { useEffect, useState } from 'react';
 import { ChevronDown, ChevronUp, ChevronRight, Download, FileText, FileSpreadsheet, RefreshCw, Mic, Sparkles, Building2, Shield, Brain, Hash, CheckCircle, Search, Settings, Share2, KeyRound, Trash2, Home } from 'lucide-react';
-import { db } from "./firebase";
+import { db, auth } from "./firebase";
 import { collection, doc, setDoc, getDocs, deleteDoc } from "firebase/firestore";
+import { onAuthStateChanged } from "firebase/auth";
+import LoginScreen from "./components/LoginScreen";
 
 import { saveAs } from "file-saver";
 import ExcelJS from "exceljs";
@@ -79,6 +81,21 @@ const AuditForm = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [actor, setActor] = useState({ nombreEmpresa: '', nombreAuditor: '', rol: '', contrasena: '', contrasenaHash: '' });
+  const [isGuestMode, setIsGuestMode] = useState(false);
+  const [user, setUser] = useState(null);
+  const [authChecking, setAuthChecking] = useState(true);
+
+  useEffect(() => {
+    if (!auth) {
+      setAuthChecking(false);
+      return;
+    }
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setAuthChecking(false);
+    });
+    return () => unsubscribe();
+  }, []);
 
   useEffect(() => {
     const loadAudits = async () => {
@@ -95,6 +112,7 @@ const AuditForm = () => {
         const urlParams = new URLSearchParams(window.location.search);
         const auditId = urlParams.get('id');
         if (auditId) {
+          setIsGuestMode(true);
           const targetAudit = audits.find(a => a.id === auditId);
           if (targetAudit) {
             const savedHash = targetAudit.data?.actor?.contrasenaHash;
@@ -354,11 +372,7 @@ const startInlineDictation = (section, id) => {
 
 
 
- 
- 
 
-  // =========================
-  // ✅ PASO PREVIO (AUDITOR / CLIENTE)
   // =========================
   // (State moved to top for auto-save logic)
 
@@ -950,6 +964,13 @@ const startInlineDictation = (section, id) => {
  
 
 
+  if (authChecking) {
+    return <div className="min-h-screen bg-slate-50 flex items-center justify-center">Verificando sesión...</div>;
+  }
+
+  if (!isGuestMode && !user) {
+    return <LoginScreen onLoginSuccess={setUser} />;
+  }
 
     if (step === 'gate') {
      return (
@@ -1115,10 +1136,12 @@ const startInlineDictation = (section, id) => {
                 <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight leading-tight">
                   Auditoría de TI
                 </h1>
-                <div className="flex items-center gap-3">
-                  <button onClick={() => setStep('gate')} className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-none transition" title="Volver al Inicio">
-                    <Home size={20} />
-                  </button>
+                <div className="flex items-center gap-2">
+                  {step === 'form' && !isGuestMode && (
+                    <button onClick={() => setStep('gate')} className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-none transition" title="Volver al Inicio">
+                      <Home size={20} />
+                    </button>
+                  )}
                   <div className="relative">
                     <button onClick={() => { setShowExportMenu(!showExportMenu); setShowSettings(false); }} className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-none transition" title="Exportar">
                       <Download size={20} />
@@ -1137,6 +1160,7 @@ const startInlineDictation = (section, id) => {
                       </>
                     )}
                   </div>
+                  {!isGuestMode && (
                   <div className="relative">
                     <button onClick={() => { setShowSettings(!showSettings); setShowExportMenu(false); }} className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-none transition" title="Configuración">
                       <Settings size={20} />
@@ -1192,6 +1216,7 @@ const startInlineDictation = (section, id) => {
                       </>
                     )}
                   </div>
+                  )}
                 </div>
               </div>
               <p className="text-xs text-gray-500 mb-6">Evaluación integral de infraestructura y seguridad</p>
