@@ -8,6 +8,7 @@ import { onAuthStateChanged, signOut } from "firebase/auth";
 import LoginScreen from "./components/LoginScreen";
 import AccessManagement from "./components/AccessManagement";
 import GuestPinScreen from "./components/GuestPinScreen";
+import FileUpload from "./components/FileUpload";
 
 import { saveAs } from "file-saver";
 import ExcelJS from "exceljs";
@@ -923,7 +924,7 @@ const startInlineDictation = (section, id) => {
             q.id,
             q.pregunta,
             r.evaluacion || 'Sin evaluar',
-            r.evidencia || '',
+            (r.evidencia || '') + (r.archivoUrl ? `\n[Archivo Adjunto]: ${r.archivoUrl}` : ''),
             r.observaciones || ''
           ]);
           // Wrap text
@@ -1695,8 +1696,14 @@ const startInlineDictation = (section, id) => {
                             type="text"
                             value={response.evidencia || ''}
                             onChange={(e) => updateResponse(section, item.id, 'evidencia', e.target.value)}
-                            placeholder="Documentos, sistemas, procesos..."
-                            className="w-full px-4 py-2 border border-gray-300 rounded-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                            placeholder="Documentos, sistemas, procesos (Enlace externo o nota)"
+                            className="w-full px-4 py-2 mb-2 border border-gray-300 rounded-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                          />
+                          <FileUpload 
+                            currentAuditId={currentAuditId}
+                            questionId={`${section}-${item.id}`}
+                            currentUrl={response.archivoUrl || ''}
+                            onUploadComplete={(url) => updateResponse(section, item.id, 'archivoUrl', url)}
                           />
                         </div>
                         
