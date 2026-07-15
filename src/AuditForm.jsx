@@ -7,6 +7,7 @@ import { collection, doc, setDoc, getDocs, deleteDoc } from "firebase/firestore"
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import LoginScreen from "./components/LoginScreen";
 import AccessManagement from "./components/AccessManagement";
+import GuestPinScreen from "./components/GuestPinScreen";
 
 import { saveAs } from "file-saver";
 import ExcelJS from "exceljs";
@@ -83,6 +84,7 @@ const AuditForm = () => {
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [actor, setActor] = useState({ nombreEmpresa: '', nombreAuditor: '', rol: '', contrasena: '', contrasenaHash: '' });
   const [isGuestMode, setIsGuestMode] = useState(false);
+  const [guestAuditToLoad, setGuestAuditToLoad] = useState(null);
   const [user, setUser] = useState(null);
   const [authChecking, setAuthChecking] = useState(true);
 
@@ -117,28 +119,19 @@ const AuditForm = () => {
           const targetAudit = audits.find(a => a.id === auditId);
           if (targetAudit) {
             const savedHash = targetAudit.data?.actor?.contrasenaHash;
-            let accessGranted = true;
             if (savedHash) {
-              const pin = window.prompt(`Ingresa el PIN para acceder a la auditoría de ${targetAudit.nombreEmpresa}:`);
-              if (pin === null) accessGranted = false;
-              else {
-                const enteredHash = await hashPassword(pin);
-                if (enteredHash !== savedHash) {
-                  alert("PIN incorrecto. Acceso denegado.");
-                  accessGranted = false;
-                }
-              }
-            }
-            if (accessGranted) {
+              setGuestAuditToLoad(targetAudit);
+              return;
+            } else {
               setCurrentAuditId(targetAudit.id);
               setIntroData(targetAudit.data.introData || {});
               setResponses(targetAudit.data.responses || {});
               setCustomSections(targetAudit.data.customSections || DEFAULT_SECTIONS);
               setGeneralComments(targetAudit.data.generalComments || '');
-              setActor(targetAudit.data.actor || { nombreAuditor:'', rol:'', contrasenaHash: savedHash || '' });
+              setActor(targetAudit.data.actor || { nombreAuditor:'', rol:'', contrasenaHash: '' });
               setStep('form');
+              window.history.replaceState({}, document.title, window.location.pathname);
             }
-            window.history.replaceState({}, document.title, window.location.pathname);
           }
         }
 
@@ -971,6 +964,25 @@ const startInlineDictation = (section, id) => {
 
   if (!isGuestMode && !user) {
     return <LoginScreen onLoginSuccess={setUser} />;
+  }
+
+  if (guestAuditToLoad) {
+    return (
+      <GuestPinScreen 
+        targetAudit={guestAuditToLoad}
+        onAccessGranted={(audit) => {
+          setCurrentAuditId(audit.id);
+          setIntroData(audit.data.introData || {});
+          setResponses(audit.data.responses || {});
+          setCustomSections(audit.data.customSections || DEFAULT_SECTIONS);
+          setGeneralComments(audit.data.generalComments || '');
+          setActor(audit.data.actor || { nombreAuditor:'', rol:'', contrasenaHash: audit.data?.actor?.contrasenaHash || '' });
+          setGuestAuditToLoad(null);
+          setStep('form');
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }}
+      />
+    );
   }
 
   if (step === 'access_management') {
