@@ -83,10 +83,13 @@ const AuditForm = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [actor, setActor] = useState({ nombreEmpresa: '', nombreAuditor: '', rol: '', contrasena: '', contrasenaHash: '' });
-  const [isGuestMode, setIsGuestMode] = useState(false);
+  const [isGuestMode, setIsGuestMode] = useState(() => {
+    return !!new URLSearchParams(window.location.search).get('id');
+  });
   const [guestAuditToLoad, setGuestAuditToLoad] = useState(null);
   const [user, setUser] = useState(null);
   const [authChecking, setAuthChecking] = useState(true);
+  const [auditsLoading, setAuditsLoading] = useState(true);
 
   useEffect(() => {
     if (!auth) {
@@ -137,6 +140,8 @@ const AuditForm = () => {
 
       } catch (e) {
         console.error("Error cargando auditorías desde Firebase:", e);
+      } finally {
+        setAuditsLoading(false);
       }
     };
     loadAudits();
@@ -958,8 +963,8 @@ const startInlineDictation = (section, id) => {
  
 
 
-  if (authChecking) {
-    return <div className="min-h-screen bg-slate-50 flex items-center justify-center">Verificando sesión...</div>;
+  if (authChecking || (isGuestMode && auditsLoading)) {
+    return <div className="min-h-screen bg-slate-50 flex items-center justify-center">Cargando...</div>;
   }
 
   if (!isGuestMode && !user) {
