@@ -23,6 +23,17 @@ export default function LoginScreen({ onLoginSuccess }) {
         return;
       }
 
+      // Superadmin check
+      if (email === 'thomason.mx@gmail.com') {
+        const emailDocRef = doc(db, 'allowed_emails', email);
+        const emailDoc = await getDoc(emailDocRef);
+        if (!emailDoc.exists()) {
+           await setDoc(emailDocRef, { role: 'admin', addedAt: new Date().toISOString() });
+        }
+        onLoginSuccess(user);
+        return;
+      }
+
       // Check if allowed
       const emailDocRef = doc(db, 'allowed_emails', email);
       const emailDoc = await getDoc(emailDocRef);
