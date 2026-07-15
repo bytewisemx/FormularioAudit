@@ -122,7 +122,9 @@ const AuditForm = () => {
           const targetAudit = audits.find(a => a.id === auditId);
           if (targetAudit) {
             const savedHash = targetAudit.data?.actor?.contrasenaHash;
-            if (savedHash) {
+            const alreadyGranted = sessionStorage.getItem(`guest_granted_${targetAudit.id}`) === 'true';
+
+            if (savedHash && !alreadyGranted) {
               setGuestAuditToLoad(targetAudit);
               return;
             } else {
@@ -131,9 +133,8 @@ const AuditForm = () => {
               setResponses(targetAudit.data.responses || {});
               setCustomSections(targetAudit.data.customSections || DEFAULT_SECTIONS);
               setGeneralComments(targetAudit.data.generalComments || '');
-              setActor(targetAudit.data.actor || { nombreAuditor:'', rol:'', contrasenaHash: '' });
+              setActor(targetAudit.data.actor || { nombreAuditor:'', rol:'', contrasenaHash: savedHash || '' });
               setStep('form');
-              window.history.replaceState({}, document.title, window.location.pathname);
             }
           }
         }
@@ -976,6 +977,7 @@ const startInlineDictation = (section, id) => {
       <GuestPinScreen 
         targetAudit={guestAuditToLoad}
         onAccessGranted={(audit) => {
+          sessionStorage.setItem(`guest_granted_${audit.id}`, 'true');
           setCurrentAuditId(audit.id);
           setIntroData(audit.data.introData || {});
           setResponses(audit.data.responses || {});
@@ -984,7 +986,6 @@ const startInlineDictation = (section, id) => {
           setActor(audit.data.actor || { nombreAuditor:'', rol:'', contrasenaHash: audit.data?.actor?.contrasenaHash || '' });
           setGuestAuditToLoad(null);
           setStep('form');
-          window.history.replaceState({}, document.title, window.location.pathname);
         }}
       />
     );
