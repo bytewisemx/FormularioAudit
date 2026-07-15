@@ -1,56 +1,21 @@
-import React, { useState, useEffect } from 'react';
-import { Shield, ChevronRight, Mail, Lock, QrCode } from 'lucide-react';
-import { auth } from '../firebase';
-import { 
-  signInWithEmailAndPassword, 
-  multiFactor,
-  TotpMultiFactorGenerator,
-  TotpSecret,
-  getMultiFactorResolver
-} from 'firebase/auth';
+import React, { useState } from 'react';
+import { Shield, ChevronRight } from 'lucide-react';
+import { auth, googleProvider } from '../firebase';
+import { signInWithPopup } from 'firebase/auth';
 
 export default function LoginScreen({ onLoginSuccess }) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const [mfaResolver, setMfaResolver] = useState(null);
-  const [mfaCode, setMfaCode] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
+  const handleGoogleLogin = async () => {
     setError('');
     setLoading(true);
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      onLoginSuccess(userCredential.user);
-    } catch (err) {
-      if (err.code === 'auth/multi-factor-auth-required') {
-        // El usuario tiene MFA habilitado
-        setMfaResolver(getMultiFactorResolver(auth, err));
-      } else {
-        console.error(err);
-        setError('Error al iniciar sesión. Revisa tus credenciales o asegúrate de que el usuario existe en Firebase Auth.');
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleMfaSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
-    try {
-      const totpAssertion = TotpMultiFactorGenerator.assertionForSignIn(
-        mfaResolver.hints[0].uid,
-        mfaCode
-      );
-      const userCredential = await mfaResolver.resolveSignIn(totpAssertion);
+      const userCredential = await signInWithPopup(auth, googleProvider);
       onLoginSuccess(userCredential.user);
     } catch (err) {
       console.error(err);
-      setError('Código de autenticador incorrecto.');
+      setError('Error al iniciar sesión con Google. ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -73,80 +38,26 @@ export default function LoginScreen({ onLoginSuccess }) {
           </div>
         )}
 
-        {!mfaResolver ? (
-          <form onSubmit={handleLogin} className="space-y-5">
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-1.5 flex items-center gap-2">
-                <Mail size={16}/> Correo Electrónico
-              </label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="auditor@empresa.com"
-                required
-                className="w-full px-3 py-2 bg-white border border-slate-300 focus:border-slate-800 focus:outline-none transition-colors rounded-none"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-1.5 flex items-center gap-2">
-                <Lock size={16}/> Contraseña
-              </label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                required
-                className="w-full px-3 py-2 bg-white border border-slate-300 focus:border-slate-800 focus:outline-none transition-colors rounded-none"
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full mt-4 flex items-center justify-center gap-2 bg-slate-900 text-white font-semibold border border-slate-900 hover:bg-slate-800 px-6 py-4 rounded-none transition-all shadow-none disabled:opacity-50"
-            >
-              {loading ? 'Verificando...' : 'Iniciar Sesión'} <ChevronRight size={18} />
-            </button>
-            <p className="text-xs text-slate-500 text-center mt-4">
-              Nota: Debes crear tu cuenta y activar MFA en Firebase Identity Platform.
-            </p>
-          </form>
-        ) : (
-          <form onSubmit={handleMfaSubmit} className="space-y-5">
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-1.5 flex items-center gap-2">
-                <QrCode size={16}/> Código del Autenticador (MFA)
-              </label>
-              <p className="text-xs text-slate-500 mb-3">
-                Abre tu aplicación autenticadora (Google Authenticator, Authy, etc.) e ingresa el código de 6 dígitos.
-              </p>
-              <input
-                type="text"
-                value={mfaCode}
-                onChange={(e) => setMfaCode(e.target.value)}
-                placeholder="123456"
-                required
-                maxLength={6}
-                className="w-full px-3 py-2 bg-white border border-slate-300 focus:border-slate-800 focus:outline-none transition-colors rounded-none tracking-widest text-center text-lg font-mono"
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full mt-4 flex items-center justify-center gap-2 bg-[#00d4ff] text-slate-900 font-extrabold border border-[#00d4ff] hover:bg-[#00b8e6] px-6 py-4 rounded-none transition-all shadow-none disabled:opacity-50"
-            >
-              {loading ? 'Verificando...' : 'Verificar Código'} <Shield size={18} />
-            </button>
-            <button
-              type="button"
-              onClick={() => setMfaResolver(null)}
-              className="w-full text-center text-sm text-slate-500 hover:text-slate-800 mt-4"
-            >
-              Cancelar
-            </button>
-          </form>
-        )}
+        <div className="space-y-5">
+          <p className="text-sm text-slate-600 text-center mb-6">
+            Inicia sesión con tu cuenta de Google. Tu cuenta ya debe contar con Autenticación Multifactor (MFA) configurada en los ajustes de seguridad de Google para mantener protegido el sistema.
+          </p>
+
+          <button
+            onClick={handleGoogleLogin}
+            disabled={loading}
+            className="w-full flex items-center justify-center gap-3 bg-white text-slate-700 font-semibold border border-slate-300 hover:bg-slate-50 px-6 py-4 rounded-none transition-all shadow-sm disabled:opacity-50"
+          >
+            <svg width="24" height="24" viewBox="0 0 48 48">
+              <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>
+              <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.9c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.16 7.13-10.36 7.13-17.65z"></path>
+              <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path>
+              <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path>
+              <path fill="none" d="M0 0h48v48H0z"></path>
+            </svg>
+            {loading ? 'Verificando...' : 'Continuar con Google'}
+          </button>
+        </div>
       </div>
     </div>
   );
