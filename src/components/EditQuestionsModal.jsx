@@ -42,7 +42,7 @@ const EditQuestionsModal = ({ isOpen, onClose, initialSections, onSave }) => {
     setRewritingQuestion(key);
     try {
       const res = await fetch(
-        'https://n8n-n8n.bg5sbc.easypanel.host/webhook/rewrite-comments',
+        'https://n8n-n8n.bg5sbc.easypanel.host/webhook/cd537a01-7f79-4b98-b05b-0c681e507dbe',
         {
           method: 'POST',
           headers: {
@@ -50,7 +50,7 @@ const EditQuestionsModal = ({ isOpen, onClose, initialSections, onSave }) => {
             'x-api-key': 'bw_ai_comments_9F3xL8Qp_2026',
           },
           body: JSON.stringify({
-            text: userText,
+            text: `[INSTRUCCIÓN: Actúa como redactor técnico de encuestas y cuestionarios. Reescribe y mejora la redacción y ortografía de la siguiente PREGUNTA de auditoría de TI. Es imperativo que devuelvas el resultado estrictamente en formato de PREGUNTA (utilizando signos de interrogación). NO redactes una observación, ni hallazgo, ni recomendación. Devuelve únicamente la pregunta mejorada].\n\nPregunta original a mejorar: ${userText}`,
             context: {
               tipo: 'pregunta_auditoria',
               area: area
@@ -62,7 +62,7 @@ const EditQuestionsModal = ({ isOpen, onClose, initialSections, onSave }) => {
       if (!res.ok) throw new Error('Error al llamar IA');
 
       const data = await res.json();
-      let cleanText = String(data.rewritten || '')
+      let cleanText = String(data.rewritten || data.output || data.text || (typeof data === 'string' ? data : JSON.stringify(data)))
         .replace(/^({\s*)?\"?rewritten\"?\s*:\s*\"?/i, '') 
         .replace(/\"}\s*$/, '')                          
         .replace(/\\n/g, '\n')                           
@@ -167,10 +167,10 @@ const EditQuestionsModal = ({ isOpen, onClose, initialSections, onSave }) => {
         </div>
 
         {/* Body */}
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-col md:flex-row flex-1 overflow-y-auto md:overflow-hidden">
           
           {/* Sidebar - Areas */}
-          <div className="w-1/3 border-r border-slate-200 bg-slate-50 flex flex-col">
+          <div className="w-full md:w-1/3 border-b md:border-b-0 md:border-r border-slate-200 bg-slate-50 flex flex-col max-h-[250px] md:max-h-none shrink-0">
             <div className="p-4 border-b border-slate-200 font-semibold text-slate-700 flex justify-between items-center">
               Áreas de Evaluación
               <button 
@@ -199,7 +199,7 @@ const EditQuestionsModal = ({ isOpen, onClose, initialSections, onSave }) => {
                   </div>
                 </div>
               )}
-
+ 
               {Object.keys(sections).map(area => (
                 <div 
                   key={area}
@@ -220,9 +220,9 @@ const EditQuestionsModal = ({ isOpen, onClose, initialSections, onSave }) => {
               ))}
             </div>
           </div>
-
+ 
           {/* Main - Questions */}
-          <div className="w-2/3 flex flex-col bg-white">
+          <div className="w-full md:w-2/3 flex flex-col bg-white">
             {selectedArea ? (
               <>
                 <div className="p-4 border-b border-slate-200 bg-white flex justify-between items-center sticky top-0 z-10 shadow-sm">

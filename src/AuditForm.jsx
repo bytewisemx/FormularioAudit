@@ -1,9 +1,9 @@
 import { DEFAULT_SECTIONS } from "./defaultSections";
 
 import React, { useEffect, useState } from 'react';
-import { ChevronDown, ChevronUp, ChevronRight, Download, FileText, FileSpreadsheet, RefreshCw, Mic, Sparkles, Building2, Shield, Brain, Hash, CheckCircle, Search, Settings, Share2, KeyRound, Trash2, Home } from 'lucide-react';
+import { ChevronDown, ChevronUp, ChevronRight, Download, FileText, FileSpreadsheet, RefreshCw, Mic, Sparkles, Building2, Shield, Brain, Hash, CheckCircle, Search, Settings, Share2, KeyRound, Trash2, Home, Plus, X } from 'lucide-react';
 import { db, auth } from "./firebase";
-import { collection, doc, setDoc, getDocs, deleteDoc } from "firebase/firestore";
+import { collection, doc, setDoc, getDoc, updateDoc, getDocs, deleteDoc } from "firebase/firestore";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import LoginScreen from "./components/LoginScreen";
 import AccessManagement from "./components/AccessManagement";
@@ -49,10 +49,48 @@ const hashPassword = async (password) => {
     .join('');
 };
 
+const sortSections = (sections) => {
+  if (!sections) return {};
+  const defaultKeys = Object.keys(DEFAULT_SECTIONS);
+  const sectionsKeys = Object.keys(sections);
+
+  const sortedKeys = [...sectionsKeys].sort((a, b) => {
+    const idxA = defaultKeys.indexOf(a);
+    const idxB = defaultKeys.indexOf(b);
+    
+    if (idxA !== -1 && idxB !== -1) {
+      return idxA - idxB;
+    }
+    if (idxA !== -1) return -1;
+    if (idxB !== -1) return 1;
+    
+    return a.localeCompare(b);
+  });
+
+  const sortedObj = {};
+  sortedKeys.forEach(key => {
+    sortedObj[key] = sections[key];
+  });
+  return sortedObj;
+};
+
+let clientId = "";
+try {
+  clientId = sessionStorage.getItem('audit_client_id');
+  if (!clientId) {
+    clientId = 'client_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
+    sessionStorage.setItem('audit_client_id', clientId);
+  }
+} catch (e) {
+  clientId = 'client_fallback_' + Date.now();
+}
+
 const AuditForm = () => {
 
 
   const [customSections, setCustomSections] = useState(DEFAULT_SECTIONS);
+  const [blockedBy, setBlockedBy] = useState(null);
+  const [blockedAuditToLoad, setBlockedAuditToLoad] = useState(null);
   const [expandedSections, setExpandedSections] = useState({ 'Información General': true });
   const [showEditModal, setShowEditModal] = useState(false);
   const [responses, setResponses] = useState({});
@@ -90,6 +128,9 @@ const AuditForm = () => {
   const [user, setUser] = useState(null);
   const [authChecking, setAuthChecking] = useState(true);
   const [auditsLoading, setAuditsLoading] = useState(true);
+  const [addingSubFor, setAddingSubFor] = useState(null);
+  const [subpromptText, setSubpromptText] = useState('');
+  const [isGeneratingSub, setIsGeneratingSub] = useState(false);
 
   useEffect(() => {
     if (!auth) {
@@ -105,6 +146,12 @@ const AuditForm = () => {
 
   useEffect(() => {
     const loadAudits = async () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const auditId = urlParams.get('id');
+      if (!user && !auditId) {
+        setAuditsLoading(false);
+        return;
+      }
       try {
         if (!db) return;
         const querySnapshot = await getDocs(collection(db, "auditorias"));
@@ -115,8 +162,6 @@ const AuditForm = () => {
         audits.sort((a, b) => new Date(b.lastModified) - new Date(a.lastModified));
         setSavedAudits(audits);
 
-        const urlParams = new URLSearchParams(window.location.search);
-        const auditId = urlParams.get('id');
         if (auditId) {
           setIsGuestMode(true);
           const targetAudit = audits.find(a => a.id === auditId);
@@ -128,13 +173,17 @@ const AuditForm = () => {
               setGuestAuditToLoad(targetAudit);
               return;
             } else {
-              setCurrentAuditId(targetAudit.id);
-              setIntroData(targetAudit.data.introData || {});
-              setResponses(targetAudit.data.responses || {});
-              setCustomSections(targetAudit.data.customSections || DEFAULT_SECTIONS);
-              setGeneralComments(targetAudit.data.generalComments || '');
-              setActor(targetAudit.data.actor || { nombreAuditor:'', rol:'', contrasenaHash: savedHash || '' });
-              setStep('form');
+              acquireLock(targetAudit.id, targetAudit).then((success) => {
+                if (success) {
+                  setCurrentAuditId(targetAudit.id);
+                  setIntroData(targetAudit.data.introData || {});
+                  setResponses(targetAudit.data.responses || {});
+                  setCustomSections(sortSections(targetAudit.data.customSections || DEFAULT_SECTIONS));
+                  setGeneralComments(targetAudit.data.generalComments || '');
+                  setActor(targetAudit.data.actor || { nombreAuditor:'', rol:'', contrasenaHash: savedHash || '' });
+                  setStep('form');
+                }
+              });
             }
           }
         }
@@ -146,7 +195,7 @@ const AuditForm = () => {
       }
     };
     loadAudits();
-  }, []);
+  }, [user]);
 
   const savedAuditsRef = React.useRef(savedAudits);
   useEffect(() => { savedAuditsRef.current = savedAudits; }, [savedAudits]);
@@ -169,15 +218,69 @@ const AuditForm = () => {
        }
        setSavedAudits(newList);
        
+       let timer;
        if (db) {
-         try {
-           const docRef = doc(db, "auditorias", currentAuditId);
-           setDoc(docRef, auditData).catch(e => console.error("Error al guardar en Firebase:", e));
-         } catch(e) {}
+         timer = setTimeout(() => {
+           try {
+             const docRef = doc(db, "auditorias", currentAuditId);
+             setDoc(docRef, auditData)
+               .then(() => console.log("Auditoría guardada exitosamente en Firebase (debounced)."))
+               .catch(e => console.error("Error al guardar en Firebase:", e));
+           } catch(e) {}
+         }, 1500);
        }
+
+       return () => {
+         if (timer) clearTimeout(timer);
+       };
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [introData, responses, generalComments, actor, customSections, currentAuditId, step]);
+
+  useEffect(() => {
+    if (step !== 'form' || !currentAuditId || !db) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const docRef = doc(db, "auditorias", currentAuditId);
+        await setDoc(docRef, {
+          editingStatus: {
+            isBeingEdited: true,
+            clientId: clientId,
+            userIdent: auth.currentUser?.email || actor.nombreAuditor || 'Invitado',
+            lastActive: new Date().toISOString()
+          }
+        }, { merge: true });
+        console.log("Bloqueo de edición extendido (heartbeat).");
+      } catch (e) {
+        console.error("Error en heartbeat de Firebase:", e);
+      }
+    }, 25000);
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, [step, currentAuditId, actor.nombreAuditor, user]);
+
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (db && currentAuditId && step === 'form') {
+        const docRef = doc(db, "auditorias", currentAuditId);
+        setDoc(docRef, {
+          editingStatus: {
+            isBeingEdited: false,
+            clientId: "",
+            userIdent: "",
+            lastActive: ""
+          }
+        }, { merge: true }).catch(() => {});
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [currentAuditId, step]);
 
   useEffect(() => {
     const onScroll = () => setShowScrollTop(window.scrollY > 500);
@@ -202,7 +305,7 @@ const rewriteCommentsWithAI = async () => {
     const areaScores = calculateAreaScores();
 
     const res = await fetch(
-      "https://n8n-n8n.bg5sbc.easypanel.host/webhook/rewrite-comments",
+      "https://n8n-n8n.bg5sbc.easypanel.host/webhook/cd537a01-7f79-4b98-b05b-0c681e507dbe",
       {
         method: "POST",
         headers: {
@@ -234,11 +337,11 @@ const rewriteCommentsWithAI = async () => {
 
     /**
      * 🧹 LIMPIEZA DEFINITIVA
-     * - Toma SOLO rewritten
+     * - Toma SOLO el resultado reescrito (soporta rewritten, output y text)
      * - Convierte \n visibles en saltos reales
      * - Elimina llaves o wrappers si llegan por error
      */
-    let cleanText = String(data.rewritten || "")
+    let cleanText = String(data.rewritten || data.output || data.text || (typeof data === 'string' ? data : JSON.stringify(data)))
       .replace(/^({\s*)?"?rewritten"?\s*:\s*"?/i, "") // por si llega {"rewritten":
       .replace(/"}\s*$/, "")                          // por si cierra con "}
       .replace(/\\n/g, "\n")                           // \n → salto real
@@ -273,7 +376,7 @@ const rewriteObservationWithAI = async (section, item) => {
   setRewritingKey(key);
   try {
     const res = await fetch(
-      "https://n8n-n8n.bg5sbc.easypanel.host/webhook/rewrite-comments",
+      "https://n8n-n8n.bg5sbc.easypanel.host/webhook/cd537a01-7f79-4b98-b05b-0c681e507dbe",
       {
         method: "POST",
         headers: {
@@ -295,7 +398,7 @@ const rewriteObservationWithAI = async (section, item) => {
     if (!res.ok) throw new Error("Error al llamar IA");
 
     const data = await res.json();
-    let cleanText = String(data.rewritten || "")
+    let cleanText = String(data.rewritten || data.output || data.text || (typeof data === 'string' ? data : JSON.stringify(data)))
       .replace(/^({\s*)?"?rewritten"?\s*:\s*"?/i, "") 
       .replace(/"}\s*$/, "")                          
       .replace(/\\n/g, "\n")                           
@@ -311,6 +414,111 @@ const rewriteObservationWithAI = async (section, item) => {
   } finally {
     setRewritingKey(null);
   }
+};
+
+const generateSubquestionWithAI = async (itemQuestionText) => {
+  if (!subpromptText.trim()) return alert("Escribe de qué se trata la subpregunta primero.");
+  
+  setIsGeneratingSub(true);
+  try {
+    const res = await fetch(
+      "https://n8n-n8n.bg5sbc.easypanel.host/webhook/cd537a01-7f79-4b98-b05b-0c681e507dbe",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": "bw_ai_comments_9F3xL8Qp_2026",
+        },
+        body: JSON.stringify({
+          text: `[INSTRUCCIÓN: Actúa como un redactor técnico de auditorías de TI. Genera una sola PREGUNTA GUÍA O SUBPREGUNTA sugerida para profundizar y obtener más información del auditado. Esta subpregunta se colgará de una pregunta principal. No redactes respuestas ni observaciones, debe ser estrictamente una pregunta interrogativa. El tema o contexto que debe indagar la subpregunta es: "${subpromptText}". La pregunta principal relacionada es: "${itemQuestionText}"].\n\nDevuelve únicamente la pregunta generada en formato de pregunta profesional (utilizando signos de interrogación).`,
+          context: {
+            tipo: "pregunta_auditoria_sugerida",
+            pregunta_padre: itemQuestionText
+          }
+        }),
+      }
+    );
+
+    if (!res.ok) throw new Error("Error en webhook de IA");
+    const data = await res.json();
+    let cleanText = String(data.rewritten || data.output || data.text || (typeof data === 'string' ? data : JSON.stringify(data)))
+      .replace(/^({\s*)?"?rewritten"?\s*:\s*"?/i, "") 
+      .replace(/"}\s*$/, "")                          
+      .replace(/\\n/g, "\n")                           
+      .replace(/\\r/g, "")
+      .replace(/"\s*$/, "")  
+      .replace(/\s*}\s*$/, "") 
+      .trim();
+
+    setSubpromptText(cleanText);
+  } catch (e) {
+    console.error(e);
+    alert("Error al generar la subpregunta sugerida.");
+  } finally {
+    setIsGeneratingSub(false);
+  }
+};
+
+const saveSubquestion = (section, itemId) => {
+  if (!subpromptText.trim()) return alert("La subpregunta no puede estar vacía.");
+  
+  setCustomSections(prev => {
+    const newSections = { ...prev };
+    const questions = [...(newSections[section] || [])];
+    const qIndex = questions.findIndex(q => q.id === itemId);
+    if (qIndex !== -1) {
+      const q = { ...questions[qIndex] };
+      const subs = [...(q.subquestions || [])];
+      subs.push({
+        id: 'sub_' + Date.now(),
+        texto: subpromptText.trim()
+      });
+      q.subquestions = subs;
+      questions[qIndex] = q;
+      newSections[section] = questions;
+    }
+    return newSections;
+  });
+  
+  setAddingSubFor(null);
+  setSubpromptText('');
+};
+
+const deleteSubquestion = (section, itemId, subId) => {
+  if (!window.confirm("¿Seguro que deseas eliminar esta pregunta sugerida?")) return;
+  setCustomSections(prev => {
+    const newSections = { ...prev };
+    const questions = [...(newSections[section] || [])];
+    const qIndex = questions.findIndex(q => q.id === itemId);
+    if (qIndex !== -1) {
+      const q = { ...questions[qIndex] };
+      q.subquestions = (q.subquestions || []).filter(sub => sub.id !== subId);
+      questions[qIndex] = q;
+      newSections[section] = questions;
+    }
+    return newSections;
+  });
+};
+
+const updateSubquestionResponse = (section, itemId, subId, respuestaVal) => {
+  setCustomSections(prev => {
+    const newSections = { ...prev };
+    const questions = [...(newSections[section] || [])];
+    const qIndex = questions.findIndex(q => q.id === itemId);
+    if (qIndex !== -1) {
+      const q = { ...questions[qIndex] };
+      const subs = (q.subquestions || []).map(sub => {
+        if (sub.id === subId) {
+          return { ...sub, respuesta: respuestaVal };
+        }
+        return sub;
+      });
+      q.subquestions = subs;
+      questions[qIndex] = q;
+      newSections[section] = questions;
+    }
+    return newSections;
+  });
 };
 
 const startInlineDictation = (section, id) => {
@@ -376,6 +584,67 @@ const startInlineDictation = (section, id) => {
   // =========================
   // (State moved to top for auto-save logic)
 
+
+  const acquireLock = async (auditId, targetAuditData = null) => {
+    if (!db) return true;
+    try {
+      let audit = targetAuditData;
+      const docRef = doc(db, "auditorias", auditId);
+      if (!audit) {
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          audit = docSnap.data();
+        }
+      }
+
+      if (audit && audit.editingStatus) {
+        const status = audit.editingStatus;
+        const now = Date.now();
+        const lastActiveTime = status.lastActive ? new Date(status.lastActive).getTime() : 0;
+        if (status.isBeingEdited && status.clientId !== clientId && (now - lastActiveTime < 60000)) {
+          setBlockedBy(status.userIdent || "Otro auditor");
+          setBlockedAuditToLoad(audit);
+          setStep('blocked');
+          return false;
+        }
+      }
+
+      await setDoc(docRef, {
+        editingStatus: {
+          isBeingEdited: true,
+          clientId: clientId,
+          userIdent: auth.currentUser?.email || actor.nombreAuditor || 'Invitado',
+          lastActive: new Date().toISOString()
+        }
+      }, { merge: true });
+      
+      console.log("Bloqueo de edición adquirido.");
+      return true;
+    } catch (e) {
+      console.error("Error al intentar adquirir el bloqueo:", e);
+      return true;
+    }
+  };
+
+  const releaseLock = async (auditIdToRelease = null) => {
+    const targetId = auditIdToRelease || currentAuditId;
+    if (db && targetId) {
+      try {
+        const docRef = doc(db, "auditorias", targetId);
+        await setDoc(docRef, {
+          editingStatus: {
+            isBeingEdited: false,
+            clientId: "",
+            userIdent: "",
+            lastActive: ""
+          }
+        }, { merge: true });
+        console.log("Bloqueo de edición liberado.");
+      } catch (e) {
+        console.error("Error al liberar el bloqueo:", e);
+      }
+    }
+  };
 
   const updateIntroData = (field, value) => {
     setIntroData(prev => ({
@@ -534,6 +803,19 @@ const startInlineDictation = (section, id) => {
     return count > 0 ? (total / count) : 0;
   };
 
+  const calculateTotalRealScore = () => {
+    let total = 0;
+    Object.keys(customSections).forEach(section => {
+      customSections[section].forEach(q => {
+        const key = `${section}-${q.id}`;
+        if (responses[key]?.evaluacion !== undefined) {
+          total += parseInt(responses[key].evaluacion);
+        }
+      });
+    });
+    return total;
+  };
+
   const getTotalQuestions = () =>
     Object.keys(customSections).reduce((sum, section) => sum + (customSections[section]?.length || 0), 0);
 
@@ -651,7 +933,7 @@ const startInlineDictation = (section, id) => {
     const totalQuestions = getTotalQuestions();
     const answeredCount = getAnsweredQuestions();
 
-    const projectedPoints = avgScore * totalQuestions;
+    const realPoints = calculateTotalRealScore();
     const level = getScoreLevel(avgScore);
     const areaScores = calculateAreaScores();
 
@@ -800,7 +1082,7 @@ const startInlineDictation = (section, id) => {
     children.push(H2("Resumen general de la encuesta"));
     children.push(KV("Preguntas respondidas", `${answeredCount}/${totalQuestions}`));
     children.push(KV("Promedio (respondidas)", `${avgScore.toFixed(2)}/4`));
-    children.push(KV("Puntuación proyectada", `${projectedPoints.toFixed(0)} pts`));
+    children.push(KV("Puntuación real obtenida", `${realPoints.toFixed(0)} pts`));
     children.push(KV("Nivel", level.nivel));
     children.push(P(level.descripcion));
 
@@ -851,7 +1133,7 @@ const startInlineDictation = (section, id) => {
   const exportToExcel = async () => {
     try {
       const avgScore = calculateTotalScore();
-      const totalScore = avgScore * getTotalQuestions();
+      const totalScore = calculateTotalRealScore();
       const scoreLevel = getScoreLevel(avgScore);
       const areaScores = calculateAreaScores();
 
@@ -888,7 +1170,7 @@ const startInlineDictation = (section, id) => {
 
       // 2. Puntuación General
       addHeader('PUNTUACIÓN GENERAL');
-      sheet.addRow(['Puntuación Total', totalScore.toFixed(0)]);
+      sheet.addRow(['Puntuación Real Obtenida', totalScore.toFixed(0)]);
       sheet.addRow(['Promedio', avgScore.toFixed(2)]);
       sheet.addRow(['Nivel', scoreLevel.nivel]);
       sheet.addRow(['Descripción', scoreLevel.descripcion]);
@@ -982,16 +1264,81 @@ const startInlineDictation = (section, id) => {
         targetAudit={guestAuditToLoad}
         onAccessGranted={(audit) => {
           sessionStorage.setItem(`guest_granted_${audit.id}`, 'true');
-          setCurrentAuditId(audit.id);
-          setIntroData(audit.data.introData || {});
-          setResponses(audit.data.responses || {});
-          setCustomSections(audit.data.customSections || DEFAULT_SECTIONS);
-          setGeneralComments(audit.data.generalComments || '');
-          setActor(audit.data.actor || { nombreAuditor:'', rol:'', contrasenaHash: audit.data?.actor?.contrasenaHash || '' });
-          setGuestAuditToLoad(null);
-          setStep('form');
+          acquireLock(audit.id, audit).then((success) => {
+            if (success) {
+              setCurrentAuditId(audit.id);
+              setIntroData(audit.data.introData || {});
+              setResponses(audit.data.responses || {});
+              setCustomSections(sortSections(audit.data.customSections || DEFAULT_SECTIONS));
+              setGeneralComments(audit.data.generalComments || '');
+              setActor(audit.data.actor || { nombreAuditor:'', rol:'', contrasenaHash: audit.data?.actor?.contrasenaHash || '' });
+              setGuestAuditToLoad(null);
+              setStep('form');
+            }
+          });
         }}
       />
+    );
+  }
+
+  if (step === 'blocked') {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+        <div className="max-w-md w-full bg-white p-8 border border-slate-200 border-t-4 border-t-amber-500 shadow-sm text-center">
+           <div className="w-16 h-16 bg-slate-900 rounded-none flex items-center justify-center mx-auto mb-6">
+              <KeyRound size={32} className="text-amber-500" />
+           </div>
+           <h1 className="text-2xl font-extrabold text-slate-800">Auditoría en Edición</h1>
+           <p className="text-slate-600 mt-4 text-sm leading-relaxed">
+             Esta auditoría está siendo editada actualmente por: <br/>
+             <strong className="text-slate-900 break-all">{blockedBy || 'Otro usuario/auditor'}</strong>.
+           </p>
+           <p className="text-slate-500 mt-2 text-xs font-medium">
+             Por seguridad y para evitar pérdida de datos, por favor espera un momento o regresa al panel principal.
+           </p>
+           
+           <div className="mt-8 space-y-3">
+             <button
+               onClick={async () => {
+                 if (blockedAuditToLoad) {
+                   const docRef = doc(db, "auditorias", blockedAuditToLoad.id);
+                   const docSnap = await getDoc(docRef);
+                   if (docSnap.exists()) {
+                     const freshAudit = docSnap.data();
+                     const success = await acquireLock(freshAudit.id, freshAudit);
+                     if (success) {
+                       setCurrentAuditId(freshAudit.id);
+                       setIntroData(freshAudit.data.introData || {});
+                       setResponses(freshAudit.data.responses || {});
+                       setCustomSections(sortSections(freshAudit.data.customSections || DEFAULT_SECTIONS));
+                       setGeneralComments(freshAudit.data.generalComments || '');
+                       setActor(freshAudit.data.actor || { nombreAuditor:'', rol:'', contrasenaHash: freshAudit.data?.actor?.contrasenaHash || '' });
+                       setStep('form');
+                     }
+                   } else {
+                     alert("La auditoría ya no existe.");
+                     setStep('gate');
+                   }
+                 }
+               }}
+               className="w-full bg-slate-900 text-white font-semibold border border-slate-900 hover:bg-slate-800 px-6 py-3 rounded-none transition-all cursor-pointer"
+             >
+               Intentar de nuevo
+             </button>
+             
+             <button
+               onClick={() => {
+                 setStep('gate');
+                 setBlockedBy(null);
+                 setBlockedAuditToLoad(null);
+               }}
+               className="w-full bg-white text-slate-700 font-semibold border border-slate-300 hover:bg-slate-50 px-6 py-3 rounded-none transition-all cursor-pointer"
+             >
+               Volver al Panel
+             </button>
+           </div>
+        </div>
+      </div>
     );
   }
 
@@ -1078,10 +1425,14 @@ const startInlineDictation = (section, id) => {
                   return;
                 }
                 const hashed = await hashPassword(actor.contrasena);
-                setCurrentAuditId(Date.now().toString());
-                setIntroData(prev => ({...prev, nombreEmpresa: actor.nombreEmpresa, nombre: actor.nombreAuditor}));
-                setActor(prev => ({ ...prev, contrasenaHash: hashed, contrasena: '' }));
-                setStep('form');
+                const newId = Date.now().toString();
+                const lockAcquired = await acquireLock(newId);
+                if (lockAcquired) {
+                  setCurrentAuditId(newId);
+                  setIntroData(prev => ({...prev, nombreEmpresa: actor.nombreEmpresa, nombre: actor.nombreAuditor}));
+                  setActor(prev => ({ ...prev, contrasenaHash: hashed, contrasena: '' }));
+                  setStep('form');
+                }
               }}
               className="w-full mt-4 flex items-center justify-center gap-2 bg-slate-900 text-white font-semibold border border-slate-900 hover:bg-slate-800 px-6 py-4 rounded-none hover:bg-slate-800 transition-all font-bold shadow-none shadow-none/20"
             >
@@ -1092,11 +1443,11 @@ const startInlineDictation = (section, id) => {
 
         {/* AUDITORIAS GUARDADAS */}
         {savedAudits.length > 0 && (
-          <div className="w-full max-w-xl bg-white/10 backdrop-blur rounded-none shadow-none p-6 md:p-8 border border-white/20">
-             <h2 className="text-xl font-bold text-slate-100 mb-4">Auditorías Guardadas</h2>
+          <div className="w-full max-w-xl bg-slate-50 border border-slate-200 shadow-sm p-6 md:p-8 rounded-none">
+             <h2 className="text-xl font-bold text-slate-800 mb-4">Auditorías Guardadas</h2>
              <div className="space-y-3 max-h-60 overflow-y-auto custom-scrollbar pr-2">
                {savedAudits.map(audit => (
-                 <div key={audit.id} className="bg-white rounded-none p-4 flex items-center justify-between shadow-none">
+                 <div key={audit.id} className="bg-white rounded-none p-4 flex items-center justify-between shadow-none border border-slate-100">
                    <div className="min-w-0 pr-2">
                      <div className="font-bold text-slate-800 text-base truncate">{audit.nombreEmpresa}</div>
                      <div className="text-xs text-slate-500 mt-1">
@@ -1118,12 +1469,16 @@ const startInlineDictation = (section, id) => {
                            }
                          }
 
-                         setCurrentAuditId(audit.id);
-                         setIntroData(audit.data.introData || {});
-                         setResponses(audit.data.responses || {});
-                         setGeneralComments(audit.data.generalComments || '');
-                         setActor(audit.data.actor || { nombreAuditor:'', rol:'', contrasenaHash: savedHash || '' });
-                         setStep('form');
+                         const lockAcquired = await acquireLock(audit.id, audit);
+                         if (lockAcquired) {
+                           setCurrentAuditId(audit.id);
+                           setIntroData(audit.data.introData || {});
+                           setResponses(audit.data.responses || {});
+                           setCustomSections(sortSections(audit.data.customSections || DEFAULT_SECTIONS));
+                           setGeneralComments(audit.data.generalComments || '');
+                           setActor(audit.data.actor || { nombreAuditor:'', rol:'', contrasenaHash: savedHash || '' });
+                           setStep('form');
+                         }
                        }}
                        className="px-4 py-2 bg-slate-900 text-white font-semibold border border-slate-900 hover:bg-slate-800 text-xs font-semibold rounded-none hover:bg-slate-800 transition shadow-none"
                      >
@@ -1174,7 +1529,7 @@ const startInlineDictation = (section, id) => {
                 </h1>
                 <div className="flex items-center gap-2">
                   {step === 'form' && !isGuestMode && (
-                    <button onClick={() => setStep('gate')} className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-none transition" title="Volver al Inicio">
+                    <button onClick={async () => { await releaseLock(); setStep('gate'); }} className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-none transition" title="Volver al Inicio">
                       <Home size={20} />
                     </button>
                   )}
@@ -1260,8 +1615,8 @@ const startInlineDictation = (section, id) => {
               {/* Score Dashboard */}
               <div className="space-y-3">
                 <div className="bg-slate-50 border border-slate-200 border-l-4 border-l-[#00d4ff] p-5 shadow-sm">
-                  <div className="text-xs text-slate-500 font-semibold mb-1 uppercase tracking-wider">Puntuación Total</div>
-                  <div className="text-3xl font-bold text-slate-900 tracking-tight">{(calculateTotalScore() * getTotalQuestions()).toFixed(0)} pts</div>
+                  <div className="text-xs text-slate-500 font-semibold mb-1 uppercase tracking-wider">Puntuación Real Obtenida</div>
+                  <div className="text-3xl font-bold text-slate-900 tracking-tight">{calculateTotalRealScore()} pts</div>
                   <div className="text-xs mt-1 font-semibold text-slate-700">{getScoreLevel(calculateTotalScore()).nivel}</div>
                 </div>
                 
@@ -1333,7 +1688,7 @@ const startInlineDictation = (section, id) => {
         {/* Secciones y Navegación Lateral */}
         <div className="flex flex-col md:flex-row gap-6">
           {/* Menú Lateral (Sidebar) */}
-          <div className="w-full md:w-1/4 flex-shrink-0 space-y-2 sticky top-4 self-start max-h-[90vh] overflow-y-auto pr-2 custom-scrollbar">
+          <div className="w-full md:w-1/4 flex-shrink-0 space-y-2 md:sticky md:top-4 md:self-start max-h-[200px] md:max-h-[90vh] overflow-y-auto pr-2 custom-scrollbar">
             <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 ml-2">Navegación</h3>
             
             <button
@@ -1640,6 +1995,8 @@ const startInlineDictation = (section, id) => {
                         <p className="text-gray-700 flex-1">{item.pregunta}</p>
                       </div>
 
+
+
                       {item.requisito && (
                         <p className="text-xs text-gray-500 italic mb-3 flex items-center gap-1.5"><FileText size={14} className="shrink-0" /> {item.requisito}</p>
                       )}
@@ -1737,6 +2094,97 @@ const startInlineDictation = (section, id) => {
                           className={`w-full px-3 py-2 border border-slate-300 resize-y transition-colors focus:border-slate-800 focus:outline-none rounded-none ${dictatingKey === key ? 'border-red-400 bg-red-50/30' : 'border-gray-200 focus:ring-2 focus:ring-cyan-500 focus:border-transparent'}`}
                         />
                       </div>
+
+                      {/* Renderizar Subpreguntas/Preguntas Guía Guardadas al final de las observaciones */}
+                      {item.subquestions && item.subquestions.length > 0 && (
+                        <div className="mt-4 mb-3 bg-slate-50 border border-slate-200 p-3 space-y-2 animate-in fade-in duration-200">
+                          <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider block mb-1">
+                            Preguntas Guía Sugeridas (Para obtener más información):
+                          </span>
+                          {item.subquestions.map(sub => (
+                            <div key={sub.id} className="text-xs text-slate-700 space-y-1.5 pl-2 border-l-2 border-slate-300 pb-2 border-b border-slate-200/50 last:border-b-0 last:pb-0">
+                              <div className="flex items-start justify-between gap-2">
+                                <span className="italic font-medium flex-1">
+                                  • {sub.texto}
+                                </span>
+                                {!isGuestMode && (
+                                  <button
+                                    type="button"
+                                    onClick={() => deleteSubquestion(section, item.id, sub.id)}
+                                    className="text-gray-400 hover:text-red-600 transition shrink-0 bg-transparent border-0 cursor-pointer"
+                                    title="Eliminar pregunta guía"
+                                  >
+                                    <X size={12} />
+                                  </button>
+                                )}
+                              </div>
+                              <input
+                                type="text"
+                                value={sub.respuesta || ''}
+                                onChange={(e) => updateSubquestionResponse(section, item.id, sub.id, e.target.value)}
+                                placeholder="Escribe aquí la respuesta a esta pregunta sugerida..."
+                                className="w-full px-2.5 py-1 bg-white border border-slate-200 text-xs focus:border-slate-800 focus:outline-none transition-colors rounded-none font-normal"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Botón para Añadir Pregunta Guía al final del bloque de observaciones */}
+                      {!isGuestMode && addingSubFor !== key && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAddingSubFor(key);
+                            setSubpromptText('');
+                          }}
+                          className="mt-2 mb-1 flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-800 transition cursor-pointer"
+                          title="Añadir pregunta sugerida"
+                        >
+                          <Plus size={14} /> Añadir pregunta guía
+                        </button>
+                      )}
+
+                      {/* Formulario Inline para Añadir Subpregunta */}
+                      {addingSubFor === key && (
+                        <div className="mt-3 mb-2 bg-slate-50 border border-slate-200 p-4 animate-in fade-in duration-200">
+                          <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase">
+                            ¿De qué se trata la pregunta guía sugerida?
+                          </label>
+                          <textarea
+                            value={subpromptText}
+                            onChange={(e) => setSubpromptText(e.target.value)}
+                            placeholder="Escribe el tema (ej: 'mfa en correos corporativos') o ingresa la pregunta directamente..."
+                            className="w-full text-xs px-3 py-2 bg-white border border-slate-300 focus:border-slate-800 focus:outline-none transition-colors rounded-none mb-3 resize-y"
+                            rows={2}
+                          />
+                          <div className="flex flex-wrap gap-2 justify-end">
+                            <button
+                              type="button"
+                              onClick={() => setAddingSubFor(null)}
+                              className="bg-white text-slate-700 text-xs font-semibold border border-slate-300 hover:bg-slate-100 px-3 py-1.5 rounded-none transition cursor-pointer"
+                            >
+                              Cancelar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => generateSubquestionWithAI(item.pregunta)}
+                              disabled={isGeneratingSub}
+                              className="bg-indigo-50 text-indigo-700 text-xs font-semibold border border-indigo-200 hover:bg-indigo-100 px-3 py-1.5 rounded-none transition cursor-pointer flex items-center gap-1"
+                            >
+                              <Sparkles size={12} className={isGeneratingSub ? "animate-pulse" : ""} />
+                              {isGeneratingSub ? 'Generando...' : 'Mejorar con IA'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => saveSubquestion(section, item.id)}
+                              className="bg-slate-900 text-white text-xs font-semibold border border-slate-900 hover:bg-slate-800 px-3 py-1.5 rounded-none transition cursor-pointer"
+                            >
+                              Guardar Sugerencia
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
