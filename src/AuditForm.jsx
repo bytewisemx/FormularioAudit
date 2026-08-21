@@ -1317,7 +1317,11 @@ const startInlineDictation = (section, id) => {
                      }
                    } else {
                      alert("La auditoría ya no existe.");
-                     setStep('gate');
+                     if (isGuestMode) {
+                       window.location.href = window.location.origin + window.location.pathname;
+                     } else {
+                       setStep('gate');
+                     }
                    }
                  }
                }}
@@ -1326,16 +1330,18 @@ const startInlineDictation = (section, id) => {
                Intentar de nuevo
              </button>
              
-             <button
-               onClick={() => {
-                 setStep('gate');
-                 setBlockedBy(null);
-                 setBlockedAuditToLoad(null);
-               }}
-               className="w-full bg-white text-slate-700 font-semibold border border-slate-300 hover:bg-slate-50 px-6 py-3 rounded-none transition-all cursor-pointer"
-             >
-               Volver al Panel
-             </button>
+             {!isGuestMode && (
+               <button
+                 onClick={() => {
+                   setStep('gate');
+                   setBlockedBy(null);
+                   setBlockedAuditToLoad(null);
+                 }}
+                 className="w-full bg-white text-slate-700 font-semibold border border-slate-300 hover:bg-slate-50 px-6 py-3 rounded-none transition-all cursor-pointer"
+               >
+                 Volver al Panel
+               </button>
+             )}
            </div>
         </div>
       </div>
