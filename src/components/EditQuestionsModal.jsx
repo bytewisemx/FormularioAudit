@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { X, Plus, Trash2, Edit2, Save, FileText, CheckCircle, Search, Sparkles } from 'lucide-react';
+import { X, Plus, Trash2, Edit2, Save, FileText, CheckCircle, Search, Sparkles, RotateCcw } from 'lucide-react';
+import { DEFAULT_SECTIONS } from '../defaultSections';
 
 const EditQuestionsModal = ({ isOpen, onClose, initialSections, onSave }) => {
   const [sections, setSections] = useState({});
@@ -140,6 +141,15 @@ const EditQuestionsModal = ({ isOpen, onClose, initialSections, onSave }) => {
       });
       const remaining = Object.keys(sections).filter(a => a !== area);
       setSelectedArea(remaining.length > 0 ? remaining[0] : '');
+    }
+  };
+
+  const handleResetToDefault = () => {
+    if (confirm('¿Estás seguro de que deseas restablecer todas las áreas y preguntas a la plantilla inicial por defecto? Se perderán las preguntas personalizadas que hayas agregado en esta auditoría.')) {
+      const freshDefault = JSON.parse(JSON.stringify(DEFAULT_SECTIONS));
+      setSections(freshDefault);
+      const areas = Object.keys(freshDefault);
+      setSelectedArea(areas.length > 0 ? areas[0] : '');
     }
   };
 
@@ -330,19 +340,29 @@ const EditQuestionsModal = ({ isOpen, onClose, initialSections, onSave }) => {
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3">
+        <div className="p-4 border-t border-slate-200 bg-slate-50 flex flex-col sm:flex-row justify-between items-center gap-3">
           <button 
-            onClick={onClose}
-            className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-200 transition-colors"
+            type="button"
+            onClick={handleResetToDefault}
+            className="w-full sm:w-auto px-4 py-2 text-xs font-bold text-amber-700 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+            title="Restablece las preguntas de esta auditoría a la plantilla inicial por defecto"
           >
-            Cancelar
+            <RotateCcw size={15} /> Restablecer a Estructura Inicial
           </button>
-          <button 
-            onClick={handleSave}
-            className="px-6 py-2 flex items-center gap-2 bg-[#00d4ff] text-slate-900 text-sm font-bold hover:bg-cyan-400 transition-colors"
-          >
-            <Save size={16} /> Guardar Cambios
-          </button>
+          <div className="flex w-full sm:w-auto justify-end gap-3">
+            <button 
+              onClick={onClose}
+              className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-200 transition-colors"
+            >
+              Cancelar
+            </button>
+            <button 
+              onClick={handleSave}
+              className="px-6 py-2 flex items-center gap-2 bg-[#00d4ff] text-slate-900 text-sm font-bold hover:bg-cyan-400 transition-colors"
+            >
+              <Save size={16} /> Guardar Cambios
+            </button>
+          </div>
         </div>
       </div>
     </div>

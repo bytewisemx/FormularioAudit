@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react'
 
 // https://vite.dev/config/
 export default defineConfig(({ command }) => ({
-  // GitHub Pages project site lives under /FormularioAudit/
-  base: command === 'build' ? '/FormularioAudit/' : '/',
+  // Si se compila en Cloudflare Pages se sirve desde '/', si es GitHub Pages desde '/FormularioAudit/'
+  base: process.env.CF_PAGES ? '/' : (command === 'build' ? '/FormularioAudit/' : '/'),
   plugins: [react()],
 }))

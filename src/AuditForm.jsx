@@ -1,7 +1,7 @@
 import { DEFAULT_SECTIONS } from "./defaultSections";
 
 import React, { useEffect, useState } from 'react';
-import { ChevronDown, ChevronUp, ChevronRight, Download, FileText, FileSpreadsheet, RefreshCw, Mic, Sparkles, Building2, Shield, Brain, Hash, CheckCircle, Search, Settings, Share2, KeyRound, Trash2, Home, Plus, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, ChevronRight, Download, FileText, FileSpreadsheet, RefreshCw, Mic, Sparkles, Building2, Shield, Brain, Hash, CheckCircle, Search, Settings, Share2, KeyRound, Trash2, Home, Plus, X, Globe, Copy, Check, ExternalLink, Loader2 } from 'lucide-react';
 import { db, auth } from "./firebase";
 import { collection, doc, setDoc, getDoc, updateDoc, getDocs, deleteDoc } from "firebase/firestore";
 import { onAuthStateChanged, signOut } from "firebase/auth";
@@ -85,10 +85,29 @@ try {
   clientId = 'client_fallback_' + Date.now();
 }
 
+const INITIAL_INTRO_DATA = {
+  nombreEmpresa: '',
+  nombre: '',
+  puesto: '',
+  contacto: '',
+  giro: '',
+  sitioWeb: '',
+  preliminarEmpresa: '',
+  colaboradores: '',
+  modalidad: '',
+  proporcionaEquipos: '',
+  tipoEquipos: '',
+  estructuraTI: '',
+  dependenciaRed: '',
+  incidenciasRecientes: ''
+};
+
+const getDefaultSections = () => JSON.parse(JSON.stringify(DEFAULT_SECTIONS));
+
 const AuditForm = () => {
 
 
-  const [customSections, setCustomSections] = useState(DEFAULT_SECTIONS);
+  const [customSections, setCustomSections] = useState(() => getDefaultSections());
   const [blockedBy, setBlockedBy] = useState(null);
   const [blockedAuditToLoad, setBlockedAuditToLoad] = useState(null);
   const [expandedSections, setExpandedSections] = useState({ 'Información General': true });
@@ -96,20 +115,7 @@ const AuditForm = () => {
   const [responses, setResponses] = useState({});
   const [generalComments, setGeneralComments] = useState('');
   const [showScrollTop, setShowScrollTop] = useState(false);
-  const [introData, setIntroData] = useState({
-    nombreEmpresa: '',
-    nombre: '',
-    puesto: '',
-    contacto: '',
-    giro: '',
-    colaboradores: '',
-    modalidad: '',
-    proporcionaEquipos: '',
-    tipoEquipos: '',
-    estructuraTI: '',
-    dependenciaRed: '',
-    incidenciasRecientes: ''
-  });
+  const [introData, setIntroData] = useState(INITIAL_INTRO_DATA);
   const [rewriting, setRewriting] = useState(false);
   const [dictatingKey, setDictatingKey] = useState(null);
   const [rewritingKey, setRewritingKey] = useState(null);
@@ -131,6 +137,23 @@ const AuditForm = () => {
   const [addingSubFor, setAddingSubFor] = useState(null);
   const [subpromptText, setSubpromptText] = useState('');
   const [isGeneratingSub, setIsGeneratingSub] = useState(false);
+  const [isInvestigatingCompany, setIsInvestigatingCompany] = useState(false);
+  const [copiedPreliminar, setCopiedPreliminar] = useState(false);
+
+  const resetToInitialState = () => {
+    setCurrentAuditId(null);
+    setActor({ nombreEmpresa: '', nombreAuditor: '', rol: '', contrasena: '', contrasenaHash: '' });
+    setIntroData(INITIAL_INTRO_DATA);
+    setResponses({});
+    setGeneralComments('');
+    setCustomSections(getDefaultSections());
+    setExpandedSections({ 'Información General': true });
+    setActiveSection('Información General');
+    setShowSettings(false);
+    setShowExportMenu(false);
+    setAddingSubFor(null);
+    setSubpromptText('');
+  };
 
   useEffect(() => {
     if (!auth) {
@@ -178,7 +201,7 @@ const AuditForm = () => {
                   setCurrentAuditId(targetAudit.id);
                   setIntroData(targetAudit.data.introData || {});
                   setResponses(targetAudit.data.responses || {});
-                  setCustomSections(sortSections(targetAudit.data.customSections || DEFAULT_SECTIONS));
+                  setCustomSections(sortSections(targetAudit.data.customSections || getDefaultSections()));
                   setGeneralComments(targetAudit.data.generalComments || '');
                   setActor(targetAudit.data.actor || { nombreAuditor:'', rol:'', contrasenaHash: savedHash || '' });
                   setStep('form');
@@ -459,6 +482,105 @@ const generateSubquestionWithAI = async (itemQuestionText) => {
   }
 };
 
+const investigateCompanyWithAI = async (overrideUrl = null) => {
+  let rawUrl = (overrideUrl !== null ? overrideUrl : (introData.sitioWeb || '')).trim();
+  if (!rawUrl) {
+    alert("Por favor ingresa la URL o página web de la empresa (ej: https://empresa.com)");
+    return;
+  }
+
+  if (!/^https?:\/\//i.test(rawUrl)) {
+    rawUrl = 'https://' + rawUrl;
+    updateIntroData('sitioWeb', rawUrl);
+  }
+
+  setIsInvestigatingCompany(true);
+
+  try {
+    let siteContent = '';
+    let fetchSuccess = false;
+
+    // 1. Intentar obtener contenido público con Jina Reader (timeout seguro)
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8500);
+      const jinaRes = await fetch(`https://r.jina.ai/${rawUrl}`, {
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      if (jinaRes.ok) {
+        const rawText = await jinaRes.text();
+        if (rawText && rawText.length > 80) {
+          siteContent = rawText.slice(0, 3800);
+          fetchSuccess = true;
+        }
+      }
+    } catch (fetchErr) {
+      console.warn("Jina Reader no pudo extraer directamente (continuando con análisis de dominio/contexto):", fetchErr);
+    }
+
+    // 2. Construir prompt estructurado para el webhook
+    const companyName = introData.nombreEmpresa || 'la empresa';
+    const promptInstruction = `[INSTRUCCIÓN: Actúa como Auditor Líder Senior en Ciberseguridad y Auditoría de TI (ISO 27001, NIST CSF, CIS Controls).
+Realiza una investigación preliminar ejecutiva y de inteligencia para orientar la auditoría de TI de la empresa "${companyName}" a partir de su página web: ${rawUrl}.
+
+${fetchSuccess ? `Contenido público extraído del sitio web:\n${siteContent}\n` : `(Nota: No se pudo scrapear en vivo por restricciones de red del servidor, analiza con base en el dominio ${rawUrl}, nombre de la empresa "${companyName}" y patrones de la industria correspondiente).`}
+
+Debes estructurar el resultado estrictamente en estas 3 secciones con formato Markdown profesional y títulos legibles:
+
+### 1. Giro Comercial y Modelo Operativo
+(Describe cómo se manejan, a qué se dedican, sus principales productos o servicios y el mercado o clientes a los que atienden).
+
+### 2. Estructura Organizacional y Perfil Tecnológico Probable
+(Describe su estructura organizativa estimada, áreas operativas clave y las tecnologías, plataformas cloud o infraestructura que probablemente utilizan para operar).
+
+### 3. Estimación de Seguridad de la Información y Riesgos Potenciales
+(Evalúa cómo se prevé su situación y madurez de seguridad, posibles brechas o puntos ciegos comunes para este perfil, normativas aplicables y qué aspectos críticos debe vigilar con prioridad el auditor durante esta evaluación).
+
+Aporta valor concreto, análisis certero y profesionalismo técnico.]`;
+
+    // 3. Llamar al webhook de IA
+    const res = await fetch(
+      "https://n8n-n8n.bg5sbc.easypanel.host/webhook/cd537a01-7f79-4b98-b05b-0c681e507dbe",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": "bw_ai_comments_9F3xL8Qp_2026",
+        },
+        body: JSON.stringify({
+          text: promptInstruction,
+          context: {
+            tipo: "investigacion_preliminar_empresa",
+            url: rawUrl,
+            empresa: companyName,
+            fetchSuccess: fetchSuccess
+          }
+        })
+      }
+    );
+
+    if (!res.ok) throw new Error("Error en webhook de IA");
+    const data = await res.json();
+    let cleanText = String(data.output || data.rewritten || data.text || (typeof data === 'string' ? data : JSON.stringify(data)))
+      .replace(/^({\s*)?"?rewritten"?\s*:\s*"?/i, "")
+      .replace(/^({\s*)?"?output"?\s*:\s*"?/i, "")
+      .replace(/"}\s*$/, "")
+      .replace(/\\n/g, "\n")
+      .replace(/\\r/g, "")
+      .replace(/"\s*$/, "")
+      .replace(/\s*}\s*$/, "")
+      .trim();
+
+    updateIntroData('preliminarEmpresa', cleanText);
+  } catch (err) {
+    console.error(err);
+    alert("Ocurrió un error al realizar la investigación preliminar con IA. Por favor verifica la URL e inténtalo nuevamente.");
+  } finally {
+    setIsInvestigatingCompany(false);
+  }
+};
+
 const saveSubquestion = (section, itemId) => {
   if (!subpromptText.trim()) return alert("La subpregunta no puede estar vacía.");
   
@@ -659,21 +781,10 @@ const startInlineDictation = (section, id) => {
     if (confirm('¿Estás seguro de que deseas iniciar una nueva evaluación? Se perderán todos los datos no exportados.')) {
       setResponses({});
       setGeneralComments('');
-      setIntroData({
-        nombreEmpresa: '',
-        nombre: '',
-        puesto: '',
-        contacto: '',
-        giro: '',
-        colaboradores: '',
-        modalidad: '',
-        proporcionaEquipos: '',
-        tipoEquipos: '',
-        estructuraTI: '',
-        dependenciaRed: '',
-        incidenciasRecientes: ''
-      });
+      setIntroData(INITIAL_INTRO_DATA);
+      setCustomSections(getDefaultSections());
       setExpandedSections({ 'Información General': true });
+      setActiveSection('Información General');
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
@@ -1074,6 +1185,17 @@ const startInlineDictation = (section, id) => {
     children.push(KV("Empresa", introData.nombreEmpresa));
     children.push(KV("Giro", introData.giro));
     children.push(KV("Contacto", introData.contacto));
+    if (introData.sitioWeb) {
+      children.push(KV("Página web oficial", introData.sitioWeb));
+    }
+
+    if ((introData.preliminarEmpresa || "").trim()) {
+      children.push(H2("Investigación preliminar de la empresa"));
+      clean(introData.preliminarEmpresa)
+        .split("\n")
+        .filter((l) => l.trim())
+        .forEach((line) => children.push(P(line)));
+    }
 
     children.push(H2("Persona que auditó"));
     children.push(KV("Auditor", actor?.nombreAuditor));
@@ -1159,6 +1281,10 @@ const startInlineDictation = (section, id) => {
       sheet.addRow(['Puesto', introData.puesto || 'N/A']);
       sheet.addRow(['Contacto', introData.contacto || 'N/A']);
       sheet.addRow(['Giro de la empresa', introData.giro || 'N/A']);
+      sheet.addRow(['Sitio web', introData.sitioWeb || 'N/A']);
+      if ((introData.preliminarEmpresa || '').trim()) {
+        sheet.addRow(['Investigación preliminar (IA)', introData.preliminarEmpresa]);
+      }
       sheet.addRow(['Colaboradores', introData.colaboradores || 'N/A']);
       sheet.addRow(['Modalidad', introData.modalidad || 'N/A']);
       sheet.addRow(['Proporciona equipos', introData.proporcionaEquipos || 'N/A']);
@@ -1269,7 +1395,7 @@ const startInlineDictation = (section, id) => {
               setCurrentAuditId(audit.id);
               setIntroData(audit.data.introData || {});
               setResponses(audit.data.responses || {});
-              setCustomSections(sortSections(audit.data.customSections || DEFAULT_SECTIONS));
+              setCustomSections(sortSections(audit.data.customSections || getDefaultSections()));
               setGeneralComments(audit.data.generalComments || '');
               setActor(audit.data.actor || { nombreAuditor:'', rol:'', contrasenaHash: audit.data?.actor?.contrasenaHash || '' });
               setGuestAuditToLoad(null);
@@ -1310,7 +1436,7 @@ const startInlineDictation = (section, id) => {
                        setCurrentAuditId(freshAudit.id);
                        setIntroData(freshAudit.data.introData || {});
                        setResponses(freshAudit.data.responses || {});
-                       setCustomSections(sortSections(freshAudit.data.customSections || DEFAULT_SECTIONS));
+                       setCustomSections(sortSections(freshAudit.data.customSections || getDefaultSections()));
                        setGeneralComments(freshAudit.data.generalComments || '');
                        setActor(freshAudit.data.actor || { nombreAuditor:'', rol:'', contrasenaHash: freshAudit.data?.actor?.contrasenaHash || '' });
                        setStep('form');
@@ -1333,6 +1459,7 @@ const startInlineDictation = (section, id) => {
              {!isGuestMode && (
                <button
                  onClick={() => {
+                   resetToInitialState();
                    setStep('gate');
                    setBlockedBy(null);
                    setBlockedAuditToLoad(null);
@@ -1360,7 +1487,7 @@ const startInlineDictation = (section, id) => {
             <button onClick={() => setStep('access_management')} className="text-sm font-bold text-slate-500 hover:text-slate-800 transition flex items-center gap-2">
               <Shield size={16} /> Accesos
             </button>
-            <button onClick={() => { signOut(auth); setStep('gate'); }} className="text-sm font-bold text-slate-500 hover:text-red-600 transition flex items-center gap-2">
+            <button onClick={() => { signOut(auth); resetToInitialState(); setStep('gate'); }} className="text-sm font-bold text-slate-500 hover:text-red-600 transition flex items-center gap-2">
               <Settings size={16} className="hidden" /> Cerrar Sesión
             </button>
          </div>
@@ -1435,7 +1562,16 @@ const startInlineDictation = (section, id) => {
                 const lockAcquired = await acquireLock(newId);
                 if (lockAcquired) {
                   setCurrentAuditId(newId);
-                  setIntroData(prev => ({...prev, nombreEmpresa: actor.nombreEmpresa, nombre: actor.nombreAuditor}));
+                  setIntroData({
+                    ...INITIAL_INTRO_DATA,
+                    nombreEmpresa: actor.nombreEmpresa.trim(),
+                    nombre: actor.nombreAuditor.trim()
+                  });
+                  setResponses({});
+                  setGeneralComments('');
+                  setCustomSections(getDefaultSections());
+                  setExpandedSections({ 'Información General': true });
+                  setActiveSection('Información General');
                   setActor(prev => ({ ...prev, contrasenaHash: hashed, contrasena: '' }));
                   setStep('form');
                 }
@@ -1480,7 +1616,7 @@ const startInlineDictation = (section, id) => {
                            setCurrentAuditId(audit.id);
                            setIntroData(audit.data.introData || {});
                            setResponses(audit.data.responses || {});
-                           setCustomSections(sortSections(audit.data.customSections || DEFAULT_SECTIONS));
+                           setCustomSections(sortSections(audit.data.customSections || getDefaultSections()));
                            setGeneralComments(audit.data.generalComments || '');
                            setActor(audit.data.actor || { nombreAuditor:'', rol:'', contrasenaHash: savedHash || '' });
                            setStep('form');
@@ -1535,7 +1671,7 @@ const startInlineDictation = (section, id) => {
                 </h1>
                 <div className="flex items-center gap-2">
                   {step === 'form' && !isGuestMode && (
-                    <button onClick={async () => { await releaseLock(); setStep('gate'); }} className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-none transition" title="Volver al Inicio">
+                    <button onClick={async () => { await releaseLock(); resetToInitialState(); setStep('gate'); }} className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-none transition" title="Volver al Inicio">
                       <Home size={20} />
                     </button>
                   )}
@@ -1604,6 +1740,7 @@ const startInlineDictation = (section, id) => {
                               } catch(e) { console.error(e) }
                             }
                             setSavedAudits(prev => prev.filter(a => a.id !== currentAuditId));
+                            resetToInitialState();
                             setStep('gate');
                           }
                         }} className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 font-medium">
@@ -1708,6 +1845,29 @@ const startInlineDictation = (section, id) => {
               <span className="truncate">Información General</span>
             </button>
 
+            <button
+              onClick={() => setActiveSection('Preliminar de la Empresa')}
+              className={`w-full text-left px-4 py-3 rounded-none text-sm font-semibold transition-all flex items-center justify-between ${
+                activeSection === 'Preliminar de la Empresa' 
+                ? 'bg-cyan-50 text-cyan-700 border-l-4 border-slate-800 shadow-none' 
+                : 'text-gray-600 hover:bg-gray-100 border-l-4 border-transparent'
+              }`}
+            >
+              <div className="flex items-center gap-2 truncate">
+                <Sparkles size={16} className={introData.preliminarEmpresa ? "text-[#00d4ff]" : "text-gray-400"} />
+                <span className="truncate">Preliminar de la Empresa</span>
+              </div>
+              {introData.preliminarEmpresa ? (
+                <span className="text-[10px] px-2 py-0.5 rounded-none bg-emerald-100 text-emerald-700 font-bold">
+                  Listo
+                </span>
+              ) : (
+                <span className="text-[10px] px-2 py-0.5 rounded-none bg-cyan-100 text-cyan-700 font-bold">
+                  IA
+                </span>
+              )}
+            </button>
+
             {Object.keys(customSections).map((section) => {
               const questions = customSections[section];
               let answered = 0;
@@ -1761,17 +1921,43 @@ const startInlineDictation = (section, id) => {
                   </div>
                 </div>
                 <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Nombre de la empresa *
-                </label>
-                <input
-                  type="text"
-                  value={introData.nombreEmpresa}
-                  onChange={(e) => updateIntroData('nombreEmpresa', e.target.value)}
-                  placeholder="Razón social o nombre comercial"
-                  className="w-full px-4 py-2 border-2 border-cyan-300 rounded-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent font-semibold"
-                />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Nombre de la empresa *
+                  </label>
+                  <input
+                    type="text"
+                    value={introData.nombreEmpresa}
+                    onChange={(e) => updateIntroData('nombreEmpresa', e.target.value)}
+                    placeholder="Razón social o nombre comercial"
+                    className="w-full px-4 py-2 border-2 border-cyan-300 rounded-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent font-semibold"
+                  />
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-sm font-semibold text-gray-700">
+                      Página web oficial de la empresa
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setActiveSection('Preliminar de la Empresa')}
+                      className="text-xs text-cyan-700 hover:text-cyan-900 font-bold flex items-center gap-1 cursor-pointer"
+                    >
+                      <Sparkles size={13} className="text-[#00d4ff]" /> Ver Preliminar
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="url"
+                      value={introData.sitioWeb || ''}
+                      onChange={(e) => updateIntroData('sitioWeb', e.target.value)}
+                      placeholder="https://empresa.com"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                    />
+                  </div>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1931,6 +2117,176 @@ const startInlineDictation = (section, id) => {
             </div>
           </div>
         )}
+
+            {/* Sección de Preliminar de la Empresa Activa */}
+            {activeSection === 'Preliminar de la Empresa' && (
+              <div className="mb-8 bg-white rounded-none shadow-sm overflow-hidden border border-slate-200 border-t-2 border-t-[#00d4ff] animate-in fade-in slide-in-from-bottom-4 duration-300">
+                <div className="px-6 py-5 bg-white border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <div className="p-1.5 bg-cyan-50 border border-cyan-200 text-cyan-600">
+                        <Sparkles size={20} className="text-[#00d4ff]" />
+                      </div>
+                      <h2 className="text-xl font-bold text-slate-900">Preliminar e Inteligencia de la Empresa</h2>
+                    </div>
+                    <p className="text-xs md:text-sm text-slate-500 mt-1">
+                      Investigación automatizada con IA a partir del sitio web oficial: cómo se manejan, estructura organizacional y perfil de seguridad.
+                    </p>
+                  </div>
+                  {introData.preliminarEmpresa && (
+                    <div className="flex items-center gap-2 self-start md:self-auto">
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold">
+                        <CheckCircle size={14} /> Análisis Generado
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-6 space-y-6">
+                  {/* Buscador / URL Input Card */}
+                  <div className="bg-slate-50 p-5 border border-slate-200">
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                      Página web oficial de la empresa
+                    </label>
+                    <div className="flex flex-col sm:flex-row items-stretch gap-2">
+                      <div className="relative flex-1">
+                        <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                          <Globe size={18} />
+                        </div>
+                        <input
+                          type="url"
+                          value={introData.sitioWeb || ''}
+                          onChange={(e) => updateIntroData('sitioWeb', e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !isInvestigatingCompany) {
+                              investigateCompanyWithAI();
+                            }
+                          }}
+                          placeholder="Ej: https://bytewise.mx o empresa.com"
+                          className="w-full pl-10 pr-10 py-2.5 bg-white border border-slate-300 focus:border-slate-800 focus:outline-none text-sm transition font-medium"
+                          disabled={isInvestigatingCompany}
+                        />
+                        {introData.sitioWeb && (
+                          <a
+                            href={introData.sitioWeb.startsWith('http') ? introData.sitioWeb : `https://${introData.sitioWeb}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-cyan-600 transition"
+                            title="Abrir página en nueva pestaña"
+                          >
+                            <ExternalLink size={16} />
+                          </a>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => investigateCompanyWithAI()}
+                        disabled={isInvestigatingCompany}
+                        className="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm flex items-center justify-center gap-2 transition disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer shadow-sm shrink-0"
+                      >
+                        {isInvestigatingCompany ? (
+                          <>
+                            <Loader2 size={16} className="animate-spin text-[#00d4ff]" />
+                            <span>Investigando...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles size={16} className="text-[#00d4ff]" />
+                            <span>{introData.preliminarEmpresa ? "Re-analizar Empresa" : "Investigar con IA"}</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between text-xs text-slate-500 mt-2 gap-2">
+                      <span>Empresa auditada: <strong className="text-slate-800">{introData.nombreEmpresa || 'Sin especificar'}</strong></span>
+                      <span className="text-[11px] text-slate-400">Extrae contenido público y analiza riesgos bajo estándares ISO 27001 / NIST</span>
+                    </div>
+                  </div>
+
+                  {/* Estado de Carga con Animación */}
+                  {isInvestigatingCompany && (
+                    <div className="p-8 border border-cyan-200 bg-cyan-50/40 flex flex-col items-center justify-center text-center animate-pulse">
+                      <div className="w-12 h-12 rounded-none bg-slate-900 flex items-center justify-center mb-3 shadow-sm">
+                        <Loader2 size={24} className="animate-spin text-[#00d4ff]" />
+                      </div>
+                      <h4 className="font-bold text-slate-800 text-base">Investigando empresa en tiempo real...</h4>
+                      <p className="text-xs text-slate-600 max-w-md mt-1">
+                        Consultando la estructura de la página, productos, modelo operativo y evaluando la superficie potencial de riesgos de seguridad de la información.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Resultados del Análisis Preliminar */}
+                  {!isInvestigatingCompany && introData.preliminarEmpresa && (
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+                        <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                          <FileText size={16} className="text-cyan-600" />
+                          Resultado de la Investigación Preliminar
+                        </h3>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(introData.preliminarEmpresa);
+                              setCopiedPreliminar(true);
+                              setTimeout(() => setCopiedPreliminar(false), 2000);
+                            }}
+                            className="px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 border border-slate-200 flex items-center gap-1.5 transition cursor-pointer"
+                            title="Copiar texto del análisis"
+                          >
+                            {copiedPreliminar ? (
+                              <>
+                                <Check size={14} className="text-emerald-600" />
+                                <span className="text-emerald-600 font-bold">Copiado</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy size={14} />
+                                <span>Copiar</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Editor / Visualizador del Preliminar */}
+                      <div className="relative">
+                        <textarea
+                          value={introData.preliminarEmpresa}
+                          onChange={(e) => updateIntroData('preliminarEmpresa', e.target.value)}
+                          rows={14}
+                          placeholder="Aquí aparecerá el análisis preliminar generado con IA o puedes redactarlo manualmente..."
+                          className="w-full px-4 py-3 bg-white border border-slate-300 focus:border-slate-800 focus:outline-none text-sm text-slate-800 leading-relaxed font-mono transition resize-y"
+                        />
+                      </div>
+
+                      <div className="p-3 bg-slate-50 border border-slate-200 text-xs text-slate-600 flex items-start gap-2">
+                        <Shield size={16} className="text-[#00d4ff] shrink-0 mt-0.5" />
+                        <div>
+                          <strong>Nota para el Auditor:</strong> Este informe preliminar es editable. Puedes ajustar detalles conforme obtengas mayor evidencia durante las entrevistas. Se incorporará automáticamente en las exportaciones de Word y Excel.
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Estado vacío cuando aún no hay investigación */}
+                  {!isInvestigatingCompany && !introData.preliminarEmpresa && (
+                    <div className="p-12 border-2 border-dashed border-slate-200 text-center flex flex-col items-center justify-center">
+                      <div className="w-14 h-14 bg-slate-100 rounded-none flex items-center justify-center text-slate-400 mb-3">
+                        <Globe size={28} />
+                      </div>
+                      <h4 className="font-bold text-slate-700 text-base">Aún no se ha realizado la investigación preliminar</h4>
+                      <p className="text-xs text-slate-500 max-w-md mt-1 mb-4">
+                        Ingresa la dirección web de la empresa en la parte superior y haz clic en <strong>Investigar con IA</strong> para generar automáticamente el perfil comercial, operativo y de seguridad.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Sección de Reporte Final */}
             {activeSection === 'Reporte Final' && (
