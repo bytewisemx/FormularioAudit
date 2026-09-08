@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Plus, Trash2, Edit2, Save, FileText, CheckCircle, Search, Sparkles, RotateCcw, Upload, Download, FileSpreadsheet, Loader2 } from 'lucide-react';
 import { DEFAULT_SECTIONS } from '../defaultSections';
 import { downloadExcelTemplate, parseQuestionsFile } from '../excelTemplateHelper';
+import CustomDialogModal from './CustomDialogModal';
 
 const EditQuestionsModal = ({ isOpen, onClose, initialSections, onSave }) => {
   const [sections, setSections] = useState({});
@@ -10,6 +11,46 @@ const EditQuestionsModal = ({ isOpen, onClose, initialSections, onSave }) => {
   const [isAddingArea, setIsAddingArea] = useState(false);
   const [rewritingQuestion, setRewritingQuestion] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [modalConfig, setModalConfig] = useState(null);
+
+  const showConfirm = ({ title, message, confirmText = 'Aceptar', cancelText = 'Cancelar', isDanger = false }) => {
+    return new Promise((resolve) => {
+      setModalConfig({
+        type: isDanger ? 'danger' : 'confirm',
+        title: title || 'Confirmación',
+        message,
+        confirmText,
+        cancelText,
+        onConfirm: () => {
+          setModalConfig(null);
+          resolve(true);
+        },
+        onCancel: () => {
+          setModalConfig(null);
+          resolve(false);
+        }
+      });
+    });
+  };
+
+  const showAlert = ({ title, message, type = 'alert', confirmText = 'Entendido' }) => {
+    return new Promise((resolve) => {
+      setModalConfig({
+        type,
+        title: title || (type === 'error' ? 'Atención' : (type === 'success' ? 'Éxito' : 'Aviso')),
+        message,
+        confirmText,
+        onConfirm: () => {
+          setModalConfig(null);
+          resolve(true);
+        },
+        onCancel: () => {
+          setModalConfig(null);
+          resolve(true);
+        }
+      });
+    });
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -109,8 +150,14 @@ const EditQuestionsModal = ({ isOpen, onClose, initialSections, onSave }) => {
     });
   };
 
-  const removeQuestion = (area, questionId) => {
-    if (confirm('¿Estás seguro de que deseas eliminar esta pregunta?')) {
+  const removeQuestion = async (area, questionId) => {
+    const ok = await showConfirm({
+      title: 'Eliminar Pregunta',
+      message: '¿Estás seguro de que deseas eliminar esta pregunta del cuestionario?',
+      isDanger: true,
+      confirmText: 'Eliminar Pregunta'
+    });
+    if (ok) {
       setSections(prev => {
         const newSections = { ...prev };
         newSections[area] = newSections[area].filter(q => q.id !== questionId);
@@ -119,10 +166,14 @@ const EditQuestionsModal = ({ isOpen, onClose, initialSections, onSave }) => {
     }
   };
 
-  const addArea = () => {
+  const addArea = async () => {
     if (!newAreaName.trim()) return;
     if (sections[newAreaName]) {
-      alert("Ya existe un área con este nombre.");
+      await showAlert({
+        type: 'warning',
+        title: 'Área Existente',
+        message: 'Ya existe un área con este nombre. Elige un nombre distinto.'
+      });
       return;
     }
     setSections(prev => ({
@@ -134,8 +185,14 @@ const EditQuestionsModal = ({ isOpen, onClose, initialSections, onSave }) => {
     setIsAddingArea(false);
   };
 
-  const removeArea = (area) => {
-    if (confirm(`¿Estás seguro de que deseas eliminar el área "${area}" y TODAS sus preguntas?`)) {
+  const removeArea = async (area) => {
+    const ok = await showConfirm({
+      title: 'Eliminar Área Completa',
+      message: `¿Estás seguro de que deseas eliminar el área "${area}" y TODAS sus preguntas?\nEsta acción no se puede deshacer.`,
+      isDanger: true,
+      confirmText: 'Eliminar Área'
+    });
+    if (ok) {
       setSections(prev => {
         const newSections = { ...prev };
         delete newSections[area];
@@ -146,8 +203,14 @@ const EditQuestionsModal = ({ isOpen, onClose, initialSections, onSave }) => {
     }
   };
 
-  const handleResetToDefault = () => {
-    if (confirm('¿Estás seguro de que deseas restablecer todas las áreas y preguntas a la plantilla inicial por defecto? Se perderán las preguntas personalizadas que hayas agregado en esta auditoría.')) {
+  const handleResetToDefault = async () => {
+    const ok = await showConfirm({
+      title: 'Restablecer a Estructura Inicial',
+      message: '¿Estás seguro de que deseas restablecer todas las áreas y preguntas a la plantilla inicial por defecto?\nSe perderán las preguntas personalizadas que hayas agregado en esta auditoría.',
+      isDanger: true,
+      confirmText: 'Restablecer Preguntas'
+    });
+    if (ok) {
       const freshDefault = JSON.parse(JSON.stringify(DEFAULT_SECTIONS));
       setSections(freshDefault);
       const areas = Object.keys(freshDefault);
@@ -161,13 +224,17 @@ const EditQuestionsModal = ({ isOpen, onClose, initialSections, onSave }) => {
       await downloadExcelTemplate(sections, `Plantilla_Preguntas_${Date.now()}.xlsx`);
     } catch (err) {
       console.error(err);
-      alert('Error al generar la plantilla Excel: ' + (err.message || ''));
+      await showAlert({
+        type: 'error',
+        title: 'Error en Descarga',
+        message: 'Error al generar la plantilla Excel: ' + (err.message || '')
+      });
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const handleExportJSON = () => {
+  const handleExportJSON = async () => {
     try {
       const dataStr = JSON.stringify(sections, null, 2);
       const blob = new Blob([dataStr], { type: 'application/json' });
@@ -179,7 +246,11 @@ const EditQuestionsModal = ({ isOpen, onClose, initialSections, onSave }) => {
       URL.revokeObjectURL(url);
     } catch (e) {
       console.error(e);
-      alert("Error al exportar la plantilla.");
+      await showAlert({
+        type: 'error',
+        title: 'Error de Exportación',
+        message: 'Error al exportar la plantilla en formato JSON.'
+      });
     }
   };
 
@@ -193,10 +264,18 @@ const EditQuestionsModal = ({ isOpen, onClose, initialSections, onSave }) => {
       const areas = Object.keys(parsed);
       setSelectedArea(areas[0] || '');
       const totalQ = Object.values(parsed).reduce((acc, curr) => acc + (curr?.length || 0), 0);
-      alert(`Cuestionario importado con éxito desde "${file.name}":\n• ${areas.length} áreas identificadas\n• ${totalQ} preguntas cargadas\n\nHaz clic en "Guardar Cambios" para aplicar esta estructura.`);
+      await showAlert({
+        type: 'success',
+        title: 'Cuestionario Importado',
+        message: `Plantilla cargada con éxito desde "${file.name}":\n• ${areas.length} áreas identificadas\n• ${totalQ} preguntas cargadas\n\nHaz clic en "Guardar Cambios" para aplicar esta estructura a tu evaluación.`
+      });
     } catch (err) {
       console.error(err);
-      alert(err.message || "Error al procesar el archivo. Asegúrate de que sea un archivo .xlsx, .xls o .json válido.");
+      await showAlert({
+        type: 'error',
+        title: 'Error de Importación',
+        message: err.message || "Error al procesar el archivo. Asegúrate de que sea un archivo .xlsx, .xls o .json válido."
+      });
     } finally {
       setIsProcessing(false);
       e.target.value = '';
@@ -442,6 +521,8 @@ const EditQuestionsModal = ({ isOpen, onClose, initialSections, onSave }) => {
           </div>
         </div>
       </div>
+
+      <CustomDialogModal config={modalConfig} onClose={() => setModalConfig(null)} />
     </div>
   );
 };

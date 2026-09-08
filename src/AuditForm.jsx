@@ -31,6 +31,7 @@ import logoPng from "./assets/bytewise.mx.png";
 import EditQuestionsModal from "./components/EditQuestionsModal";
 import { Edit2 } from "lucide-react";
 import AudioAssistant from "./components/AudioAssistant";
+import CustomDialogModal from "./components/CustomDialogModal";
 
 const GENERIC_EVALUATION_SCALE = [
   '0 - No existe',
@@ -183,6 +184,71 @@ const AuditForm = () => {
   const [importSummary, setImportSummary] = useState(null);
   const [importError, setImportError] = useState('');
 
+  // Sistema de Diálogos Modales Personalizados (ByteWise Modal Dialogs)
+  const [modalConfig, setModalConfig] = useState(null);
+
+  const showConfirm = ({ title, message, confirmText = 'Aceptar', cancelText = 'Cancelar', isDanger = false, type }) => {
+    return new Promise((resolve) => {
+      setModalConfig({
+        type: type || (isDanger ? 'danger' : 'confirm'),
+        title: title || 'Confirmación',
+        message,
+        confirmText,
+        cancelText,
+        onConfirm: () => {
+          setModalConfig(null);
+          resolve(true);
+        },
+        onCancel: () => {
+          setModalConfig(null);
+          resolve(false);
+        }
+      });
+    });
+  };
+
+  const showPrompt = ({ title, message, placeholder = '', defaultValue = '', inputType = 'text', confirmText = 'Aceptar', cancelText = 'Cancelar' }) => {
+    return new Promise((resolve) => {
+      setModalConfig({
+        type: 'prompt',
+        title: title || 'Ingreso de datos',
+        message,
+        placeholder,
+        defaultValue,
+        inputType,
+        confirmText,
+        cancelText,
+        onConfirm: (val) => {
+          setModalConfig(null);
+          resolve(val);
+        },
+        onCancel: () => {
+          setModalConfig(null);
+          resolve(null);
+        }
+      });
+    });
+  };
+
+  const showAlert = ({ title, message, type = 'alert', confirmText = 'Entendido' }) => {
+    return new Promise((resolve) => {
+      setModalConfig({
+        type: type, // 'alert' | 'error' | 'success' | 'warning'
+        title: title || (type === 'error' ? 'Atención' : (type === 'success' ? 'Éxito' : 'Aviso')),
+        message,
+        confirmText,
+        onConfirm: () => {
+          setModalConfig(null);
+          resolve(true);
+        },
+        onCancel: () => {
+          setModalConfig(null);
+          resolve(true);
+        }
+      });
+    });
+  };
+
   const handleGateFileImport = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -228,12 +294,24 @@ const AuditForm = () => {
 
   const handleLoadAudit = async (audit) => {
     const savedHash = audit.data?.actor?.contrasenaHash;
+    const nombreEmpresa = audit.nombreEmpresa || audit.data?.introData?.nombreEmpresa || 'esta empresa';
     if (savedHash) {
-      const pin = window.prompt("Ingresa la contraseña o PIN de esta auditoría para acceder:");
+      const pin = await showPrompt({
+        title: 'Auditoría Protegida',
+        message: `La auditoría de "${nombreEmpresa}" está protegida con contraseña.\nIngresa el PIN para acceder a la evaluación:`,
+        inputType: 'password',
+        placeholder: 'Ingresa el PIN de acceso...',
+        confirmText: 'Acceder a Auditoría',
+        cancelText: 'Cancelar'
+      });
       if (pin === null) return; 
       const enteredHash = await hashPassword(pin);
       if (enteredHash !== savedHash) {
-        alert("Contraseña incorrecta. Acceso denegado.");
+        await showAlert({
+          type: 'error',
+          title: 'Acceso Denegado',
+          message: 'La contraseña o PIN ingresado es incorrecto. Por favor verifica tus credenciales.'
+        });
         return;
       }
     }
@@ -253,17 +331,33 @@ const AuditForm = () => {
   const handleDeleteAudit = async (audit, e) => {
     if (e && e.stopPropagation) e.stopPropagation();
     const nombre = audit.nombreEmpresa || audit.data?.introData?.nombreEmpresa || 'esta auditoría';
-    if (!window.confirm(`¿Estás seguro de que deseas eliminar permanentemente la auditoría de "${nombre}"?\nEsta acción no se puede deshacer.`)) {
-      return;
-    }
+    const confirmed = await showConfirm({
+      title: 'Eliminar Auditoría',
+      message: `¿Estás seguro de que deseas eliminar permanentemente la auditoría de "${nombre}"?\nEsta acción no se puede deshacer.`,
+      isDanger: true,
+      confirmText: 'Eliminar Auditoría',
+      cancelText: 'Cancelar'
+    });
+    if (!confirmed) return;
 
     const savedHash = audit.data?.actor?.contrasenaHash;
     if (savedHash) {
-      const pin = window.prompt("Esta auditoría está protegida con PIN. Ingresa el PIN para autorizar la eliminación:");
+      const pin = await showPrompt({
+        title: 'Verificación de Seguridad',
+        message: `Esta auditoría está protegida con PIN. Ingresa el PIN para autorizar la eliminación de "${nombre}":`,
+        inputType: 'password',
+        placeholder: 'Ingresa el PIN para confirmar...',
+        confirmText: 'Confirmar Eliminación',
+        cancelText: 'Cancelar'
+      });
       if (pin === null) return;
       const enteredHash = await hashPassword(pin);
       if (enteredHash !== savedHash) {
-        alert("PIN incorrecto. No se pudo eliminar la auditoría.");
+        await showAlert({
+          type: 'error',
+          title: 'PIN Incorrecto',
+          message: 'El PIN ingresado es incorrecto. No se autorizó la eliminación de la auditoría.'
+        });
         return;
       }
     }
@@ -273,9 +367,18 @@ const AuditForm = () => {
         await deleteDoc(doc(db, "auditorias", audit.id));
       }
       setSavedAudits(prev => prev.filter(a => a.id !== audit.id));
+      await showAlert({
+        type: 'success',
+        title: 'Auditoría Eliminada',
+        message: `La auditoría de "${nombre}" ha sido eliminada permanentemente con éxito.`
+      });
     } catch (err) {
       console.error("Error al eliminar la auditoría:", err);
-      alert("Ocurrió un error al eliminar la auditoría en la base de datos.");
+      await showAlert({
+        type: 'error',
+        title: 'Error al Eliminar',
+        message: 'Ocurrió un error al intentar eliminar la auditoría en la base de datos.'
+      });
     }
   };
 
@@ -901,8 +1004,15 @@ const startInlineDictation = (section, id) => {
 
 
 
-  const startNewEvaluation = () => {
-    if (confirm('¿Estás seguro de que deseas iniciar una nueva evaluación? Se perderán todos los datos no exportados.')) {
+  const startNewEvaluation = async () => {
+    const confirmed = await showConfirm({
+      title: 'Iniciar Nueva Evaluación',
+      message: '¿Estás seguro de que deseas reiniciar la evaluación?\nSe perderán las respuestas y cambios no guardados en esta sesión.',
+      isDanger: true,
+      confirmText: 'Reiniciar Formulario',
+      cancelText: 'Cancelar'
+    });
+    if (confirmed) {
       setResponses({});
       setGeneralComments('');
       setIntroData(INITIAL_INTRO_DATA);
@@ -1874,6 +1984,7 @@ const startInlineDictation = (section, id) => {
             </div>
           )}
         </main>
+        <CustomDialogModal config={modalConfig} onClose={() => setModalConfig(null)} />
       </div>
     );
   }
@@ -2164,6 +2275,7 @@ const startInlineDictation = (section, id) => {
           </div>
         </div>
 
+        <CustomDialogModal config={modalConfig} onClose={() => setModalConfig(null)} />
        </div>
      );
   }
@@ -2232,50 +2344,82 @@ const startInlineDictation = (section, id) => {
                     {showSettings && (
                       <>
                         <div className="fixed inset-0 z-40" onClick={() => setShowSettings(false)}></div>
-                        <div className="absolute right-0 mt-2 w-48 bg-white rounded-none shadow-none border border-slate-100 py-2 z-50">
-                        <button onClick={() => {
+                        <div className="absolute right-0 mt-2 w-52 bg-white rounded-none shadow-xl border border-slate-200 py-2 z-50">
+                        <button onClick={async () => {
                           const url = window.location.origin + window.location.pathname + "?id=" + currentAuditId;
                           navigator.clipboard.writeText(url);
-                          alert("Enlace copiado al portapapeles.");
                           setShowSettings(false);
-                        }} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2">
-                          <Share2 size={16} /> Compartir Enlace
+                          await showAlert({
+                            type: 'success',
+                            title: 'Enlace Copiado',
+                            message: 'El enlace de acceso para esta auditoría ha sido copiado al portapapeles con éxito.'
+                          });
+                        }} className="w-full text-left px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer">
+                          <Share2 size={15} className="text-cyan-600" /> Compartir Enlace
                         </button>
                         <button onClick={async () => {
-                          const oldPin = prompt("Ingresa el PIN actual:");
+                          setShowSettings(false);
+                          const oldPin = await showPrompt({
+                            title: 'Verificación de Seguridad',
+                            message: 'Ingresa tu PIN actual para autorizar el cambio:',
+                            inputType: 'password',
+                            placeholder: 'PIN actual...',
+                            confirmText: 'Verificar'
+                          });
                           if (oldPin === null) return;
                           const oldHash = await hashPassword(oldPin);
                           if (oldHash !== actor.contrasenaHash) {
-                            alert("PIN incorrecto.");
+                            await showAlert({
+                              type: 'error',
+                              title: 'PIN Incorrecto',
+                              message: 'El PIN actual ingresado no coincide. No se puede cambiar el PIN.'
+                            });
                             return;
                           }
-                          const newPin = prompt("Ingresa el nuevo PIN:");
+                          const newPin = await showPrompt({
+                            title: 'Nuevo PIN de Seguridad',
+                            message: 'Ingresa el nuevo PIN para proteger esta auditoría:',
+                            inputType: 'password',
+                            placeholder: 'Nuevo PIN...',
+                            confirmText: 'Guardar Nuevo PIN'
+                          });
                           if (newPin) {
                             const newHash = await hashPassword(newPin);
                             setActor(prev => ({...prev, contrasenaHash: newHash}));
-                            alert("PIN actualizado correctamente.");
+                            await showAlert({
+                              type: 'success',
+                              title: 'PIN Actualizado',
+                              message: 'El PIN de seguridad ha sido actualizado exitosamente.'
+                            });
                           }
-                          setShowSettings(false);
-                        }} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2">
-                          <KeyRound size={16} /> Cambiar PIN
+                        }} className="w-full text-left px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer">
+                          <KeyRound size={15} className="text-amber-600" /> Cambiar PIN
                         </button>
-                        <button onClick={() => { setShowEditModal(true); setShowSettings(false); }} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2">
-                          <Edit2 size={16} /> Editar Preguntas
+                        <button onClick={() => { setShowEditModal(true); setShowSettings(false); }} className="w-full text-left px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer">
+                          <Edit2 size={15} className="text-[#00d4ff]" /> Editar Cuestionario
                         </button>
                         <hr className="my-1 border-slate-100" />
                         <button onClick={async () => {
-                          if (window.confirm("¿Seguro que deseas eliminar esta auditoría permanentemente?")) {
+                          setShowSettings(false);
+                          const confirmed = await showConfirm({
+                            title: 'Eliminar Auditoría',
+                            message: '¿Estás seguro de que deseas eliminar esta auditoría permanentemente?\nEsta acción borrará todos los datos en la nube y no se puede deshacer.',
+                            isDanger: true,
+                            confirmText: 'Eliminar Auditoría',
+                            cancelText: 'Cancelar'
+                          });
+                          if (confirmed) {
                             if (db) {
                               try {
                                 await deleteDoc(doc(db, "auditorias", currentAuditId));
-                              } catch(e) { console.error(e) }
+                              } catch(e) { console.error(e); }
                             }
                             setSavedAudits(prev => prev.filter(a => a.id !== currentAuditId));
                             resetToInitialState();
-                            setStep('gate');
+                            setStep('dashboard');
                           }
-                        }} className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 font-medium">
-                          <Trash2 size={16} /> Eliminar Auditoría
+                        }} className="w-full text-left px-4 py-2.5 text-xs font-bold text-rose-600 hover:bg-rose-50 flex items-center gap-2 cursor-pointer">
+                          <Trash2 size={15} /> Eliminar Auditoría
                         </button>
                       </div>
                       </>
@@ -3123,6 +3267,8 @@ const startInlineDictation = (section, id) => {
           setCustomSections(newSections);
         }}
       />
+
+      <CustomDialogModal config={modalConfig} onClose={() => setModalConfig(null)} />
     </div>
   );
 };
