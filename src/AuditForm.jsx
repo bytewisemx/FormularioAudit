@@ -1,7 +1,7 @@
 import { DEFAULT_SECTIONS } from "./defaultSections";
 
 import React, { useEffect, useState } from 'react';
-import { ChevronDown, ChevronUp, ChevronRight, Download, FileText, FileSpreadsheet, RefreshCw, Mic, Sparkles, Building2, Shield, Brain, Hash, CheckCircle, Search, Settings, Share2, KeyRound, Trash2, Home, Plus, X, Globe, Copy, Check, ExternalLink, Loader2, Upload, FileCode, Layers, ArrowLeft, Calendar, User, BarChart2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, ChevronRight, Download, FileText, FileSpreadsheet, RefreshCw, Mic, Sparkles, Building2, Shield, Brain, Hash, CheckCircle, Search, Settings, Share2, KeyRound, Trash2, Home, Plus, X, Globe, Copy, Check, ExternalLink, Loader2, Upload, FileCode, Layers, ArrowLeft, Calendar, User, BarChart2, ThumbsUp, ThumbsDown, AlertTriangle, Lightbulb, LayoutGrid, List, CheckCircle2, Maximize2, Minimize2 } from 'lucide-react';
 import { downloadExcelTemplate, parseQuestionsFile } from './excelTemplateHelper';
 import { db, auth } from "./firebase";
 import { collection, doc, setDoc, getDoc, updateDoc, getDocs, deleteDoc } from "firebase/firestore";
@@ -151,6 +151,13 @@ const AuditForm = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [responses, setResponses] = useState({});
   const [generalComments, setGeneralComments] = useState('');
+  const [positiveComments, setPositiveComments] = useState('');
+  const [negativeComments, setNegativeComments] = useState('');
+  const [recommendations, setRecommendations] = useState('');
+  const [rewritingField, setRewritingField] = useState(null); // 'positive' | 'negative' | 'recommendations' | 'general' | null
+  const [reportLayout, setReportLayout] = useState('grid'); // 'grid' | 'stack' | 'tabs'
+  const [activeReportTab, setActiveReportTab] = useState('positive'); // 'positive' | 'negative' | 'recommendations'
+  const [commentHeightMode, setCommentHeightMode] = useState('normal'); // 'compact' | 'normal' | 'tall'
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [introData, setIntroData] = useState(INITIAL_INTRO_DATA);
   const [rewriting, setRewriting] = useState(false);
@@ -192,6 +199,9 @@ const AuditForm = () => {
     introData,
     responses,
     generalComments,
+    positiveComments,
+    negativeComments,
+    recommendations,
     actor,
     customSections
   });
@@ -202,10 +212,13 @@ const AuditForm = () => {
       introData,
       responses,
       generalComments,
+      positiveComments,
+      negativeComments,
+      recommendations,
       actor,
       customSections
     };
-  }, [currentAuditId, introData, responses, generalComments, actor, customSections]);
+  }, [currentAuditId, introData, responses, generalComments, positiveComments, negativeComments, recommendations, actor, customSections]);
 
   // Sistema de Diálogos Modales Personalizados (ByteWise Modal Dialogs)
   const [modalConfig, setModalConfig] = useState(null);
@@ -301,6 +314,9 @@ const AuditForm = () => {
     setIntroData(INITIAL_INTRO_DATA);
     setResponses({});
     setGeneralComments('');
+    setPositiveComments('');
+    setNegativeComments('');
+    setRecommendations('');
     setCustomSections(getDefaultSections());
     setExpandedSections({ 'Información General': true });
     setActiveSection('Información General');
@@ -346,6 +362,9 @@ const AuditForm = () => {
       setResponses(audit.data?.responses || {});
       setCustomSections(sortSections(audit.data?.customSections || getDefaultSections()));
       setGeneralComments(audit.data?.generalComments || '');
+      setPositiveComments(audit.data?.positiveComments || '');
+      setNegativeComments(audit.data?.negativeComments || '');
+      setRecommendations(audit.data?.recommendations || '');
       setActor(audit.data?.actor || { nombreAuditor: '', rol: '', contrasenaHash: savedHash || '' });
       setStep('form');
     }
@@ -453,6 +472,9 @@ const AuditForm = () => {
                   setResponses(targetAudit.data.responses || {});
                   setCustomSections(sortSections(targetAudit.data.customSections || getDefaultSections()));
                   setGeneralComments(targetAudit.data.generalComments || '');
+                  setPositiveComments(targetAudit.data.positiveComments || '');
+                  setNegativeComments(targetAudit.data.negativeComments || '');
+                  setRecommendations(targetAudit.data.recommendations || '');
                   setActor(targetAudit.data.actor || { nombreAuditor:'', rol:'', contrasenaHash: savedHash || '' });
                   setStep('form');
                 }
@@ -494,7 +516,7 @@ const AuditForm = () => {
       id: currentAuditId,
       lastModified: new Date().toISOString(),
       nombreEmpresa: companyName || 'Empresa sin nombre',
-      data: { introData, responses, generalComments, actor, customSections }
+      data: { introData, responses, generalComments, positiveComments, negativeComments, recommendations, actor, customSections }
     };
     if (index >= 0) {
       newList[index] = auditData;
@@ -520,7 +542,7 @@ const AuditForm = () => {
       if (timer) clearTimeout(timer);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [introData, responses, generalComments, actor, customSections, currentAuditId, step]);
+  }, [introData, responses, generalComments, positiveComments, negativeComments, recommendations, actor, customSections, currentAuditId, step]);
 
   useEffect(() => {
     if (step !== 'form' || !currentAuditId || !db) return;
@@ -574,83 +596,117 @@ const AuditForm = () => {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
- const hasComments = (generalComments || '').trim().length > 0;
- const canRewrite = hasComments && !rewriting;
+  const rewriteReportCommentWithAI = async (fieldKey) => {
+    let userText = '';
+    let fieldTitle = '';
+    let fieldInstruction = '';
+    let setter = null;
 
+    if (fieldKey === 'positive') {
+      userText = (positiveComments || '').trim();
+      fieldTitle = 'Comentarios Positivos y Fortalezas';
+      fieldInstruction = 'Perfecciona y redacta de manera técnica y ejecutiva las fortalezas, controles maduros y aspectos positivos de TI y seguridad encontrados en la empresa evaluada.';
+      setter = setPositiveComments;
+    } else if (fieldKey === 'negative') {
+      userText = (negativeComments || '').trim();
+      fieldTitle = 'Comentarios Negativos y Hallazgos';
+      fieldInstruction = 'Perfecciona y redacta con claridad y rigor técnico los hallazgos críticos, deficiencias, vulnerabilidades, brechas y riesgos detectados en la auditoría.';
+      setter = setNegativeComments;
+    } else if (fieldKey === 'recommendations') {
+      userText = (recommendations || '').trim();
+      fieldTitle = 'Recomendaciones y Plan de Acción';
+      fieldInstruction = 'Redacta recomendaciones estratégicas priorizadas y un plan de acción concreto para mitigar los riesgos y elevar la madurez de seguridad de la empresa.';
+      setter = setRecommendations;
+    } else {
+      userText = (generalComments || '').trim();
+      fieldTitle = 'Comentarios Generales';
+      fieldInstruction = 'Conclusiones y reporte general de auditoría de TI.';
+      setter = setGeneralComments;
+    }
 
-const rewriteCommentsWithAI = async () => {
-  try {
-    const userText = (generalComments || "").trim();
-    if (!userText) return alert("Primero escribe comentarios.");
+    if (!userText) {
+      const shouldGenerate = await showConfirm({
+        title: `Generar ${fieldTitle}`,
+        message: `No has ingresado texto aún en este apartado.\n¿Deseas que la Inteligencia Artificial redacte una propuesta profesional considerando los puntajes y áreas de la auditoría?`,
+        confirmText: 'Generar con IA',
+        cancelText: 'Cancelar'
+      });
+      if (!shouldGenerate) return;
+      userText = `Genera un análisis profesional y detallado de ${fieldTitle} para la empresa ${introData.nombreEmpresa || 'evaluada'} basado en los resultados de la auditoría.`;
+    }
 
-    const avgScore = calculateTotalScore();
-    const totalQuestions = getTotalQuestions();
-    const answeredCount = getAnsweredQuestions();
+    try {
+      setRewritingField(fieldKey);
+      const avgScore = calculateTotalScore();
+      const totalQuestions = getTotalQuestions();
+      const answeredCount = getAnsweredQuestions();
+      const areaScores = calculateAreaScores();
 
-    const areaScores = calculateAreaScores();
-
-    const res = await fetch(
-      "https://n8n-n8n.bg5sbc.easypanel.host/webhook/cd537a01-7f79-4b98-b05b-0c681e507dbe",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": "bw_ai_comments_9F3xL8Qp_2026",
-        },
-        body: JSON.stringify({
-          text: userText,
-          context: {
-            empresa: introData.nombreEmpresa || "",
-            giro: introData.giro || "",
-            auditor: actor?.nombreAuditor || "",
-            rol: actor?.rol || "",
+      const res = await fetch(
+        "https://n8n-n8n.bg5sbc.easypanel.host/webhook/cd537a01-7f79-4b98-b05b-0c681e507dbe",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": "bw_ai_comments_9F3xL8Qp_2026",
           },
-          scores: {
-            avgScore,
-            totalQuestions,
-            answeredCount,
-            projectedPoints: avgScore * totalQuestions,
-            areas: areaScores,
-          },
-        }),
+          body: JSON.stringify({
+            text: userText,
+            tipoComentario: fieldKey,
+            categoria: fieldTitle,
+            instruccion: fieldInstruction,
+            context: {
+              empresa: introData.nombreEmpresa || "",
+              giro: introData.giro || "",
+              auditor: actor?.nombreAuditor || "",
+              rol: actor?.rol || "",
+            },
+            scores: {
+              avgScore,
+              totalQuestions,
+              answeredCount,
+              projectedPoints: avgScore * totalQuestions,
+              areas: areaScores,
+            },
+          }),
+        }
+      );
+
+      if (!res.ok) throw new Error("Error al llamar IA");
+
+      const data = await res.json();
+
+      let cleanText = String(data.rewritten || data.output || data.text || (typeof data === 'string' ? data : JSON.stringify(data)))
+        .replace(/^({\s*)?"?rewritten"?\s*:\s*"?/i, "")
+        .replace(/"}\s*$/, "")
+        .replace(/\\n/g, "\n")
+        .replace(/\\r/g, "")
+        .replace(/"\s*$/, "")
+        .replace(/\s*}\s*$/, "")
+        .trim();
+
+      cleanText = cleanText
+        .replace(/OBSERVACIÓN:\s*/gi, "OBSERVACIÓN:\n")
+        .replace(/\s*IMPACTO:\s*/gi, "\n\nIMPACTO:\n")
+        .replace(/\s*RECOMENDACIÓN:\s*/gi, "\n\nRECOMENDACIÓN:\n")
+        .trim();
+
+      if (setter) {
+        setter(cleanText);
       }
-    );
+    } catch (err) {
+      console.error(err);
+      await showAlert({
+        type: 'error',
+        title: 'Error al optimizar',
+        message: 'No fue posible completar la solicitud con el asistente de IA. Por favor intenta de nuevo.'
+      });
+    } finally {
+      setRewritingField(null);
+    }
+  };
 
-    if (!res.ok) throw new Error("Error al llamar IA");
-
-    const data = await res.json();
-
-    /**
-     * 🧹 LIMPIEZA DEFINITIVA
-     * - Toma SOLO el resultado reescrito (soporta rewritten, output y text)
-     * - Convierte \n visibles en saltos reales
-     * - Elimina llaves o wrappers si llegan por error
-     */
-    let cleanText = String(data.rewritten || data.output || data.text || (typeof data === 'string' ? data : JSON.stringify(data)))
-      .replace(/^({\s*)?"?rewritten"?\s*:\s*"?/i, "") // por si llega {"rewritten":
-      .replace(/"}\s*$/, "")                          // por si cierra con "}
-      .replace(/\\n/g, "\n")                           // \n → salto real
-      .replace(/\\r/g, "")
-  .replace(/"\s*$/, "")  // quita comilla final
-  .replace(/\s*}\s*$/, "") // quita llave final
-
-      .trim();
-
-    // 🧠 Normaliza encabezados SIEMPRE
-    cleanText = cleanText
-      .replace(/OBSERVACIÓN:\s*/gi, "OBSERVACIÓN:\n")
-      .replace(/\s*IMPACTO:\s*/gi, "\n\nIMPACTO:\n")
-      .replace(/\s*RECOMENDACIÓN:\s*/gi, "\n\nRECOMENDACIÓN:\n")
-      .trim();
-
-    setGeneralComments(cleanText);
-  } catch (err) {
-    console.error(err);
-    alert("Error al reescribir con IA");
-  } finally {
-    setRewriting(false);
-  }
-};
+  const rewriteCommentsWithAI = () => rewriteReportCommentWithAI('general');
 
 
 const rewriteObservationWithAI = async (section, item) => {
@@ -1045,6 +1101,9 @@ const startInlineDictation = (section, id) => {
         introData: currentState.introData || introData,
         responses: currentState.responses || responses,
         generalComments: currentState.generalComments || generalComments,
+        positiveComments: currentState.positiveComments || positiveComments,
+        negativeComments: currentState.negativeComments || negativeComments,
+        recommendations: currentState.recommendations || recommendations,
         actor: currentState.actor || actor,
         customSections: currentState.customSections || customSections
       }
@@ -1574,8 +1633,32 @@ const startInlineDictation = (section, id) => {
     children.push(H2("Semáforo por área"));
     children.push(areaTable);
 
+    if ((positiveComments || "").trim()) {
+      children.push(H2("Comentarios Positivos y Fortalezas"));
+      clean(positiveComments)
+        .split("\n")
+        .filter((l) => l.trim())
+        .forEach((line) => children.push(P(line)));
+    }
+
+    if ((negativeComments || "").trim()) {
+      children.push(H2("Comentarios Negativos y Hallazgos"));
+      clean(negativeComments)
+        .split("\n")
+        .filter((l) => l.trim())
+        .forEach((line) => children.push(P(line)));
+    }
+
+    if ((recommendations || "").trim()) {
+      children.push(H2("Recomendaciones Estratégicas y Plan de Acción"));
+      clean(recommendations)
+        .split("\n")
+        .filter((l) => l.trim())
+        .forEach((line) => children.push(P(line)));
+    }
+
     if ((generalComments || "").trim()) {
-      children.push(H2("Comentarios generales"));
+      children.push(H2("Comentarios Generales Adicionales"));
       clean(generalComments)
         .split("\n")
         .filter((l) => l.trim())
@@ -1702,14 +1785,49 @@ const startInlineDictation = (section, id) => {
         });
       });
 
-      // 5. Comentarios Generales
-      if (generalComments) {
+      // 5. Conclusiones y Reporte Final
+      if (positiveComments || negativeComments || recommendations || generalComments) {
         sheet.addRow([]);
-        addHeader('COMENTARIOS GENERALES (REPORTE FINAL)');
-        const commentRow = sheet.addRow([generalComments]);
-        sheet.mergeCells(commentRow.number, 1, commentRow.number, 6);
-        commentRow.height = 100;
-        commentRow.getCell(1).alignment = { wrapText: true, vertical: 'top' };
+        addHeader('CONCLUSIONES Y REPORTE FINAL');
+
+        if (positiveComments) {
+          const titleRow = sheet.addRow(['FORTALEZAS Y ASPECTOS POSITIVOS']);
+          titleRow.font = { bold: true, color: { argb: 'FF059669' } };
+          const posRow = sheet.addRow([positiveComments]);
+          sheet.mergeCells(posRow.number, 1, posRow.number, 6);
+          posRow.height = 70;
+          posRow.getCell(1).alignment = { wrapText: true, vertical: 'top' };
+          sheet.addRow([]);
+        }
+
+        if (negativeComments) {
+          const titleRow = sheet.addRow(['HALLAZGOS Y VULNERABILIDADES']);
+          titleRow.font = { bold: true, color: { argb: 'FFE11D48' } };
+          const negRow = sheet.addRow([negativeComments]);
+          sheet.mergeCells(negRow.number, 1, negRow.number, 6);
+          negRow.height = 70;
+          negRow.getCell(1).alignment = { wrapText: true, vertical: 'top' };
+          sheet.addRow([]);
+        }
+
+        if (recommendations) {
+          const titleRow = sheet.addRow(['RECOMENDACIONES Y PLAN DE ACCIÓN']);
+          titleRow.font = { bold: true, color: { argb: 'FF0891B2' } };
+          const recRow = sheet.addRow([recommendations]);
+          sheet.mergeCells(recRow.number, 1, recRow.number, 6);
+          recRow.height = 70;
+          recRow.getCell(1).alignment = { wrapText: true, vertical: 'top' };
+          sheet.addRow([]);
+        }
+
+        if (generalComments) {
+          const titleRow = sheet.addRow(['COMENTARIOS GENERALES ADICIONALES']);
+          titleRow.font = { bold: true };
+          const genRow = sheet.addRow([generalComments]);
+          sheet.mergeCells(genRow.number, 1, genRow.number, 6);
+          genRow.height = 60;
+          genRow.getCell(1).alignment = { wrapText: true, vertical: 'top' };
+        }
       }
 
       // Format Columns
@@ -1760,6 +1878,9 @@ const startInlineDictation = (section, id) => {
               setResponses(audit.data.responses || {});
               setCustomSections(sortSections(audit.data.customSections || getDefaultSections()));
               setGeneralComments(audit.data.generalComments || '');
+              setPositiveComments(audit.data.positiveComments || '');
+              setNegativeComments(audit.data.negativeComments || '');
+              setRecommendations(audit.data.recommendations || '');
               setActor(audit.data.actor || { nombreAuditor:'', rol:'', contrasenaHash: audit.data?.actor?.contrasenaHash || '' });
               setGuestAuditToLoad(null);
               setStep('form');
@@ -1801,6 +1922,9 @@ const startInlineDictation = (section, id) => {
                        setResponses(freshAudit.data.responses || {});
                        setCustomSections(sortSections(freshAudit.data.customSections || getDefaultSections()));
                        setGeneralComments(freshAudit.data.generalComments || '');
+                       setPositiveComments(freshAudit.data.positiveComments || '');
+                       setNegativeComments(freshAudit.data.negativeComments || '');
+                       setRecommendations(freshAudit.data.recommendations || '');
                        setActor(freshAudit.data.actor || { nombreAuditor:'', rol:'', contrasenaHash: freshAudit.data?.actor?.contrasenaHash || '' });
                        setStep('form');
                      }
@@ -2708,11 +2832,17 @@ const startInlineDictation = (section, id) => {
               onClick={() => setActiveSection('Reporte Final')}
               className={`w-full text-left px-4 py-3 rounded-none text-sm font-semibold transition-all flex items-center justify-between mt-6 ${
                 activeSection === 'Reporte Final' 
-                ? 'bg-amber-50 text-amber-700 border-l-4 border-amber-500 shadow-none' 
-                : 'text-gray-600 hover:bg-gray-100 border-l-4 border-transparent'
+                ? 'bg-slate-900 text-white border-l-4 border-l-[#00d4ff] shadow-sm' 
+                : 'text-slate-700 bg-white hover:bg-slate-100 border-l-4 border-slate-200'
               }`}
             >
-              <span className="truncate">Reporte Final</span>
+              <div className="flex items-center gap-2 truncate">
+                <Sparkles size={16} className={activeSection === 'Reporte Final' ? 'text-[#00d4ff]' : 'text-slate-400'} />
+                <span className="truncate">Reporte Final y Conclusiones</span>
+              </div>
+              {(positiveComments.trim() || negativeComments.trim() || recommendations.trim() || generalComments.trim()) && (
+                <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" title="Contiene conclusiones redactadas"></span>
+              )}
             </button>
           </div>
 
@@ -3098,42 +3228,383 @@ const startInlineDictation = (section, id) => {
 
             {/* Sección de Reporte Final */}
             {activeSection === 'Reporte Final' && (
-              <div className="mb-4 bg-white rounded-none shadow-none overflow-hidden border border-slate-200 animate-in fade-in slide-in-from-bottom-4 duration-300">
-                <div className="p-6 bg-slate-50 border-b flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <div>
-                    <h2 className="text-xl font-bold text-slate-900">Reporte Final</h2>
-                    <p className="text-sm text-slate-600">Conclusiones, hallazgos principales y comentarios de cierre.</p>
+              <div className="mb-8 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                {/* Cabecera Principal con Controles de Espacio */}
+                <div className="bg-white border border-slate-200 border-t-4 border-t-slate-900 p-6 shadow-sm">
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                    <div>
+                      <div className="inline-flex items-center gap-2 px-2.5 py-1 bg-cyan-50 border border-cyan-200 text-cyan-800 text-xs font-bold mb-2">
+                        <Sparkles size={14} className="text-[#00d4ff]" /> Conclusiones Ejecutivas de Auditoría
+                      </div>
+                      <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">Reporte Final y Dictamen</h2>
+                      <p className="text-xs text-slate-500 mt-1">
+                        Estructura tus conclusiones en fortalezas, hallazgos y recomendaciones accionables. Optimiza cada apartado con Inteligencia Artificial.
+                      </p>
+                    </div>
+
+                    {/* Controles de Espacio y Visualización */}
+                    <div className="flex flex-wrap items-center gap-3 self-start lg:self-center">
+                      {/* Control de Distribución */}
+                      <div className="bg-slate-100 p-1 flex items-center gap-1 border border-slate-200">
+                        <span className="text-[11px] font-bold text-slate-500 px-2">Vista:</span>
+                        <button
+                          type="button"
+                          onClick={() => setReportLayout('grid')}
+                          className={`px-2.5 py-1.5 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
+                            reportLayout === 'grid'
+                              ? 'bg-slate-900 text-white shadow-xs'
+                              : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                          }`}
+                          title="Vista de 3 Columnas en paralelo"
+                        >
+                          <LayoutGrid size={14} />
+                          <span className="hidden sm:inline">3 Columnas</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setReportLayout('stack')}
+                          className={`px-2.5 py-1.5 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
+                            reportLayout === 'stack'
+                              ? 'bg-slate-900 text-white shadow-xs'
+                              : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                          }`}
+                          title="Vista apilada a todo lo ancho"
+                        >
+                          <List size={14} />
+                          <span className="hidden sm:inline">Apilado</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setReportLayout('tabs')}
+                          className={`px-2.5 py-1.5 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
+                            reportLayout === 'tabs'
+                              ? 'bg-slate-900 text-white shadow-xs'
+                              : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                          }`}
+                          title="Vista en pestañas para enfocar un apartado a la vez"
+                        >
+                          <Layers size={14} />
+                          <span className="hidden sm:inline">Pestañas</span>
+                        </button>
+                      </div>
+
+                      {/* Control de Altura Rápida */}
+                      <div className="bg-slate-100 p-1 flex items-center gap-1 border border-slate-200">
+                        <span className="text-[11px] font-bold text-slate-500 px-2">Altura:</span>
+                        <button
+                          type="button"
+                          onClick={() => setCommentHeightMode('compact')}
+                          className={`px-2 py-1 text-xs font-bold transition cursor-pointer ${
+                            commentHeightMode === 'compact'
+                              ? 'bg-white text-slate-900 shadow-xs border border-slate-300'
+                              : 'text-slate-500 hover:text-slate-800'
+                          }`}
+                          title="Altura compacta (160px)"
+                        >
+                          S
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCommentHeightMode('normal')}
+                          className={`px-2 py-1 text-xs font-bold transition cursor-pointer ${
+                            commentHeightMode === 'normal'
+                              ? 'bg-white text-slate-900 shadow-xs border border-slate-300'
+                              : 'text-slate-500 hover:text-slate-800'
+                          }`}
+                          title="Altura estándar (260px)"
+                        >
+                          M
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCommentHeightMode('tall')}
+                          className={`px-2 py-1 text-xs font-bold transition cursor-pointer ${
+                            commentHeightMode === 'tall'
+                              ? 'bg-white text-slate-900 shadow-xs border border-slate-300'
+                              : 'text-slate-500 hover:text-slate-800'
+                          }`}
+                          title="Altura amplia (420px)"
+                        >
+                          L
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                </div>
-                
-                <div className="p-6 relative">
-                  <label className="block text-sm font-bold text-gray-700 mb-2">
-                    Comentarios Generales para el Reporte
-                  </label>
 
-                  <textarea
-                    value={generalComments}
-                    onChange={(e) => setGeneralComments(e.target.value)}
-                    rows={12}
-                    placeholder="Escribe o dicta las conclusiones de la auditoría..."
-                    className="w-full whitespace-pre-wrap px-4 py-3 border-2 border-gray-300 rounded-none resize-y focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
-                  />
+                  {/* Barra de pestañas si está en modo tabs */}
+                  {reportLayout === 'tabs' && (
+                    <div className="mt-6 flex border-b border-slate-200">
+                      <button
+                        type="button"
+                        onClick={() => setActiveReportTab('positive')}
+                        className={`flex items-center gap-2 px-5 py-2.5 text-xs font-bold border-b-2 transition cursor-pointer ${
+                          activeReportTab === 'positive'
+                            ? 'border-emerald-600 text-emerald-800 bg-emerald-50/50'
+                            : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+                        }`}
+                      >
+                        <ThumbsUp size={15} className="text-emerald-600" />
+                        <span>Comentarios Positivos</span>
+                        {positiveComments.trim() && <span className="w-2 h-2 rounded-full bg-emerald-500"></span>}
+                      </button>
 
-                  <button
-                    type="button"
-                    onClick={rewriteCommentsWithAI}
-                    disabled={!canRewrite}
-                    title={!hasComments ? 'Escribe comentarios para habilitar' : (rewriting ? 'Mejorando...' : 'Mejorar con IA')}
-                    className={[
-                      "absolute top-9 right-9 w-9 h-9 rounded-none flex items-center justify-center",
-                      "border border-gray-200 bg-white shadow-none transition",
-                      canRewrite ? "hover:shadow-none hover:scale-105" : "opacity-40 cursor-not-allowed",
-                      rewriting ? "animate-pulse" : ""
-                    ].join(" ")}
-                  >
-                    <Sparkles size={18} className={canRewrite ? "text-indigo-600" : "text-gray-400"} />
-                  </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveReportTab('negative')}
+                        className={`flex items-center gap-2 px-5 py-2.5 text-xs font-bold border-b-2 transition cursor-pointer ${
+                          activeReportTab === 'negative'
+                            ? 'border-rose-600 text-rose-800 bg-rose-50/50'
+                            : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+                        }`}
+                      >
+                        <AlertTriangle size={15} className="text-rose-600" />
+                        <span>Comentarios Negativos</span>
+                        {negativeComments.trim() && <span className="w-2 h-2 rounded-full bg-rose-500"></span>}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setActiveReportTab('recommendations')}
+                        className={`flex items-center gap-2 px-5 py-2.5 text-xs font-bold border-b-2 transition cursor-pointer ${
+                          activeReportTab === 'recommendations'
+                            ? 'border-[#00d4ff] text-cyan-950 bg-cyan-50/50'
+                            : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+                        }`}
+                      >
+                        <Lightbulb size={15} className="text-cyan-600" />
+                        <span>Recomendaciones</span>
+                        {recommendations.trim() && <span className="w-2 h-2 rounded-full bg-cyan-500"></span>}
+                      </button>
+                    </div>
+                  )}
                 </div>
+
+                {/* Contenedor de las 3 Cajas */}
+                <div className={
+                  reportLayout === 'grid'
+                    ? "grid grid-cols-1 lg:grid-cols-3 gap-6"
+                    : reportLayout === 'stack'
+                    ? "space-y-6"
+                    : "space-y-6"
+                }>
+                  {/* 1. COMENTARIOS POSITIVOS */}
+                  {(reportLayout !== 'tabs' || activeReportTab === 'positive') && (
+                    <div className="bg-white border border-slate-200 border-t-4 border-t-emerald-500 shadow-sm flex flex-col justify-between">
+                      <div className="p-5 border-b border-slate-100 bg-emerald-50/30 flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-none bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                            <ThumbsUp size={18} />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h3 className="text-base font-extrabold text-slate-900">Comentarios Positivos</h3>
+                              <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5">Fortalezas</span>
+                            </div>
+                            <p className="text-[11px] text-slate-500 mt-0.5">
+                              Buenas prácticas, controles robustos y madurez detectada.
+                            </p>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => rewriteReportCommentWithAI('positive')}
+                          disabled={rewritingField === 'positive'}
+                          title="Optimizar redacción o generar fortalezas con IA"
+                          className="px-3 py-1.5 bg-white hover:bg-emerald-50 border border-emerald-300 text-emerald-700 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-2xs shrink-0 disabled:opacity-50"
+                        >
+                          {rewritingField === 'positive' ? (
+                            <>
+                              <Loader2 size={14} className="animate-spin text-emerald-600" />
+                              <span>Optimizando...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles size={14} className="text-emerald-600" />
+                              <span>Mejorar con IA</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+
+                      <div className="p-5 flex-1 flex flex-col">
+                        <textarea
+                          value={positiveComments}
+                          onChange={(e) => setPositiveComments(e.target.value)}
+                          placeholder="Describe las fortalezas técnicas, buenas prácticas, políticas aplicadas y controles que la empresa tiene bien implementados..."
+                          style={{
+                            height: commentHeightMode === 'compact' ? '160px' : commentHeightMode === 'tall' ? '420px' : '260px'
+                          }}
+                          className="w-full p-3 text-xs md:text-sm bg-white border border-slate-300 focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 focus:outline-none rounded-none resize-y leading-relaxed text-slate-800 transition"
+                        />
+                        <div className="flex items-center justify-between mt-2 text-[11px] text-slate-400">
+                          <span>↕ Puedes redimensionar arrastrando la esquina</span>
+                          <span>{positiveComments.trim().split(/\s+/).filter(Boolean).length} palabras</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 2. COMENTARIOS NEGATIVOS */}
+                  {(reportLayout !== 'tabs' || activeReportTab === 'negative') && (
+                    <div className="bg-white border border-slate-200 border-t-4 border-t-rose-500 shadow-sm flex flex-col justify-between">
+                      <div className="p-5 border-b border-slate-100 bg-rose-50/30 flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-none bg-rose-600 text-white flex items-center justify-center shrink-0">
+                            <AlertTriangle size={18} />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h3 className="text-base font-extrabold text-slate-900">Comentarios Negativos</h3>
+                              <span className="text-[10px] font-bold bg-rose-100 text-rose-800 px-2 py-0.5">Hallazgos / Riesgos</span>
+                            </div>
+                            <p className="text-[11px] text-slate-500 mt-0.5">
+                              Vulnerabilidades, incumplimientos, brechas y riesgos.
+                            </p>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => rewriteReportCommentWithAI('negative')}
+                          disabled={rewritingField === 'negative'}
+                          title="Optimizar redacción o generar hallazgos con IA"
+                          className="px-3 py-1.5 bg-white hover:bg-rose-50 border border-rose-300 text-rose-700 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-2xs shrink-0 disabled:opacity-50"
+                        >
+                          {rewritingField === 'negative' ? (
+                            <>
+                              <Loader2 size={14} className="animate-spin text-rose-600" />
+                              <span>Optimizando...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles size={14} className="text-rose-600" />
+                              <span>Mejorar con IA</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+
+                      <div className="p-5 flex-1 flex flex-col">
+                        <textarea
+                          value={negativeComments}
+                          onChange={(e) => setNegativeComments(e.target.value)}
+                          placeholder="Describe las deficiencias encontradas, riesgos críticos de seguridad, falta de documentación, fallas de respaldo o vulnerabilidades operativas..."
+                          style={{
+                            height: commentHeightMode === 'compact' ? '160px' : commentHeightMode === 'tall' ? '420px' : '260px'
+                          }}
+                          className="w-full p-3 text-xs md:text-sm bg-white border border-slate-300 focus:border-rose-600 focus:ring-1 focus:ring-rose-600 focus:outline-none rounded-none resize-y leading-relaxed text-slate-800 transition"
+                        />
+                        <div className="flex items-center justify-between mt-2 text-[11px] text-slate-400">
+                          <span>↕ Puedes redimensionar arrastrando la esquina</span>
+                          <span>{negativeComments.trim().split(/\s+/).filter(Boolean).length} palabras</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 3. RECOMENDACIONES */}
+                  {(reportLayout !== 'tabs' || activeReportTab === 'recommendations') && (
+                    <div className="bg-white border border-slate-200 border-t-4 border-t-[#00d4ff] shadow-sm flex flex-col justify-between">
+                      <div className="p-5 border-b border-slate-100 bg-cyan-50/30 flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-none bg-slate-900 text-[#00d4ff] flex items-center justify-center shrink-0">
+                            <Lightbulb size={18} />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h3 className="text-base font-extrabold text-slate-900">Recomendaciones</h3>
+                              <span className="text-[10px] font-bold bg-cyan-100 text-cyan-900 px-2 py-0.5">Plan de Acción</span>
+                            </div>
+                            <p className="text-[11px] text-slate-500 mt-0.5">
+                              Estrategias de remediación, hoja de ruta y prioridades.
+                            </p>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => rewriteReportCommentWithAI('recommendations')}
+                          disabled={rewritingField === 'recommendations'}
+                          title="Optimizar redacción o generar recomendaciones con IA"
+                          className="px-3 py-1.5 bg-white hover:bg-cyan-50 border border-cyan-300 text-cyan-800 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-2xs shrink-0 disabled:opacity-50"
+                        >
+                          {rewritingField === 'recommendations' ? (
+                            <>
+                              <Loader2 size={14} className="animate-spin text-cyan-600" />
+                              <span>Optimizando...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles size={14} className="text-cyan-600" />
+                              <span>Mejorar con IA</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+
+                      <div className="p-5 flex-1 flex flex-col">
+                        <textarea
+                          value={recommendations}
+                          onChange={(e) => setRecommendations(e.target.value)}
+                          placeholder="Propón las acciones correctivas sugeridas, medidas de mitigación a corto y mediano plazo, tecnologías recomendadas y mejores prácticas a adoptar..."
+                          style={{
+                            height: commentHeightMode === 'compact' ? '160px' : commentHeightMode === 'tall' ? '420px' : '260px'
+                          }}
+                          className="w-full p-3 text-xs md:text-sm bg-white border border-slate-300 focus:border-[#00d4ff] focus:ring-1 focus:ring-[#00d4ff] focus:outline-none rounded-none resize-y leading-relaxed text-slate-800 transition"
+                        />
+                        <div className="flex items-center justify-between mt-2 text-[11px] text-slate-400">
+                          <span>↕ Puedes redimensionar arrastrando la esquina</span>
+                          <span>{recommendations.trim().split(/\s+/).filter(Boolean).length} palabras</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Apartado Opcional: Comentarios Generales Adicionales */}
+                <details className="bg-white border border-slate-200 p-5 rounded-none group transition shadow-2xs">
+                  <summary className="flex items-center justify-between cursor-pointer font-bold text-xs text-slate-700 select-none">
+                    <div className="flex items-center gap-2">
+                      <FileText size={15} className="text-slate-400" />
+                      <span>Comentarios Generales Adicionales (Opcional / Cierre)</span>
+                      {generalComments.trim() && (
+                        <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 font-semibold">Con contenido</span>
+                      )}
+                    </div>
+                    <span className="text-[11px] text-slate-400 group-open:rotate-180 transition-transform">▼</span>
+                  </summary>
+
+                  <div className="mt-4 pt-3 border-t border-slate-100 relative">
+                    <textarea
+                      value={generalComments}
+                      onChange={(e) => setGeneralComments(e.target.value)}
+                      rows={4}
+                      placeholder="Espacio adicional para observaciones de cierre, firmas, alcance específico o notas que desees incluir en el dictamen final..."
+                      className="w-full p-3 text-xs bg-slate-50 border border-slate-300 focus:bg-white focus:border-slate-800 focus:outline-none resize-y"
+                    />
+                    <div className="flex justify-end mt-2">
+                      <button
+                        type="button"
+                        onClick={() => rewriteReportCommentWithAI('general')}
+                        disabled={rewritingField === 'general'}
+                        className="px-3 py-1 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+                      >
+                        {rewritingField === 'general' ? (
+                          <>
+                            <Loader2 size={13} className="animate-spin text-slate-600" />
+                            <span>Optimizando...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles size={13} className="text-slate-600" />
+                            <span>Mejorar con IA</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </details>
               </div>
             )}
 
