@@ -1,7 +1,7 @@
 import { DEFAULT_SECTIONS } from "./defaultSections";
 
 import React, { useEffect, useState } from 'react';
-import { ChevronDown, ChevronUp, ChevronRight, Download, FileText, FileSpreadsheet, RefreshCw, Mic, Sparkles, Building2, Shield, Brain, Hash, CheckCircle, Search, Settings, Share2, KeyRound, Trash2, Home, Plus, X, Globe, Copy, Check, ExternalLink, Loader2, Upload, FileCode, Layers } from 'lucide-react';
+import { ChevronDown, ChevronUp, ChevronRight, Download, FileText, FileSpreadsheet, RefreshCw, Mic, Sparkles, Building2, Shield, Brain, Hash, CheckCircle, Search, Settings, Share2, KeyRound, Trash2, Home, Plus, X, Globe, Copy, Check, ExternalLink, Loader2, Upload, FileCode, Layers, ArrowLeft, Calendar, User, BarChart2 } from 'lucide-react';
 import { downloadExcelTemplate, parseQuestionsFile } from './excelTemplateHelper';
 import { db, auth } from "./firebase";
 import { collection, doc, setDoc, getDoc, updateDoc, getDocs, deleteDoc } from "firebase/firestore";
@@ -69,38 +69,73 @@ const sortSections = (sections) => {
   });
 
   const sortedObj = {};
-  sortedKeys.forEach(key => {
-    sortedObj[key] = sections[key];
+  sortedKeys.forEach(k => {
+    sortedObj[k] = sections[k];
   });
   return sortedObj;
 };
 
-let clientId = "";
-try {
-  clientId = sessionStorage.getItem('audit_client_id');
-  if (!clientId) {
-    clientId = 'client_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
-    sessionStorage.setItem('audit_client_id', clientId);
-  }
-} catch (e) {
-  clientId = 'client_fallback_' + Date.now();
-}
-
 const INITIAL_INTRO_DATA = {
   nombreEmpresa: '',
-  nombre: '',
-  puesto: '',
-  contacto: '',
   giro: '',
+  contacto: '',
+  fecha: new Date().toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' }),
   sitioWeb: '',
-  preliminarEmpresa: '',
-  colaboradores: '',
-  modalidad: '',
-  proporcionaEquipos: '',
-  tipoEquipos: '',
-  estructuraTI: '',
-  dependenciaRed: '',
-  incidenciasRecientes: ''
+  preliminarEmpresa: ''
+};
+
+let clientId = '';
+if (typeof window !== 'undefined') {
+  clientId = sessionStorage.getItem('audit_client_id');
+  if (!clientId) {
+    clientId = 'client_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now();
+    sessionStorage.setItem('audit_client_id', clientId);
+  }
+}
+
+// Auxiliar para extraer métricas detalladas de cada auditoría guardada
+const getAuditSummary = (audit) => {
+  const sections = audit.data?.customSections || {};
+  const responses = audit.data?.responses || {};
+  let totalQuestions = 0;
+  let answeredQuestions = 0;
+  let totalScore = 0;
+
+  Object.entries(sections).forEach(([section, questions]) => {
+    if (Array.isArray(questions)) {
+      questions.forEach(q => {
+        totalQuestions++;
+        const key = `${section}-${q.id}`;
+        const val = responses[key]?.evaluacion;
+        if (val !== undefined && val !== null && val !== '') {
+          answeredQuestions++;
+          totalScore += parseInt(val, 10);
+        }
+      });
+    }
+  });
+
+  const avgScore = answeredQuestions > 0 ? (totalScore / answeredQuestions).toFixed(1) : '0.0';
+  const percentage = totalQuestions > 0 ? Math.round((answeredQuestions / totalQuestions) * 100) : 0;
+  const areasCount = Object.keys(sections).length;
+
+  let level = { label: 'Sin evaluar', badgeClass: 'text-slate-600 bg-slate-100 border-slate-300' };
+  if (answeredQuestions > 0) {
+    const scoreNum = parseFloat(avgScore);
+    if (scoreNum >= 3.5) level = { label: 'Nivel 4: Optimizado', badgeClass: 'text-emerald-800 bg-emerald-100 border-emerald-300' };
+    else if (scoreNum >= 2.5) level = { label: 'Nivel 3: Gestionado', badgeClass: 'text-cyan-800 bg-cyan-100 border-cyan-300' };
+    else if (scoreNum >= 1.5) level = { label: 'Nivel 2: Parcial', badgeClass: 'text-amber-800 bg-amber-100 border-amber-300' };
+    else level = { label: 'Nivel 1: Inicial / Crítico', badgeClass: 'text-rose-800 bg-rose-100 border-rose-300' };
+  }
+
+  return {
+    totalQuestions,
+    answeredQuestions,
+    percentage,
+    avgScore,
+    areasCount,
+    level
+  };
 };
 
 const getDefaultSections = () => JSON.parse(JSON.stringify(DEFAULT_SECTIONS));
@@ -124,7 +159,8 @@ const AuditForm = () => {
   
   const [savedAudits, setSavedAudits] = useState([]);
   const [currentAuditId, setCurrentAuditId] = useState(null);
-  const [step, setStep] = useState('gate'); // 'gate' | 'form'
+  const [step, setStep] = useState('dashboard'); // 'dashboard' | 'gate' | 'form' | 'access_management' | 'blocked'
+  const [dashboardSearch, setDashboardSearch] = useState('');
   const [showSettings, setShowSettings] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [actor, setActor] = useState({ nombreEmpresa: '', nombreAuditor: '', rol: '', contrasena: '', contrasenaHash: '' });
@@ -188,6 +224,59 @@ const AuditForm = () => {
     setImportFileName('');
     setImportSummary(null);
     setImportError('');
+  };
+
+  const handleLoadAudit = async (audit) => {
+    const savedHash = audit.data?.actor?.contrasenaHash;
+    if (savedHash) {
+      const pin = window.prompt("Ingresa la contraseña o PIN de esta auditoría para acceder:");
+      if (pin === null) return; 
+      const enteredHash = await hashPassword(pin);
+      if (enteredHash !== savedHash) {
+        alert("Contraseña incorrecta. Acceso denegado.");
+        return;
+      }
+    }
+
+    const lockAcquired = await acquireLock(audit.id, audit);
+    if (lockAcquired) {
+      setCurrentAuditId(audit.id);
+      setIntroData(audit.data?.introData || INITIAL_INTRO_DATA);
+      setResponses(audit.data?.responses || {});
+      setCustomSections(sortSections(audit.data?.customSections || getDefaultSections()));
+      setGeneralComments(audit.data?.generalComments || '');
+      setActor(audit.data?.actor || { nombreAuditor: '', rol: '', contrasenaHash: savedHash || '' });
+      setStep('form');
+    }
+  };
+
+  const handleDeleteAudit = async (audit, e) => {
+    if (e && e.stopPropagation) e.stopPropagation();
+    const nombre = audit.nombreEmpresa || audit.data?.introData?.nombreEmpresa || 'esta auditoría';
+    if (!window.confirm(`¿Estás seguro de que deseas eliminar permanentemente la auditoría de "${nombre}"?\nEsta acción no se puede deshacer.`)) {
+      return;
+    }
+
+    const savedHash = audit.data?.actor?.contrasenaHash;
+    if (savedHash) {
+      const pin = window.prompt("Esta auditoría está protegida con PIN. Ingresa el PIN para autorizar la eliminación:");
+      if (pin === null) return;
+      const enteredHash = await hashPassword(pin);
+      if (enteredHash !== savedHash) {
+        alert("PIN incorrecto. No se pudo eliminar la auditoría.");
+        return;
+      }
+    }
+
+    try {
+      if (db) {
+        await deleteDoc(doc(db, "auditorias", audit.id));
+      }
+      setSavedAudits(prev => prev.filter(a => a.id !== audit.id));
+    } catch (err) {
+      console.error("Error al eliminar la auditoría:", err);
+      alert("Ocurrió un error al eliminar la auditoría en la base de datos.");
+    }
   };
 
   useEffect(() => {
@@ -1481,7 +1570,7 @@ const startInlineDictation = (section, id) => {
                      if (isGuestMode) {
                        window.location.href = window.location.origin + window.location.pathname;
                      } else {
-                       setStep('gate');
+                       setStep('dashboard');
                      }
                    }
                  }
@@ -1495,7 +1584,7 @@ const startInlineDictation = (section, id) => {
                <button
                  onClick={() => {
                    resetToInitialState();
-                   setStep('gate');
+                   setStep('dashboard');
                    setBlockedBy(null);
                    setBlockedAuditToLoad(null);
                  }}
@@ -1511,32 +1600,320 @@ const startInlineDictation = (section, id) => {
   }
 
   if (step === 'access_management') {
-    return <AccessManagement onBack={() => setStep('gate')} />;
+    return <AccessManagement onBack={() => setStep('dashboard')} />;
   }
 
+  // ==========================================
+  // PANTALLA INICIAL: DASHBOARD DE AUDITORÍAS
+  // ==========================================
+  if (step === 'dashboard') {
+    const filteredAudits = savedAudits.filter(audit => {
+      if (!dashboardSearch.trim()) return true;
+      const term = dashboardSearch.toLowerCase();
+      const empresa = (audit.nombreEmpresa || audit.data?.introData?.nombreEmpresa || '').toLowerCase();
+      const auditor = (audit.data?.actor?.nombreAuditor || '').toLowerCase();
+      const giro = (audit.data?.introData?.giro || '').toLowerCase();
+      return empresa.includes(term) || auditor.includes(term) || giro.includes(term);
+    });
+
+    return (
+      <div className="min-h-screen bg-slate-100/70 border-t-8 border-slate-900 flex flex-col font-sans">
+        {/* Top Navbar */}
+        <header className="bg-white border-b border-slate-200 px-4 md:px-8 py-3.5 sticky top-0 z-30 shadow-xs">
+          <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <img src={logoPng} alt="ByteWise" className="h-8 md:h-10 w-auto object-contain brightness-0 invert" />
+              <div className="hidden sm:block border-l border-slate-200 pl-3">
+                <span className="text-xs font-bold text-slate-500 tracking-wider uppercase">Auditoría y Gestión de TI</span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2.5">
+              {user && (
+                <div className="hidden md:flex items-center gap-2 text-xs font-medium text-slate-600 bg-slate-50 px-3 py-1.5 border border-slate-200">
+                  <User size={14} className="text-slate-500" />
+                  <span className="max-w-[180px] truncate">{user.email || 'Auditor Conectado'}</span>
+                </div>
+              )}
+              <button 
+                onClick={() => setStep('access_management')} 
+                className="text-xs font-bold text-slate-700 hover:text-slate-900 hover:bg-slate-100 border border-slate-200 px-3 py-2 transition flex items-center gap-1.5 cursor-pointer"
+                title="Gestión de accesos y roles"
+              >
+                <Shield size={14} className="text-cyan-600" />
+                <span>Accesos</span>
+              </button>
+              <button 
+                onClick={() => { signOut(auth); resetToInitialState(); setStep('dashboard'); }} 
+                className="text-xs font-bold text-slate-600 hover:text-rose-600 hover:bg-rose-50 border border-slate-200 px-3 py-2 transition flex items-center gap-1.5 cursor-pointer"
+                title="Cerrar sesión"
+              >
+                <span>Cerrar Sesión</span>
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {/* Hero Banner & Action Header */}
+        <div className="bg-white border-b border-slate-200 py-8 px-4 md:px-8">
+          <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div>
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-cyan-50 border border-cyan-200 text-cyan-800 text-[11px] font-bold uppercase tracking-wider mb-2">
+                <Shield size={13} className="text-[#00d4ff]" /> Control de Evaluaciones
+              </div>
+              <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">
+                Auditorías Guardadas
+              </h1>
+              <p className="text-sm text-slate-500 mt-1 max-w-2xl">
+                Revisa el avance, madurez y resultados de cada empresa evaluada, o inicia una nueva sesión de auditoría.
+              </p>
+            </div>
+
+            <button
+              onClick={() => {
+                resetToInitialState();
+                setStep('gate');
+              }}
+              className="inline-flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm px-6 py-3.5 border-b-4 border-[#00d4ff] shadow-sm hover:shadow transition-all cursor-pointer shrink-0"
+            >
+              <Plus size={18} className="text-[#00d4ff]" />
+              <span>+ Nueva Auditoría</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Dashboard Content */}
+        <main className="max-w-7xl mx-auto w-full p-4 md:p-8 flex-1">
+          {/* Barra de Filtro y Resumen */}
+          <div className="mb-6 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white p-3 border border-slate-200 shadow-2xs">
+            <div className="relative flex-1 max-w-md">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={dashboardSearch}
+                onChange={(e) => setDashboardSearch(e.target.value)}
+                placeholder="Buscar por empresa, auditor o giro..."
+                className="w-full pl-9 pr-8 py-2 text-xs bg-slate-50 border border-slate-200 focus:bg-white focus:border-slate-800 focus:outline-none transition"
+              />
+              {dashboardSearch && (
+                <button
+                  onClick={() => setDashboardSearch('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+
+            <div className="text-xs font-semibold text-slate-500 flex items-center justify-between sm:justify-end gap-2 px-1">
+              <span>
+                {filteredAudits.length} {filteredAudits.length === 1 ? 'auditoría encontrada' : 'auditorías registradas'}
+              </span>
+              {savedAudits.length > 0 && filteredAudits.length !== savedAudits.length && (
+                <span className="text-slate-400">(filtradas de {savedAudits.length})</span>
+              )}
+            </div>
+          </div>
+
+          {/* Grid de Auditorías */}
+          {filteredAudits.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {filteredAudits.map((audit) => {
+                const summary = getAuditSummary(audit);
+                const nombreEmpresa = audit.nombreEmpresa || audit.data?.introData?.nombreEmpresa || 'Empresa sin nombre';
+                const giro = audit.data?.introData?.giro;
+                const sitioWeb = audit.data?.introData?.sitioWeb;
+                const auditorNombre = audit.data?.actor?.nombreAuditor || 'Sin asignar';
+                const auditorRol = audit.data?.actor?.rol || 'Auditor';
+                const tienePin = !!audit.data?.actor?.contrasenaHash;
+                const fechaMod = audit.lastModified ? new Date(audit.lastModified) : new Date();
+
+                return (
+                  <div
+                    key={audit.id}
+                    className="bg-white border border-slate-200 hover:border-slate-300 border-t-4 border-t-[#00d4ff] shadow-sm hover:shadow-md transition flex flex-col justify-between"
+                  >
+                    {/* Tarjeta Cabecera */}
+                    <div className="p-5 md:p-6 border-b border-slate-100">
+                      <div className="flex items-start justify-between gap-3 mb-3">
+                        <div className="flex items-start gap-3 min-w-0">
+                          <div className="w-10 h-10 bg-slate-900 text-[#00d4ff] flex items-center justify-center shrink-0">
+                            <Building2 size={20} />
+                          </div>
+                          <div className="min-w-0">
+                            <h2 className="text-lg font-bold text-slate-900 truncate leading-snug" title={nombreEmpresa}>
+                              {nombreEmpresa}
+                            </h2>
+                            <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5 flex-wrap">
+                              {giro ? (
+                                <span className="font-medium text-slate-600">{giro}</span>
+                              ) : (
+                                <span className="italic text-slate-400">Giro no especificado</span>
+                              )}
+                              {sitioWeb && (
+                                <span className="inline-flex items-center gap-1 text-cyan-700 bg-cyan-50 px-1.5 py-0.5 text-[11px] font-medium truncate max-w-[180px]">
+                                  <Globe size={11} /> {sitioWeb.replace(/^https?:\/\//, '')}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {tienePin && (
+                            <span
+                              className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-bold"
+                              title="Esta auditoría está protegida con contraseña / PIN"
+                            >
+                              <KeyRound size={12} className="text-amber-600" />
+                              <span>PIN</span>
+                            </span>
+                          )}
+                          <button
+                            onClick={(e) => handleDeleteAudit(audit, e)}
+                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 transition cursor-pointer"
+                            title="Eliminar esta auditoría"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Métricas y Madurez */}
+                      <div className="flex items-center justify-between gap-2 mt-4 pt-3 border-t border-slate-100">
+                        <span className={`text-xs font-bold px-2.5 py-1 border ${summary.level.badgeClass}`}>
+                          {summary.level.label}
+                        </span>
+                        <div className="text-right">
+                          <span className="text-sm font-bold text-slate-800">{summary.avgScore}</span>
+                          <span className="text-[11px] text-slate-500"> / 4.0 pts</span>
+                        </div>
+                      </div>
+
+                      {/* Barra de Progreso */}
+                      <div className="mt-3">
+                        <div className="flex justify-between text-[11px] font-semibold text-slate-600 mb-1">
+                          <span>Preguntas completadas</span>
+                          <span className="text-cyan-700 font-bold">{summary.percentage}%</span>
+                        </div>
+                        <div className="w-full bg-slate-100 h-2 overflow-hidden">
+                          <div
+                            className="bg-[#00d4ff] h-full transition-all duration-300"
+                            style={{ width: `${summary.percentage}%` }}
+                          />
+                        </div>
+                        <div className="flex justify-between text-[10px] text-slate-500 mt-1.5">
+                          <span>{summary.answeredQuestions} de {summary.totalQuestions} respondidas</span>
+                          <span>{summary.areasCount} áreas evaluadas</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Metadatos y Botón de Apertura */}
+                    <div className="bg-slate-50 p-4 md:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+                      <div className="space-y-1 text-slate-600">
+                        <div className="flex items-center gap-1.5">
+                          <User size={13} className="text-slate-400 shrink-0" />
+                          <span className="font-semibold text-slate-800">{auditorNombre}</span>
+                          <span className="text-slate-400">({auditorRol})</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                          <Calendar size={13} className="text-slate-400 shrink-0" />
+                          <span>Modificado: {fechaMod.toLocaleDateString()} {fechaMod.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => handleLoadAudit(audit)}
+                        className="w-full sm:w-auto px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition shadow-xs cursor-pointer shrink-0"
+                      >
+                        <span>Abrir Auditoría</span>
+                        <ChevronRight size={14} className="text-[#00d4ff]" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="bg-white border border-slate-200 p-12 text-center max-w-xl mx-auto shadow-sm">
+              <div className="w-16 h-16 bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-4">
+                <Shield size={32} className="text-cyan-600" />
+              </div>
+              {savedAudits.length === 0 ? (
+                <>
+                  <h3 className="text-lg font-bold text-slate-800">No hay auditorías registradas todavía</h3>
+                  <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+                    Comienza tu primera evaluación de seguridad y TI. Podrás utilizar la plantilla base oficial de ByteWise, comenzar desde cero o importar preguntas desde Excel.
+                  </p>
+                  <button
+                    onClick={() => {
+                      resetToInitialState();
+                      setStep('gate');
+                    }}
+                    className="mt-6 inline-flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs px-6 py-3 border-b-2 border-[#00d4ff] shadow-sm transition cursor-pointer"
+                  >
+                    <Plus size={16} className="text-[#00d4ff]" />
+                    <span>+ Crear Primera Auditoría</span>
+                  </button>
+                </>
+              ) : (
+                <>
+                  <h3 className="text-lg font-bold text-slate-800">Sin coincidencias para "{dashboardSearch}"</h3>
+                  <p className="text-xs text-slate-500 mt-2">
+                    No se encontró ninguna auditoría con ese término. Intenta con otro nombre de empresa, auditor o giro.
+                  </p>
+                  <button
+                    onClick={() => setDashboardSearch('')}
+                    className="mt-4 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition cursor-pointer"
+                  >
+                    Limpiar Búsqueda
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </main>
+      </div>
+    );
+  }
+
+  // ==========================================
+  // PANTALLA DE CONFIGURACIÓN DE NUEVA AUDITORÍA
+  // ==========================================
   if (step === 'gate') {
      return (
-       <div className="min-h-screen bg-white p-4 md:p-12 flex flex-col items-center justify-start gap-8 border-t-8 border-slate-900 relative">
+       <div className="min-h-screen bg-slate-50 p-4 md:p-12 flex flex-col items-center justify-start gap-6 border-t-8 border-slate-900 relative">
          
-         <div className="absolute top-4 right-4 flex items-center gap-4">
-            <button onClick={() => setStep('access_management')} className="text-sm font-bold text-slate-500 hover:text-slate-800 transition flex items-center gap-2">
-              <Shield size={16} /> Accesos
+         <div className="w-full max-w-3xl flex items-center justify-between">
+            <button 
+              onClick={() => setStep('dashboard')} 
+              className="text-xs font-bold text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-100 border border-slate-300 px-3 py-2 flex items-center gap-1.5 transition cursor-pointer shadow-xs"
+            >
+              <ArrowLeft size={16} />
+              <span>Volver al Panel</span>
             </button>
-            <button onClick={() => { signOut(auth); resetToInitialState(); setStep('gate'); }} className="text-sm font-bold text-slate-500 hover:text-red-600 transition flex items-center gap-2">
-              <Settings size={16} className="hidden" /> Cerrar Sesión
-            </button>
+
+            <div className="flex items-center gap-3">
+              <button onClick={() => setStep('access_management')} className="text-xs font-bold text-slate-500 hover:text-slate-800 transition flex items-center gap-1.5">
+                <Shield size={14} /> Accesos
+              </button>
+              <button onClick={() => { signOut(auth); resetToInitialState(); setStep('dashboard'); }} className="text-xs font-bold text-slate-500 hover:text-red-600 transition flex items-center gap-1.5">
+                Cerrar Sesión
+              </button>
+            </div>
          </div>
 
-         <img src={logoPng} alt="ByteWise" className="h-12 md:h-16 w-auto object-contain drop-shadow-none brightness-0 invert" />
+         <img src={logoPng} alt="ByteWise" className="h-10 md:h-14 w-auto object-contain drop-shadow-none brightness-0 invert" />
 
          {/* NUEVA AUDITORIA */}
         <div className="w-full max-w-3xl bg-white p-8 md:p-12 border border-slate-200 border-t-4 border-t-[#00d4ff] shadow-sm">
           <div className="flex flex-col items-center mb-8">
-             <div className="w-16 h-16 bg-slate-900 rounded-none flex items-center justify-center shadow-none mb-4">
-                <Shield size={32} className="text-[#00d4ff]" />
+             <div className="w-14 h-14 bg-slate-900 rounded-none flex items-center justify-center shadow-none mb-3">
+                <Shield size={28} className="text-[#00d4ff]" />
              </div>
-             <h1 className="text-2xl md:text-3xl font-extrabold text-slate-800 text-center">Auditoría de TI</h1>
-             <p className="text-slate-500 mt-2 text-center text-sm font-medium">Configura tu nueva sesión de evaluación</p>
+             <h1 className="text-2xl md:text-3xl font-extrabold text-slate-800 text-center">Nueva Auditoría de TI</h1>
+             <p className="text-slate-500 mt-1.5 text-center text-sm font-medium">Configura los datos de la empresa y estructura de evaluación</p>
           </div>
 
           <div className="space-y-5">
@@ -1610,19 +1987,19 @@ const startInlineDictation = (section, id) => {
                       <span className={`text-[10px] font-bold px-1.5 py-0.5 ${
                         creationMode === 'base' ? 'bg-[#00d4ff] text-slate-950' : 'bg-slate-100 text-slate-600'
                       }`}>
-                        Base
+                        Recomendado
                       </span>
                     </div>
                     <div className="font-bold text-xs">Auditoría Base</div>
                     <p className={`text-[11px] mt-1 leading-snug ${
                       creationMode === 'base' ? 'text-slate-300' : 'text-slate-500'
                     }`}>
-                      Plantilla completa predefinida (ISO 27001 e infraestructura).
+                      Carga la plantilla estándar de ByteWise (ISO 27001 e infraestructura).
                     </p>
                   </div>
                 </button>
 
-                {/* Opción 2: En Blanco / Desde Cero */}
+                {/* Opción 2: Desde Cero */}
                 <button
                   type="button"
                   onClick={() => setCreationMode('blank')}
@@ -1634,18 +2011,18 @@ const startInlineDictation = (section, id) => {
                 >
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
-                      <Plus size={18} className={creationMode === 'blank' ? 'text-[#00d4ff]' : 'text-slate-600'} />
+                      <Layers size={18} className={creationMode === 'blank' ? 'text-[#00d4ff]' : 'text-slate-600'} />
                       <span className={`text-[10px] font-bold px-1.5 py-0.5 ${
                         creationMode === 'blank' ? 'bg-[#00d4ff] text-slate-950' : 'bg-slate-100 text-slate-600'
                       }`}>
-                        En Blanco
+                        Limpio
                       </span>
                     </div>
                     <div className="font-bold text-xs">Desde Cero</div>
                     <p className={`text-[11px] mt-1 leading-snug ${
                       creationMode === 'blank' ? 'text-slate-300' : 'text-slate-500'
                     }`}>
-                      Cuestionario limpio para definir tus propias preguntas.
+                      Inicia en blanco para crear tus propias áreas y preguntas personalizadas.
                     </p>
                   </div>
                 </button>
@@ -1755,7 +2132,7 @@ const startInlineDictation = (section, id) => {
                   initialSecs = { 'Área Inicial': [] };
                 } else if (creationMode === 'import') {
                   if (!importedSections || Object.keys(importedSections).length === 0) {
-                    alert("Por favor sube un archivo .json válido para importar el cuestionario.");
+                    alert("Por favor sube un archivo Excel (.xlsx) o JSON válido para importar el cuestionario.");
                     return;
                   }
                   initialSecs = sortSections(importedSections);
@@ -1780,65 +2157,15 @@ const startInlineDictation = (section, id) => {
                   setStep('form');
                 }
               }}
-              className="w-full mt-4 flex items-center justify-center gap-2 bg-slate-900 text-white font-semibold border border-slate-900 hover:bg-slate-800 px-6 py-4 rounded-none hover:bg-slate-800 transition-all font-bold shadow-none shadow-none/20"
+              className="w-full mt-4 flex items-center justify-center gap-2 bg-slate-900 text-white font-semibold border border-slate-900 hover:bg-slate-800 px-6 py-4 rounded-none hover:bg-slate-800 transition-all font-bold shadow-none cursor-pointer"
             >
               Comenzar Auditoría <ChevronRight size={18} />
             </button>
           </div>
         </div>
 
-        {/* AUDITORIAS GUARDADAS */}
-        {savedAudits.length > 0 && (
-          <div className="w-full max-w-xl bg-slate-50 border border-slate-200 shadow-sm p-6 md:p-8 rounded-none">
-             <h2 className="text-xl font-bold text-slate-800 mb-4">Auditorías Guardadas</h2>
-             <div className="space-y-3 max-h-60 overflow-y-auto custom-scrollbar pr-2">
-               {savedAudits.map(audit => (
-                 <div key={audit.id} className="bg-white rounded-none p-4 flex items-center justify-between shadow-none border border-slate-100">
-                   <div className="min-w-0 pr-2">
-                     <div className="font-bold text-slate-800 text-base truncate">{audit.nombreEmpresa}</div>
-                     <div className="text-xs text-slate-500 mt-1">
-                        Modificado: {new Date(audit.lastModified).toLocaleDateString()} {new Date(audit.lastModified).toLocaleTimeString()} <br/>
-                        Auditor: {audit.data?.actor?.nombreAuditor || 'N/A'}
-                     </div>
-                   </div>
-                   <div className="flex gap-2 shrink-0">
-                     <button
-                       onClick={async () => {
-                         const savedHash = audit.data?.actor?.contrasenaHash;
-                         if (savedHash) {
-                           const pin = window.prompt("Ingresa la contraseña de esta auditoría para acceder:");
-                           if (pin === null) return; 
-                           const enteredHash = await hashPassword(pin);
-                           if (enteredHash !== savedHash) {
-                             alert("Contraseña incorrecta. Acceso denegado.");
-                             return;
-                           }
-                         }
-
-                         const lockAcquired = await acquireLock(audit.id, audit);
-                         if (lockAcquired) {
-                           setCurrentAuditId(audit.id);
-                           setIntroData(audit.data.introData || {});
-                           setResponses(audit.data.responses || {});
-                           setCustomSections(sortSections(audit.data.customSections || getDefaultSections()));
-                           setGeneralComments(audit.data.generalComments || '');
-                           setActor(audit.data.actor || { nombreAuditor:'', rol:'', contrasenaHash: savedHash || '' });
-                           setStep('form');
-                         }
-                       }}
-                       className="px-4 py-2 bg-slate-900 text-white font-semibold border border-slate-900 hover:bg-slate-800 text-xs font-semibold rounded-none hover:bg-slate-800 transition shadow-none"
-                     >
-                       Cargar
-                     </button>
-                   </div>
-                 </div>
-               ))}
-             </div>
-          </div>
-        )}
-
-      </div>
-    );
+       </div>
+     );
   }
 
   return (
@@ -1875,7 +2202,7 @@ const startInlineDictation = (section, id) => {
                 </h1>
                 <div className="flex items-center gap-2">
                   {step === 'form' && !isGuestMode && (
-                    <button onClick={async () => { await releaseLock(); resetToInitialState(); setStep('gate'); }} className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-none transition" title="Volver al Inicio">
+                    <button onClick={async () => { await releaseLock(); resetToInitialState(); setStep('dashboard'); }} className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-none transition cursor-pointer" title="Volver al Panel de Auditorías">
                       <Home size={20} />
                     </button>
                   )}
