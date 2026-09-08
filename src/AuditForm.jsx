@@ -181,6 +181,7 @@ const AuditForm = () => {
   const [creationMode, setCreationMode] = useState('base'); // 'base' | 'blank' | 'import'
   const [importedSections, setImportedSections] = useState(null);
   const [importedFileName, setImportedFileName] = useState('');
+  const setImportFileName = setImportedFileName;
   const [importSummary, setImportSummary] = useState(null);
   const [importError, setImportError] = useState('');
 
@@ -278,7 +279,7 @@ const AuditForm = () => {
     try {
       const result = await parseQuestionsFile(file);
       setImportedSections(result.parsed);
-      setImportFileName(file.name);
+      setImportedFileName(file.name);
       setImportSummary({
         areasCount: result.areasCount,
         questionsCount: result.questionsCount
@@ -287,7 +288,7 @@ const AuditForm = () => {
       console.error(err);
       setImportError(err.message || "Error al leer el archivo. Asegúrate de que sea un archivo de Excel (.xlsx) o .json válido.");
       setImportedSections(null);
-      setImportFileName('');
+      setImportedFileName('');
       setImportSummary(null);
     } finally {
       e.target.value = '';
@@ -309,7 +310,7 @@ const AuditForm = () => {
     setSubpromptText('');
     setCreationMode('base');
     setImportedSections(null);
-    setImportFileName('');
+    setImportedFileName('');
     setImportSummary(null);
     setImportError('');
   };
@@ -1110,7 +1111,7 @@ const startInlineDictation = (section, id) => {
       setSubpromptText('');
       setCreationMode('base');
       setImportedSections(null);
-      setImportFileName('');
+      setImportedFileName('');
       setImportSummary(null);
       setImportError('');
     } catch (err) {
