@@ -184,6 +184,28 @@ const AuditForm = () => {
   const [importSummary, setImportSummary] = useState(null);
   const [importError, setImportError] = useState('');
 
+  // Control seguro de navegación al inicio y persistencia inmediata
+  const isNavigatingToHomeRef = React.useRef(false);
+  const currentAuditStateRef = React.useRef({
+    currentAuditId,
+    introData,
+    responses,
+    generalComments,
+    actor,
+    customSections
+  });
+
+  useEffect(() => {
+    currentAuditStateRef.current = {
+      currentAuditId,
+      introData,
+      responses,
+      generalComments,
+      actor,
+      customSections
+    };
+  }, [currentAuditId, introData, responses, generalComments, actor, customSections]);
+
   // Sistema de Diálogos Modales Personalizados (ByteWise Modal Dialogs)
   const [modalConfig, setModalConfig] = useState(null);
 
@@ -451,39 +473,51 @@ const AuditForm = () => {
   useEffect(() => { savedAuditsRef.current = savedAudits; }, [savedAudits]);
 
   useEffect(() => {
-    if (step === 'form' && currentAuditId) {
-       const prevList = savedAuditsRef.current;
-       const index = prevList.findIndex(a => a.id === currentAuditId);
-       let newList = [...prevList];
-       const auditData = {
-         id: currentAuditId,
-         lastModified: new Date().toISOString(),
-         nombreEmpresa: introData.nombreEmpresa || 'Empresa sin nombre',
-         data: { introData, responses, generalComments, actor, customSections }
-       };
-       if (index >= 0) {
-         newList[index] = auditData;
-       } else {
-         newList.push(auditData);
-       }
-       setSavedAudits(newList);
-       
-       let timer;
-       if (db) {
-         timer = setTimeout(() => {
-           try {
-             const docRef = doc(db, "auditorias", currentAuditId);
-             setDoc(docRef, auditData)
-               .then(() => console.log("Auditoría guardada exitosamente en Firebase (debounced)."))
-               .catch(e => console.error("Error al guardar en Firebase:", e));
-           } catch(e) {}
-         }, 1500);
-       }
-
-       return () => {
-         if (timer) clearTimeout(timer);
-       };
+    // Si estamos navegando hacia el panel/dashboard o no estamos en form o no hay ID, salir inmediatamente
+    if (isNavigatingToHomeRef.current || step !== 'form' || !currentAuditId) {
+      return;
     }
+
+    const companyName = (introData?.nombreEmpresa || actor?.nombreEmpresa || '').trim();
+    const hasResponses = responses && Object.keys(responses).length > 0;
+
+    // Protección contra sobreescritura accidental si el estado fue reseteado a vacío
+    if (!companyName && !hasResponses && !introData?.sitioWeb) {
+      return;
+    }
+
+    const prevList = savedAuditsRef.current;
+    const index = prevList.findIndex(a => a.id === currentAuditId);
+    let newList = [...prevList];
+    const auditData = {
+      id: currentAuditId,
+      lastModified: new Date().toISOString(),
+      nombreEmpresa: companyName || 'Empresa sin nombre',
+      data: { introData, responses, generalComments, actor, customSections }
+    };
+    if (index >= 0) {
+      newList[index] = auditData;
+    } else {
+      newList.push(auditData);
+    }
+    setSavedAudits(newList);
+    
+    let timer;
+    if (db) {
+      timer = setTimeout(() => {
+        if (isNavigatingToHomeRef.current) return;
+        try {
+          const docRef = doc(db, "auditorias", currentAuditId);
+          setDoc(docRef, auditData)
+            .then(() => console.log("Auditoría guardada exitosamente en Firebase (debounced)."))
+            .catch(e => console.error("Error al guardar en Firebase:", e));
+        } catch(e) {}
+      }, 1500);
+    }
+
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [introData, responses, generalComments, actor, customSections, currentAuditId, step]);
 
@@ -992,6 +1026,100 @@ const startInlineDictation = (section, id) => {
       } catch (e) {
         console.error("Error al liberar el bloqueo:", e);
       }
+    }
+  };
+
+  const saveCurrentAuditImmediate = async (auditIdToSave = null) => {
+    const currentState = currentAuditStateRef.current;
+    const targetId = auditIdToSave || currentState.currentAuditId || currentAuditId;
+    if (!targetId) return;
+
+    const companyName = (currentState.introData?.nombreEmpresa || currentState.actor?.nombreEmpresa || introData?.nombreEmpresa || actor?.nombreEmpresa || '').trim();
+
+    const auditData = {
+      id: targetId,
+      lastModified: new Date().toISOString(),
+      nombreEmpresa: companyName || 'Empresa sin nombre',
+      data: {
+        introData: currentState.introData || introData,
+        responses: currentState.responses || responses,
+        generalComments: currentState.generalComments || generalComments,
+        actor: currentState.actor || actor,
+        customSections: currentState.customSections || customSections
+      }
+    };
+
+    // Actualizar inmediatamente la lista de auditorías en el estado local
+    setSavedAudits(prevList => {
+      const index = prevList.findIndex(a => a.id === targetId);
+      let newList = [...prevList];
+      if (index >= 0) {
+        newList[index] = auditData;
+      } else {
+        newList.push(auditData);
+      }
+      return newList.sort((a, b) => new Date(b.lastModified) - new Date(a.lastModified));
+    });
+
+    // Guardar inmediatamente en Firebase Firestore
+    if (db) {
+      try {
+        const docRef = doc(db, "auditorias", targetId);
+        await setDoc(docRef, auditData, { merge: true });
+        console.log("Auditoría guardada exitosamente de forma inmediata al volver al panel.");
+      } catch (e) {
+        console.error("Error al guardar de forma inmediata en Firebase:", e);
+      }
+    }
+  };
+
+  const handleReturnToDashboard = async () => {
+    try {
+      // 1. Activar bandera de navegación para neutralizar el auto-guardado debounced
+      isNavigatingToHomeRef.current = true;
+
+      const targetId = currentAuditId;
+
+      // 2. Guardar inmediatamente la auditoría activa antes de salir
+      if (targetId) {
+        await saveCurrentAuditImmediate(targetId);
+        // 3. Liberar el bloqueo en Firebase
+        await releaseLock(targetId);
+      }
+
+      // 4. Limpiar cualquier parámetro "?id=" de la URL sin recargar
+      if (window.location.search) {
+        window.history.replaceState({}, document.title, window.location.origin + window.location.pathname);
+      }
+
+      // 5. Cambiar a la vista del panel/dashboard
+      setStep('dashboard');
+
+      // 6. Resetear de forma segura los estados de edición
+      setCurrentAuditId(null);
+      setIntroData(INITIAL_INTRO_DATA);
+      setResponses({});
+      setGeneralComments('');
+      setCustomSections(getDefaultSections());
+      setActor({ nombreEmpresa: '', nombreAuditor: '', rol: '', contrasena: '', contrasenaHash: '' });
+      setExpandedSections({ 'Información General': true });
+      setActiveSection('Información General');
+      setShowSettings(false);
+      setShowExportMenu(false);
+      setAddingSubFor(null);
+      setSubpromptText('');
+      setCreationMode('base');
+      setImportedSections(null);
+      setImportFileName('');
+      setImportSummary(null);
+      setImportError('');
+    } catch (err) {
+      console.error("Error al regresar al panel de auditorías:", err);
+      setStep('dashboard');
+    } finally {
+      setTimeout(() => {
+        isNavigatingToHomeRef.current = false;
+      }, 400);
     }
   };
 
@@ -2314,7 +2442,7 @@ const startInlineDictation = (section, id) => {
                 </h1>
                 <div className="flex items-center gap-2">
                   {step === 'form' && !isGuestMode && (
-                    <button onClick={async () => { await releaseLock(); resetToInitialState(); setStep('dashboard'); }} className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-none transition cursor-pointer" title="Volver al Panel de Auditorías">
+                    <button onClick={handleReturnToDashboard} className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-none transition cursor-pointer" title="Guardar y volver al Panel de Auditorías">
                       <Home size={20} />
                     </button>
                   )}
@@ -2409,6 +2537,7 @@ const startInlineDictation = (section, id) => {
                             cancelText: 'Cancelar'
                           });
                           if (confirmed) {
+                            isNavigatingToHomeRef.current = true;
                             if (db) {
                               try {
                                 await deleteDoc(doc(db, "auditorias", currentAuditId));
@@ -2417,6 +2546,9 @@ const startInlineDictation = (section, id) => {
                             setSavedAudits(prev => prev.filter(a => a.id !== currentAuditId));
                             resetToInitialState();
                             setStep('dashboard');
+                            setTimeout(() => {
+                              isNavigatingToHomeRef.current = false;
+                            }, 400);
                           }
                         }} className="w-full text-left px-4 py-2.5 text-xs font-bold text-rose-600 hover:bg-rose-50 flex items-center gap-2 cursor-pointer">
                           <Trash2 size={15} /> Eliminar Auditoría
