@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { X, Plus, Trash2, Edit2, Save, FileText, CheckCircle, Search, Sparkles, RotateCcw, Upload, Download } from 'lucide-react';
+import { X, Plus, Trash2, Edit2, Save, FileText, CheckCircle, Search, Sparkles, RotateCcw, Upload, Download, FileSpreadsheet, Loader2 } from 'lucide-react';
 import { DEFAULT_SECTIONS } from '../defaultSections';
+import { downloadExcelTemplate, parseQuestionsFile } from '../excelTemplateHelper';
 
 const EditQuestionsModal = ({ isOpen, onClose, initialSections, onSave }) => {
   const [sections, setSections] = useState({});
@@ -8,6 +9,7 @@ const EditQuestionsModal = ({ isOpen, onClose, initialSections, onSave }) => {
   const [newAreaName, setNewAreaName] = useState('');
   const [isAddingArea, setIsAddingArea] = useState(false);
   const [rewritingQuestion, setRewritingQuestion] = useState(null);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -153,6 +155,18 @@ const EditQuestionsModal = ({ isOpen, onClose, initialSections, onSave }) => {
     }
   };
 
+  const handleDownloadExcel = async () => {
+    try {
+      setIsProcessing(true);
+      await downloadExcelTemplate(sections, `Plantilla_Preguntas_${Date.now()}.xlsx`);
+    } catch (err) {
+      console.error(err);
+      alert('Error al generar la plantilla Excel: ' + (err.message || ''));
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const handleExportJSON = () => {
     try {
       const dataStr = JSON.stringify(sections, null, 2);
@@ -169,27 +183,24 @@ const EditQuestionsModal = ({ isOpen, onClose, initialSections, onSave }) => {
     }
   };
 
-  const handleImportJSON = (e) => {
+  const handleImportFile = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const parsed = JSON.parse(event.target.result);
-        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || Object.keys(parsed).length === 0) {
-          throw new Error("Formato inválido.");
-        }
-        setSections(parsed);
-        const areas = Object.keys(parsed);
-        setSelectedArea(areas[0] || '');
-        alert(`Plantilla importada con éxito (${areas.length} áreas cargadas). Recuerda guardar cambios.`);
-      } catch (err) {
-        console.error(err);
-        alert("El archivo no contiene un formato de cuestionario válido. Debe ser un archivo .json.");
-      }
-    };
-    reader.readAsText(file);
-    e.target.value = '';
+    try {
+      setIsProcessing(true);
+      const parsed = await parseQuestionsFile(file);
+      setSections(parsed);
+      const areas = Object.keys(parsed);
+      setSelectedArea(areas[0] || '');
+      const totalQ = Object.values(parsed).reduce((acc, curr) => acc + (curr?.length || 0), 0);
+      alert(`Cuestionario importado con éxito desde "${file.name}":\n• ${areas.length} áreas identificadas\n• ${totalQ} preguntas cargadas\n\nHaz clic en "Guardar Cambios" para aplicar esta estructura.`);
+    } catch (err) {
+      console.error(err);
+      alert(err.message || "Error al procesar el archivo. Asegúrate de que sea un archivo .xlsx, .xls o .json válido.");
+    } finally {
+      setIsProcessing(false);
+      e.target.value = '';
+    }
   };
 
   const handleSave = () => {
@@ -208,19 +219,30 @@ const EditQuestionsModal = ({ isOpen, onClose, initialSections, onSave }) => {
               <Edit2 size={24} className="text-[#00d4ff]" />
               Editor de Cuestionario
             </h2>
-            <p className="text-sm text-slate-500 mt-1">Personaliza las áreas y preguntas para esta auditoría específica.</p>
+            <p className="text-sm text-slate-500 mt-1">Personaliza las áreas y preguntas para esta auditoría específica o importa tu plantilla.</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <label className="cursor-pointer text-xs font-bold text-slate-700 hover:text-cyan-700 bg-white hover:bg-slate-100 border border-slate-300 px-3 py-2 flex items-center gap-1.5 transition shadow-none" title="Importar cuestionario desde archivo .json">
-              <Upload size={14} className="text-cyan-600" />
-              <span>Importar JSON</span>
-              <input type="file" accept=".json" onChange={handleImportJSON} className="hidden" />
+            <button
+              type="button"
+              onClick={handleDownloadExcel}
+              disabled={isProcessing}
+              className="text-xs font-bold text-emerald-800 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 px-3 py-2 flex items-center gap-1.5 transition shadow-none cursor-pointer disabled:opacity-50"
+              title="Descargar este cuestionario en plantilla Excel (.xlsx) para editarlo en tu computadora"
+            >
+              <FileSpreadsheet size={15} className="text-emerald-600" />
+              <span>Plantilla Excel</span>
+            </button>
+            <label className="cursor-pointer text-xs font-bold text-cyan-800 hover:text-cyan-900 bg-cyan-50 hover:bg-cyan-100 border border-cyan-300 px-3 py-2 flex items-center gap-1.5 transition shadow-none" title="Importar cuestionario desde archivo Excel (.xlsx, .xls) o JSON (.json)">
+              {isProcessing ? <Loader2 size={14} className="text-cyan-600 animate-spin" /> : <Upload size={14} className="text-cyan-600" />}
+              <span>Importar Excel / JSON</span>
+              <input type="file" accept=".xlsx,.xls,.json" onChange={handleImportFile} disabled={isProcessing} className="hidden" />
             </label>
             <button
               type="button"
               onClick={handleExportJSON}
-              className="text-xs font-bold text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-100 border border-slate-300 px-3 py-2 flex items-center gap-1.5 transition shadow-none cursor-pointer"
-              title="Descargar esta estructura como plantilla .json"
+              disabled={isProcessing}
+              className="text-xs font-bold text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-100 border border-slate-300 px-3 py-2 flex items-center gap-1.5 transition shadow-none cursor-pointer disabled:opacity-50"
+              title="Descargar esta estructura como respaldo .json"
             >
               <Download size={14} className="text-slate-600" />
               <span>Exportar JSON</span>

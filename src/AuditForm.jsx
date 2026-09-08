@@ -2,6 +2,7 @@ import { DEFAULT_SECTIONS } from "./defaultSections";
 
 import React, { useEffect, useState } from 'react';
 import { ChevronDown, ChevronUp, ChevronRight, Download, FileText, FileSpreadsheet, RefreshCw, Mic, Sparkles, Building2, Shield, Brain, Hash, CheckCircle, Search, Settings, Share2, KeyRound, Trash2, Home, Plus, X, Globe, Copy, Check, ExternalLink, Loader2, Upload, FileCode, Layers } from 'lucide-react';
+import { downloadExcelTemplate, parseQuestionsFile } from './excelTemplateHelper';
 import { db, auth } from "./firebase";
 import { collection, doc, setDoc, getDoc, updateDoc, getDocs, deleteDoc } from "firebase/firestore";
 import { onAuthStateChanged, signOut } from "firebase/auth";
@@ -146,39 +147,27 @@ const AuditForm = () => {
   const [importSummary, setImportSummary] = useState(null);
   const [importError, setImportError] = useState('');
 
-  const handleGateFileImport = (e) => {
+  const handleGateFileImport = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setImportError('');
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const parsed = JSON.parse(event.target.result);
-        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || Object.keys(parsed).length === 0) {
-          throw new Error("El archivo no contiene un formato de cuestionario válido. Debe ser un objeto con áreas y preguntas.");
-        }
-        let totalQ = 0;
-        Object.keys(parsed).forEach(area => {
-          if (Array.isArray(parsed[area])) {
-            totalQ += parsed[area].length;
-          }
-        });
-        setImportedSections(parsed);
-        setImportFileName(file.name);
-        setImportSummary({
-          areasCount: Object.keys(parsed).length,
-          questionsCount: totalQ
-        });
-      } catch (err) {
-        console.error(err);
-        setImportError("El archivo no contiene un formato de cuestionario válido. Debe ser un archivo .json de plantilla.");
-        setImportedSections(null);
-        setImportFileName('');
-        setImportSummary(null);
-      }
-    };
-    reader.readAsText(file);
-    e.target.value = '';
+    try {
+      const result = await parseQuestionsFile(file);
+      setImportedSections(result.parsed);
+      setImportFileName(file.name);
+      setImportSummary({
+        areasCount: result.areasCount,
+        questionsCount: result.questionsCount
+      });
+    } catch (err) {
+      console.error(err);
+      setImportError(err.message || "Error al leer el archivo. Asegúrate de que sea un archivo de Excel (.xlsx) o .json válido.");
+      setImportedSections(null);
+      setImportFileName('');
+      setImportSummary(null);
+    } finally {
+      e.target.value = '';
+    }
   };
 
   const resetToInitialState = () => {
@@ -1673,18 +1662,18 @@ const startInlineDictation = (section, id) => {
                 >
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
-                      <Upload size={18} className={creationMode === 'import' ? 'text-[#00d4ff]' : 'text-slate-600'} />
+                      <FileSpreadsheet size={18} className={creationMode === 'import' ? 'text-[#00d4ff]' : 'text-slate-600'} />
                       <span className={`text-[10px] font-bold px-1.5 py-0.5 ${
                         creationMode === 'import' ? 'bg-[#00d4ff] text-slate-950' : 'bg-slate-100 text-slate-600'
                       }`}>
-                        Importar
+                        Excel / JSON
                       </span>
                     </div>
-                    <div className="font-bold text-xs">Importar JSON</div>
+                    <div className="font-bold text-xs">Importar Excel</div>
                     <p className={`text-[11px] mt-1 leading-snug ${
                       creationMode === 'import' ? 'text-slate-300' : 'text-slate-500'
                     }`}>
-                      Carga un archivo .json de preguntas previamente exportado.
+                      Carga tus preguntas desde un archivo Excel (.xlsx) o JSON.
                     </p>
                   </div>
                 </button>
@@ -1692,40 +1681,61 @@ const startInlineDictation = (section, id) => {
 
               {/* Subida de archivo si seleccionó Importar */}
               {creationMode === 'import' && (
-                <div className="mt-3 p-4 bg-slate-50 border border-slate-300 animate-in fade-in duration-200">
-                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div className="mt-3 p-4 bg-slate-50 border border-slate-300 animate-in fade-in duration-200 space-y-3">
+                  <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 border-b border-slate-200 pb-3">
                     <div>
                       <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                        <FileCode size={16} className="text-cyan-600" />
-                        Selecciona el archivo de plantilla (.json)
+                        <FileSpreadsheet size={16} className="text-emerald-600" />
+                        Plantilla oficial en Excel (.xlsx)
                       </div>
                       <p className="text-[11px] text-slate-500 mt-0.5">
-                        Debe ser un archivo JSON con formato de áreas y preguntas de auditoría.
+                        Descarga la plantilla con las preguntas base como ejemplo, modifícala en Excel y súbela aquí.
                       </p>
                     </div>
 
-                    <label className="px-4 py-2 bg-white hover:bg-slate-100 border border-slate-300 text-slate-800 text-xs font-bold cursor-pointer transition shrink-0 flex items-center gap-1.5 shadow-none">
-                      <Upload size={14} className="text-cyan-600" />
-                      <span>{importedFileName ? 'Cambiar Archivo' : 'Subir Archivo .json'}</span>
-                      <input type="file" accept=".json" onChange={handleGateFileImport} className="hidden" />
+                    <button
+                      type="button"
+                      onClick={() => downloadExcelTemplate()}
+                      className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold cursor-pointer transition shrink-0 flex items-center gap-1.5 shadow-none"
+                    >
+                      <Download size={14} />
+                      <span>Descargar Plantilla Excel</span>
+                    </button>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-1">
+                    <div>
+                      <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                        <Upload size={16} className="text-cyan-600" />
+                        Subir cuestionario diligenciado
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        Formatos soportados: <strong>.xlsx</strong>, <strong>.xls</strong> o <strong>.json</strong>.
+                      </p>
+                    </div>
+
+                    <label className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold cursor-pointer transition shrink-0 flex items-center gap-1.5 shadow-none">
+                      <Upload size={14} className="text-[#00d4ff]" />
+                      <span>{importedFileName ? 'Cambiar Archivo' : 'Seleccionar Archivo Excel'}</span>
+                      <input type="file" accept=".xlsx,.xls,.json" onChange={handleGateFileImport} className="hidden" />
                     </label>
                   </div>
 
                   {importedFileName && importSummary && (
-                    <div className="mt-3 p-2.5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center justify-between">
+                    <div className="mt-3 p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center justify-between">
                       <div className="flex items-center gap-2 truncate">
-                        <CheckCircle size={15} className="text-emerald-600 shrink-0" />
+                        <CheckCircle size={16} className="text-emerald-600 shrink-0" />
                         <span className="font-semibold truncate">{importedFileName}</span>
                       </div>
-                      <span className="text-[11px] font-bold bg-emerald-100 px-2 py-0.5 shrink-0 ml-2">
-                        {importSummary.areasCount} áreas / {importSummary.questionsCount} preguntas
+                      <span className="text-[11px] font-bold bg-emerald-200 text-emerald-950 px-2.5 py-1 shrink-0 ml-2">
+                        {importSummary.areasCount} áreas / {importSummary.questionsCount} preguntas detectadas
                       </span>
                     </div>
                   )}
 
                   {importError && (
-                    <div className="mt-3 p-2.5 bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
-                      <X size={15} className="shrink-0" />
+                    <div className="mt-3 p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
+                      <X size={16} className="shrink-0" />
                       <span>{importError}</span>
                     </div>
                   )}
