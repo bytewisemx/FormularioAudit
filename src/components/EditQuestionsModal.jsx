@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Plus, Trash2, Edit2, Save, FileText, CheckCircle, Search, Sparkles, RotateCcw } from 'lucide-react';
+import { X, Plus, Trash2, Edit2, Save, FileText, CheckCircle, Search, Sparkles, RotateCcw, Upload, Download } from 'lucide-react';
 import { DEFAULT_SECTIONS } from '../defaultSections';
 
 const EditQuestionsModal = ({ isOpen, onClose, initialSections, onSave }) => {
@@ -153,6 +153,45 @@ const EditQuestionsModal = ({ isOpen, onClose, initialSections, onSave }) => {
     }
   };
 
+  const handleExportJSON = () => {
+    try {
+      const dataStr = JSON.stringify(sections, null, 2);
+      const blob = new Blob([dataStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `plantilla_cuestionario_${Date.now()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error(e);
+      alert("Error al exportar la plantilla.");
+    }
+  };
+
+  const handleImportJSON = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const parsed = JSON.parse(event.target.result);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || Object.keys(parsed).length === 0) {
+          throw new Error("Formato inválido.");
+        }
+        setSections(parsed);
+        const areas = Object.keys(parsed);
+        setSelectedArea(areas[0] || '');
+        alert(`Plantilla importada con éxito (${areas.length} áreas cargadas). Recuerda guardar cambios.`);
+      } catch (err) {
+        console.error(err);
+        alert("El archivo no contiene un formato de cuestionario válido. Debe ser un archivo .json.");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
   const handleSave = () => {
     onSave(sections);
     onClose();
@@ -163,7 +202,7 @@ const EditQuestionsModal = ({ isOpen, onClose, initialSections, onSave }) => {
       <div className="bg-white w-full max-w-6xl max-h-[90vh] flex flex-col shadow-2xl rounded-none animate-in fade-in zoom-in-95 duration-200">
         
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-slate-200 bg-slate-50">
+        <div className="flex flex-col md:flex-row md:items-center justify-between p-6 border-b border-slate-200 bg-slate-50 gap-4">
           <div>
             <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
               <Edit2 size={24} className="text-[#00d4ff]" />
@@ -171,9 +210,25 @@ const EditQuestionsModal = ({ isOpen, onClose, initialSections, onSave }) => {
             </h2>
             <p className="text-sm text-slate-500 mt-1">Personaliza las áreas y preguntas para esta auditoría específica.</p>
           </div>
-          <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition-colors">
-            <X size={24} />
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <label className="cursor-pointer text-xs font-bold text-slate-700 hover:text-cyan-700 bg-white hover:bg-slate-100 border border-slate-300 px-3 py-2 flex items-center gap-1.5 transition shadow-none" title="Importar cuestionario desde archivo .json">
+              <Upload size={14} className="text-cyan-600" />
+              <span>Importar JSON</span>
+              <input type="file" accept=".json" onChange={handleImportJSON} className="hidden" />
+            </label>
+            <button
+              type="button"
+              onClick={handleExportJSON}
+              className="text-xs font-bold text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-100 border border-slate-300 px-3 py-2 flex items-center gap-1.5 transition shadow-none cursor-pointer"
+              title="Descargar esta estructura como plantilla .json"
+            >
+              <Download size={14} className="text-slate-600" />
+              <span>Exportar JSON</span>
+            </button>
+            <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition-colors ml-1">
+              <X size={24} />
+            </button>
+          </div>
         </div>
 
         {/* Body */}

@@ -1,7 +1,7 @@
 import { DEFAULT_SECTIONS } from "./defaultSections";
 
 import React, { useEffect, useState } from 'react';
-import { ChevronDown, ChevronUp, ChevronRight, Download, FileText, FileSpreadsheet, RefreshCw, Mic, Sparkles, Building2, Shield, Brain, Hash, CheckCircle, Search, Settings, Share2, KeyRound, Trash2, Home, Plus, X, Globe, Copy, Check, ExternalLink, Loader2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, ChevronRight, Download, FileText, FileSpreadsheet, RefreshCw, Mic, Sparkles, Building2, Shield, Brain, Hash, CheckCircle, Search, Settings, Share2, KeyRound, Trash2, Home, Plus, X, Globe, Copy, Check, ExternalLink, Loader2, Upload, FileCode, Layers } from 'lucide-react';
 import { db, auth } from "./firebase";
 import { collection, doc, setDoc, getDoc, updateDoc, getDocs, deleteDoc } from "firebase/firestore";
 import { onAuthStateChanged, signOut } from "firebase/auth";
@@ -139,6 +139,47 @@ const AuditForm = () => {
   const [isGeneratingSub, setIsGeneratingSub] = useState(false);
   const [isInvestigatingCompany, setIsInvestigatingCompany] = useState(false);
   const [copiedPreliminar, setCopiedPreliminar] = useState(false);
+  
+  const [creationMode, setCreationMode] = useState('base'); // 'base' | 'blank' | 'import'
+  const [importedSections, setImportedSections] = useState(null);
+  const [importedFileName, setImportedFileName] = useState('');
+  const [importSummary, setImportSummary] = useState(null);
+  const [importError, setImportError] = useState('');
+
+  const handleGateFileImport = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImportError('');
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const parsed = JSON.parse(event.target.result);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || Object.keys(parsed).length === 0) {
+          throw new Error("El archivo no contiene un formato de cuestionario válido. Debe ser un objeto con áreas y preguntas.");
+        }
+        let totalQ = 0;
+        Object.keys(parsed).forEach(area => {
+          if (Array.isArray(parsed[area])) {
+            totalQ += parsed[area].length;
+          }
+        });
+        setImportedSections(parsed);
+        setImportFileName(file.name);
+        setImportSummary({
+          areasCount: Object.keys(parsed).length,
+          questionsCount: totalQ
+        });
+      } catch (err) {
+        console.error(err);
+        setImportError("El archivo no contiene un formato de cuestionario válido. Debe ser un archivo .json de plantilla.");
+        setImportedSections(null);
+        setImportFileName('');
+        setImportSummary(null);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
 
   const resetToInitialState = () => {
     setCurrentAuditId(null);
@@ -153,6 +194,11 @@ const AuditForm = () => {
     setShowExportMenu(false);
     setAddingSubFor(null);
     setSubpromptText('');
+    setCreationMode('base');
+    setImportedSections(null);
+    setImportFileName('');
+    setImportSummary(null);
+    setImportError('');
   };
 
   useEffect(() => {
@@ -1551,12 +1597,160 @@ const startInlineDictation = (section, id) => {
               />
             </div>
 
+            {/* Modalidad de Cuestionario Inicial */}
+            <div className="pt-2 border-t border-slate-100">
+              <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center justify-between">
+                <span>Estructura del Cuestionario</span>
+                <span className="text-xs text-slate-400 font-normal">Elige cómo iniciar</span>
+              </label>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                {/* Opción 1: Base */}
+                <button
+                  type="button"
+                  onClick={() => setCreationMode('base')}
+                  className={`p-3 text-left border transition-all cursor-pointer flex flex-col justify-between rounded-none relative ${
+                    creationMode === 'base'
+                      ? 'border-slate-900 bg-slate-900 text-white shadow-sm'
+                      : 'border-slate-200 bg-white hover:border-slate-300 text-slate-700'
+                  }`}
+                >
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <Shield size={18} className={creationMode === 'base' ? 'text-[#00d4ff]' : 'text-slate-600'} />
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 ${
+                        creationMode === 'base' ? 'bg-[#00d4ff] text-slate-950' : 'bg-slate-100 text-slate-600'
+                      }`}>
+                        Base
+                      </span>
+                    </div>
+                    <div className="font-bold text-xs">Auditoría Base</div>
+                    <p className={`text-[11px] mt-1 leading-snug ${
+                      creationMode === 'base' ? 'text-slate-300' : 'text-slate-500'
+                    }`}>
+                      Plantilla completa predefinida (ISO 27001 e infraestructura).
+                    </p>
+                  </div>
+                </button>
+
+                {/* Opción 2: En Blanco / Desde Cero */}
+                <button
+                  type="button"
+                  onClick={() => setCreationMode('blank')}
+                  className={`p-3 text-left border transition-all cursor-pointer flex flex-col justify-between rounded-none relative ${
+                    creationMode === 'blank'
+                      ? 'border-slate-900 bg-slate-900 text-white shadow-sm'
+                      : 'border-slate-200 bg-white hover:border-slate-300 text-slate-700'
+                  }`}
+                >
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <Plus size={18} className={creationMode === 'blank' ? 'text-[#00d4ff]' : 'text-slate-600'} />
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 ${
+                        creationMode === 'blank' ? 'bg-[#00d4ff] text-slate-950' : 'bg-slate-100 text-slate-600'
+                      }`}>
+                        En Blanco
+                      </span>
+                    </div>
+                    <div className="font-bold text-xs">Desde Cero</div>
+                    <p className={`text-[11px] mt-1 leading-snug ${
+                      creationMode === 'blank' ? 'text-slate-300' : 'text-slate-500'
+                    }`}>
+                      Cuestionario limpio para definir tus propias preguntas.
+                    </p>
+                  </div>
+                </button>
+
+                {/* Opción 3: Importar Cuestionario */}
+                <button
+                  type="button"
+                  onClick={() => setCreationMode('import')}
+                  className={`p-3 text-left border transition-all cursor-pointer flex flex-col justify-between rounded-none relative ${
+                    creationMode === 'import'
+                      ? 'border-slate-900 bg-slate-900 text-white shadow-sm'
+                      : 'border-slate-200 bg-white hover:border-slate-300 text-slate-700'
+                  }`}
+                >
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <Upload size={18} className={creationMode === 'import' ? 'text-[#00d4ff]' : 'text-slate-600'} />
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 ${
+                        creationMode === 'import' ? 'bg-[#00d4ff] text-slate-950' : 'bg-slate-100 text-slate-600'
+                      }`}>
+                        Importar
+                      </span>
+                    </div>
+                    <div className="font-bold text-xs">Importar JSON</div>
+                    <p className={`text-[11px] mt-1 leading-snug ${
+                      creationMode === 'import' ? 'text-slate-300' : 'text-slate-500'
+                    }`}>
+                      Carga un archivo .json de preguntas previamente exportado.
+                    </p>
+                  </div>
+                </button>
+              </div>
+
+              {/* Subida de archivo si seleccionó Importar */}
+              {creationMode === 'import' && (
+                <div className="mt-3 p-4 bg-slate-50 border border-slate-300 animate-in fade-in duration-200">
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+                    <div>
+                      <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                        <FileCode size={16} className="text-cyan-600" />
+                        Selecciona el archivo de plantilla (.json)
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        Debe ser un archivo JSON con formato de áreas y preguntas de auditoría.
+                      </p>
+                    </div>
+
+                    <label className="px-4 py-2 bg-white hover:bg-slate-100 border border-slate-300 text-slate-800 text-xs font-bold cursor-pointer transition shrink-0 flex items-center gap-1.5 shadow-none">
+                      <Upload size={14} className="text-cyan-600" />
+                      <span>{importedFileName ? 'Cambiar Archivo' : 'Subir Archivo .json'}</span>
+                      <input type="file" accept=".json" onChange={handleGateFileImport} className="hidden" />
+                    </label>
+                  </div>
+
+                  {importedFileName && importSummary && (
+                    <div className="mt-3 p-2.5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center justify-between">
+                      <div className="flex items-center gap-2 truncate">
+                        <CheckCircle size={15} className="text-emerald-600 shrink-0" />
+                        <span className="font-semibold truncate">{importedFileName}</span>
+                      </div>
+                      <span className="text-[11px] font-bold bg-emerald-100 px-2 py-0.5 shrink-0 ml-2">
+                        {importSummary.areasCount} áreas / {importSummary.questionsCount} preguntas
+                      </span>
+                    </div>
+                  )}
+
+                  {importError && (
+                    <div className="mt-3 p-2.5 bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
+                      <X size={15} className="shrink-0" />
+                      <span>{importError}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
             <button
               onClick={async () => {
                 if (!actor.nombreEmpresa.trim() || !actor.nombreAuditor.trim() || !actor.rol || !actor.contrasena.trim()) {
                   alert("Por favor llena todos los campos obligatorios, incluyendo la contraseña, para continuar.");
                   return;
                 }
+
+                let initialSecs = getDefaultSections();
+                if (creationMode === 'blank') {
+                  initialSecs = { 'Área Inicial': [] };
+                } else if (creationMode === 'import') {
+                  if (!importedSections || Object.keys(importedSections).length === 0) {
+                    alert("Por favor sube un archivo .json válido para importar el cuestionario.");
+                    return;
+                  }
+                  initialSecs = sortSections(importedSections);
+                }
+
                 const hashed = await hashPassword(actor.contrasena);
                 const newId = Date.now().toString();
                 const lockAcquired = await acquireLock(newId);
@@ -1569,9 +1763,9 @@ const startInlineDictation = (section, id) => {
                   });
                   setResponses({});
                   setGeneralComments('');
-                  setCustomSections(getDefaultSections());
+                  setCustomSections(initialSecs);
                   setExpandedSections({ 'Información General': true });
-                  setActiveSection('Información General');
+                  setActiveSection(creationMode === 'blank' ? 'Área Inicial' : 'Información General');
                   setActor(prev => ({ ...prev, contrasenaHash: hashed, contrasena: '' }));
                   setStep('form');
                 }
@@ -2344,7 +2538,25 @@ const startInlineDictation = (section, id) => {
                   </div>
 
                   <div className="p-6 space-y-8">
-                {customSections[section].map(item => {
+                    {(!customSections[section] || customSections[section].length === 0) ? (
+                      <div className="p-10 border-2 border-dashed border-slate-200 text-center flex flex-col items-center justify-center">
+                        <div className="w-14 h-14 bg-slate-100 flex items-center justify-center text-slate-400 mb-3">
+                          <Plus size={28} />
+                        </div>
+                        <h4 className="font-bold text-slate-800 text-base">Esta área no tiene preguntas aún</h4>
+                        <p className="text-xs text-slate-500 max-w-md mt-1 mb-5">
+                          Iniciaste este cuestionario en blanco o esta área es nueva. Haz clic en el botón inferior para abrir el editor y redactar preguntas personalizadas.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setShowEditModal(true)}
+                          className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold flex items-center gap-2 cursor-pointer transition shadow-none"
+                        >
+                          <Edit2 size={15} className="text-[#00d4ff]" /> Abrir Editor de Preguntas
+                        </button>
+                      </div>
+                    ) : (
+                      customSections[section].map(item => {
                   const key = `${section}-${item.id}`;
                   const response = responses[key] || {};
                   
@@ -2549,7 +2761,8 @@ const startInlineDictation = (section, id) => {
                       )}
                     </div>
                   );
-                })}
+                })
+              )}
               </div>
             </div>
           );
