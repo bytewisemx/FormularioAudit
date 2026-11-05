@@ -32,6 +32,7 @@ import EditQuestionsModal from "./components/EditQuestionsModal";
 import { Edit2 } from "lucide-react";
 import AudioAssistant from "./components/AudioAssistant";
 import CustomDialogModal from "./components/CustomDialogModal";
+import CubeLoader from "./components/CubeLoader";
 
 const GENERIC_EVALUATION_SCALE = [
   '0 - No existe',
@@ -278,6 +279,7 @@ const AuditForm = () => {
   const [editingQuestionData, setEditingQuestionData] = useState(null);
   const [authChecking, setAuthChecking] = useState(true);
   const [auditsLoading, setAuditsLoading] = useState(true);
+  const [globalLoadingMessage, setGlobalLoadingMessage] = useState(null);
   const [addingSubFor, setAddingSubFor] = useState(null);
   const [subpromptText, setSubpromptText] = useState('');
   const [isGeneratingSub, setIsGeneratingSub] = useState(false);
@@ -431,6 +433,7 @@ const AuditForm = () => {
   };
 
   const handleProceedLoad = (audit, readOnlyMode = false) => {
+    setGlobalLoadingMessage('Cargando auditoría...');
     setIsReadOnly(readOnlyMode);
     setCurrentAuditId(audit.id);
     const data = audit.data || audit;
@@ -454,6 +457,9 @@ const AuditForm = () => {
     setShowExportMenu(false);
     setAddingSubFor(null);
     setStep('form');
+    setTimeout(() => {
+      setGlobalLoadingMessage(null);
+    }, 350);
   };
 
   const handleLoadAudit = async (audit) => {
@@ -559,6 +565,7 @@ const AuditForm = () => {
     });
     if (!confirmed) return;
 
+    setGlobalLoadingMessage('Archivando auditoría en Firebase...');
     try {
       const updatedAudit = { ...audit, archived: true, lastModified: new Date().toISOString() };
       if (db) {
@@ -579,6 +586,8 @@ const AuditForm = () => {
         title: 'Error al Archivar',
         message: 'Ocurrió un error al intentar archivar la auditoría en la base de datos.'
       });
+    } finally {
+      setGlobalLoadingMessage(null);
     }
   };
 
@@ -586,6 +595,7 @@ const AuditForm = () => {
 
   const handleRestoreAudit = async (audit) => {
     const nombre = audit.nombreEmpresa || audit.data?.introData?.nombreEmpresa || 'esta auditoría';
+    setGlobalLoadingMessage('Restaurando auditoría en Firebase...');
     try {
       const updatedAudit = { ...audit, archived: false, lastModified: new Date().toISOString() };
       if (db) {
@@ -606,6 +616,8 @@ const AuditForm = () => {
         title: 'Error al Restaurar',
         message: 'No se pudo restaurar la auditoría en la base de datos.'
       });
+    } finally {
+      setGlobalLoadingMessage(null);
     }
   };
 
@@ -645,6 +657,7 @@ const AuditForm = () => {
       }
     }
 
+    setGlobalLoadingMessage('Eliminando auditoría permanentemente...');
     try {
       if (db) {
         await deleteDoc(doc(db, "auditorias", audit.id));
@@ -664,6 +677,8 @@ const AuditForm = () => {
         title: 'Error al Eliminar',
         message: 'Ocurrió un error al intentar eliminar la auditoría en la base de datos.'
       });
+    } finally {
+      setGlobalLoadingMessage(null);
     }
   };
 
@@ -747,15 +762,27 @@ const AuditForm = () => {
 
   // Carga centralizada de auditorías (visibles para todos los usuarios autorizados)
   useEffect(() => {
+    // Si la verificación de autenticación inicial sigue en curso, esperar antes de determinar el estado
+    if (authChecking) {
+      return;
+    }
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const auditId = urlParams.get('id');
+
+    // Si terminó la autenticación y no hay usuario ni ID de auditoría invitada, detener carga
+    if (!user && !auditId) {
+      setAuditsLoading(false);
+      return;
+    }
+
     const loadAudits = async () => {
-      const urlParams = new URLSearchParams(window.location.search);
-      const auditId = urlParams.get('id');
-      if (!user && !auditId) {
-        setAuditsLoading(false);
-        return;
-      }
+      setAuditsLoading(true);
       try {
-        if (!db) return;
+        if (!db) {
+          setAuditsLoading(false);
+          return;
+        }
         const querySnapshot = await getDocs(collection(db, "auditorias"));
         const audits = [];
         querySnapshot.forEach((docSnap) => {
@@ -821,7 +848,7 @@ const AuditForm = () => {
       }
     };
     fetchLogs();
-  }, [user]);
+  }, [user, authChecking]);
 
   const savedAuditsRef = React.useRef(savedAudits);
   useEffect(() => { savedAuditsRef.current = savedAudits; }, [savedAudits]);
@@ -1542,6 +1569,7 @@ const startInlineDictation = (section, id) => {
 
   const handleReturnToDashboard = async () => {
     try {
+      setGlobalLoadingMessage('Guardando y sincronizando auditoría...');
       // 1. Activar bandera de navegación para neutralizar el auto-guardado debounced
       isNavigatingToHomeRef.current = true;
 
@@ -1597,6 +1625,7 @@ const startInlineDictation = (section, id) => {
       console.error("Error al regresar al panel de auditorías:", err);
       setStep('dashboard');
     } finally {
+      setGlobalLoadingMessage(null);
       setTimeout(() => {
         isNavigatingToHomeRef.current = false;
       }, 400);
@@ -2277,11 +2306,11 @@ const startInlineDictation = (section, id) => {
 
 
   if (authChecking || (isGuestMode && auditsLoading)) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="loader"></div>
-      </div>
-    );
+    return <CubeLoader message={authChecking ? "Verificando sesión segura..." : "Cargando auditoría..."} />;
+  }
+
+  if (!isGuestMode && user && auditsLoading) {
+    return <CubeLoader message="Cargando auditorías desde la nube..." />;
   }
 
   if (!isGuestMode && !user) {
@@ -2392,7 +2421,7 @@ const startInlineDictation = (section, id) => {
   const renderAccessModal = () => {
     if (!accessModalAudit) return null;
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in duration-200">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
         <div className="bg-white rounded-2xl shadow-xl border border-slate-100 w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
           <div className="p-6 border-b border-slate-100 bg-slate-50/50">
             <div className="flex items-center justify-between">
@@ -2503,7 +2532,7 @@ const startInlineDictation = (section, id) => {
   const renderShareModal = () => {
     if (!shareModalAudit) return null;
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in duration-200">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
         <div className="bg-white rounded-2xl shadow-xl border border-slate-100 w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200">
           <div className="p-6 border-b border-slate-100 bg-slate-50/50">
             <div className="flex items-center justify-between">
@@ -2809,7 +2838,11 @@ const startInlineDictation = (section, id) => {
           </div>
 
           {/* Tabla de Auditorías */}
-          {sortedAudits.length > 0 ? (
+          {auditsLoading ? (
+            <div className="w-full bg-white rounded-xl shadow-xs border border-slate-100 p-16 flex flex-col items-center justify-center min-h-[320px]">
+              <CubeLoader message="Cargando auditorías desde la nube..." />
+            </div>
+          ) : sortedAudits.length > 0 ? (
             <div className="w-full bg-white rounded-xl shadow-xs border border-slate-100 overflow-hidden">
               <div className="w-full overflow-x-auto">
                 <table className="w-full table-auto text-left border-collapse">
@@ -3044,7 +3077,7 @@ const startInlineDictation = (section, id) => {
 
         {/* Modal de Auditorías Archivadas */}
         {showArchivedModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
             <div 
               className="w-full max-w-3xl bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden flex flex-col max-h-[85vh] animate-in zoom-in-95 duration-200"
               onClick={(e) => e.stopPropagation()}
@@ -3145,7 +3178,7 @@ const startInlineDictation = (section, id) => {
 
         {/* Modal de Historial de Cambios */}
         {showLogsModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
             <div 
               className="w-full max-w-3xl bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden flex flex-col max-h-[85vh] animate-in zoom-in-95 duration-200"
               onClick={(e) => e.stopPropagation()}
@@ -3250,6 +3283,7 @@ const startInlineDictation = (section, id) => {
         {renderAccessModal()}
         {renderShareModal()}
 
+        {globalLoadingMessage && <CubeLoader message={globalLoadingMessage} />}
         <CustomDialogModal config={modalConfig} onClose={() => setModalConfig(null)} />
       </div>
     );
@@ -3619,24 +3653,29 @@ const startInlineDictation = (section, id) => {
                     initialSecs = sortSections(importedSections);
                   }
 
-                  const hashed = await hashPassword(actor.contrasena);
-                  const newId = Date.now().toString();
-                  const lockAcquired = await acquireLock(newId);
-                  if (lockAcquired) {
-                    setCurrentAuditId(newId);
-                    setIntroData({
-                      ...INITIAL_INTRO_DATA,
-                      nombreEmpresa: actor.nombreEmpresa.trim(),
-                      nombre: actor.nombreAuditor.trim()
-                    });
-                    setResponses({});
-                    setGeneralComments('');
-                    setCustomSections(initialSecs);
-                    setExpandedSections({ 'Información General': true });
-                    setActiveSection(creationMode === 'blank' ? 'Área Inicial' : 'Información General');
-                    setActor(prev => ({ ...prev, contrasenaHash: hashed, contrasena: '' }));
-                    logAuditEvent('create', `Nueva auditoría creada para "${actor.nombreEmpresa.trim()}"`, actor.nombreEmpresa.trim(), newId);
-                    setStep('form');
+                  try {
+                    setGlobalLoadingMessage('Configurando e inicializando auditoría...');
+                    const hashed = await hashPassword(actor.contrasena);
+                    const newId = Date.now().toString();
+                    const lockAcquired = await acquireLock(newId);
+                    if (lockAcquired) {
+                      setCurrentAuditId(newId);
+                      setIntroData({
+                        ...INITIAL_INTRO_DATA,
+                        nombreEmpresa: actor.nombreEmpresa.trim(),
+                        nombre: actor.nombreAuditor.trim()
+                      });
+                      setResponses({});
+                      setGeneralComments('');
+                      setCustomSections(initialSecs);
+                      setExpandedSections({ 'Información General': true });
+                      setActiveSection(creationMode === 'blank' ? 'Área Inicial' : 'Información General');
+                      setActor(prev => ({ ...prev, contrasenaHash: hashed, contrasena: '' }));
+                      logAuditEvent('create', `Nueva auditoría creada para "${actor.nombreEmpresa.trim()}"`, actor.nombreEmpresa.trim(), newId);
+                      setStep('form');
+                    }
+                  } finally {
+                    setGlobalLoadingMessage(null);
                   }
                 }}
                 className="px-6 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm transition inline-flex items-center gap-2 cursor-pointer"
@@ -3652,6 +3691,7 @@ const startInlineDictation = (section, id) => {
         {renderAccessModal()}
         {renderShareModal()}
 
+        {globalLoadingMessage && <CubeLoader message={globalLoadingMessage} />}
         <CustomDialogModal config={modalConfig} onClose={() => setModalConfig(null)} />
       </div>
     );
@@ -5138,7 +5178,7 @@ const startInlineDictation = (section, id) => {
 
       {/* Modal Ágil de Edición de Pregunta */}
       {editingQuestionData && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white rounded-2xl shadow-xl border border-slate-100 max-w-lg w-full overflow-hidden animate-in zoom-in-95 duration-150">
             <div className="p-5 border-b border-slate-100 flex items-center justify-between">
               <div>
@@ -5232,6 +5272,7 @@ const startInlineDictation = (section, id) => {
         </div>
       )}
 
+      {globalLoadingMessage && <CubeLoader message={globalLoadingMessage} />}
       <CustomDialogModal config={modalConfig} onClose={() => setModalConfig(null)} />
     </div>
   );
