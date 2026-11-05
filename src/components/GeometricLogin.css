@@ -1,0 +1,282 @@
+@import url('https://fonts.googleapis.com/css?family=Raleway:400,600,700');
+
+/* Contenedor Raíz Aislado para la pantalla de inicio de sesión */
+.geometric-login-wrapper {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: #0b1329; /* Azul noche profundo y elegante */
+  font-family: 'Raleway', sans-serif;
+  z-index: 100;
+}
+
+.geometric-login-wrapper *, 
+.geometric-login-wrapper *:before, 
+.geometric-login-wrapper *:after { 
+  box-sizing: border-box; 
+}
+
+.geometric-login-wrapper .container {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  max-width: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+/* Estado activo/hover para la animación geométrica */
+.geometric-login-wrapper .container:hover .top:before,
+.geometric-login-wrapper .container:hover .top:after,
+.geometric-login-wrapper .container:hover .bottom:before,
+.geometric-login-wrapper .container:hover .bottom:after,
+.geometric-login-wrapper .container.active .top:before,
+.geometric-login-wrapper .container.active .top:after,
+.geometric-login-wrapper .container.active .bottom:before,
+.geometric-login-wrapper .container.active .bottom:after {
+  margin-left: 200px;
+  transform-origin: -200px 50%;
+  transition-delay: 0s;
+}
+
+.geometric-login-wrapper .container:hover .center,
+.geometric-login-wrapper .container.active .center {
+  opacity: 1;
+  transition-delay: 0.2s;
+  pointer-events: auto;
+}
+
+/* Planos geométricos en capas - Paleta de Azules Elegantes */
+.geometric-login-wrapper .top:before,
+.geometric-login-wrapper .top:after,
+.geometric-login-wrapper .bottom:before,
+.geometric-login-wrapper .bottom:after {
+  content: '';
+  display: block;
+  position: absolute;
+  width: 200vmax;
+  height: 200vmax;
+  top: 50%;
+  left: 50%;
+  margin-top: -100vmax;
+  transform-origin: 0 50%;
+  transition: all 0.5s cubic-bezier(0.445, 0.05, 0, 1);
+  z-index: 10;
+  opacity: 0.82;
+  transition-delay: 0.2s;
+}
+
+/* Capa 1: Azul Real / Zafiro vibrante */
+.geometric-login-wrapper .top:before { 
+  transform: rotate(45deg); 
+  background: #1d4ed8; 
+}
+
+/* Capa 2: Azul Cerúleo / Océano tecnológico */
+.geometric-login-wrapper .top:after { 
+  transform: rotate(135deg); 
+  background: #0284c7; 
+}
+
+/* Capa 3: Azul Celeste suave / Brisa luminosa */
+.geometric-login-wrapper .bottom:before { 
+  transform: rotate(-45deg); 
+  background: #38bdf8; 
+}
+
+/* Capa 4: Azul Noche profundo / Midnight Navy */
+.geometric-login-wrapper .bottom:after { 
+  transform: rotate(-135deg); 
+  background: #172554; 
+}
+
+/* Tarjeta Central Glassmorphism */
+.geometric-login-wrapper .center {
+  position: absolute;
+  width: min(440px, 90vw);
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 38px 32px;
+  opacity: 0;
+  z-index: 20;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(12px);
+  border-radius: 16px;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.3), 0 0 0 1px rgba(37, 99, 235, 0.08);
+  transition: all 0.5s cubic-bezier(0.445, 0.05, 0, 1);
+  color: #1e293b;
+  pointer-events: none;
+}
+
+.geometric-login-wrapper .center h2 {
+  margin: 0 0 6px 0;
+  font-size: 25px;
+  font-weight: 700;
+  color: #0f172a;
+  text-align: center;
+  letter-spacing: -0.025em;
+}
+
+.geometric-login-wrapper .center .subtitle {
+  margin: 0 0 22px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #2563eb;
+  background: #eff6ff;
+  padding: 4px 14px;
+  border-radius: 20px;
+  text-align: center;
+  letter-spacing: 0.02em;
+}
+
+/* Alerta de Error Dinámica */
+.geometric-login-wrapper .error-message {
+  width: 100%;
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
+  margin-bottom: 14px;
+  text-align: left;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.geometric-login-wrapper .center input {
+  width: 100%;
+  padding: 12px 16px;
+  margin: 6px 0;
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  font-family: inherit;
+  font-size: 14px;
+  background-color: #ffffff;
+  color: #0f172a;
+  transition: border-color 0.2s, box-shadow 0.2s, background-color 0.2s;
+}
+
+.geometric-login-wrapper .center input:focus {
+  outline: none;
+  border-color: #2563eb;
+  background-color: #f8fafc;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
+}
+
+.geometric-login-wrapper .btn-primary, 
+.geometric-login-wrapper .btn-google {
+  width: 100%;
+  padding: 12px;
+  margin-top: 10px;
+  border-radius: 10px;
+  font-family: inherit;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+}
+
+/* Botón Principal Azul Tecnológico Elegante */
+.geometric-login-wrapper .btn-primary {
+  background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%);
+  color: #ffffff;
+  border: none;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.3);
+}
+
+.geometric-login-wrapper .btn-primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #1e40af 0%, #1d4ed8 100%);
+  box-shadow: 0 6px 18px rgba(37, 99, 235, 0.45);
+  transform: translateY(-1px);
+}
+
+.geometric-login-wrapper .btn-primary:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+/* Botón Google con acento azul sutil en hover */
+.geometric-login-wrapper .btn-google {
+  background: #ffffff;
+  color: #334155;
+  border: 1px solid #cbd5e1;
+}
+
+.geometric-login-wrapper .btn-google:hover:not(:disabled) {
+  background: #f0f7ff;
+  border-color: #93c5fd;
+  color: #1e3a8a;
+  transform: translateY(-1px);
+}
+
+.geometric-login-wrapper .btn-google:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.geometric-login-wrapper .btn-primary:disabled,
+.geometric-login-wrapper .btn-google:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.geometric-login-wrapper .divider {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  margin: 16px 0 6px 0;
+}
+
+.geometric-login-wrapper .divider:before,
+.geometric-login-wrapper .divider:after {
+  content: '';
+  flex: 1;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.geometric-login-wrapper .divider span {
+  padding: 0 12px;
+  font-size: 12px;
+  color: #94a3b8;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+/* Indicador interactivo para escritorio */
+.geometric-login-wrapper .interactive-hint {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #e0f2fe;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  font-weight: 500;
+  pointer-events: none;
+  z-index: 15;
+  transition: opacity 0.3s ease;
+  background: rgba(11, 19, 41, 0.7);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  padding: 7px 18px;
+  border-radius: 20px;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.geometric-login-wrapper .container:hover ~ .interactive-hint,
+.geometric-login-wrapper .container.active ~ .interactive-hint {
+  opacity: 0;
+}

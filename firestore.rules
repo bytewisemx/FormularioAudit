@@ -1,0 +1,66 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Funciones auxiliares de autenticación y roles
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAnonymous() {
+      return isAuthenticated() && request.auth.token.firebase.sign_in_provider == 'anonymous';
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (
+        (request.auth.token.email != null && request.auth.token.email.lower() == 'thomason.mx@gmail.com') ||
+        (request.auth.token.email != null &&
+         exists(/databases/$(database)/documents/allowed_emails/$(request.auth.token.email.lower())) &&
+         get(/databases/$(database)/documents/allowed_emails/$(request.auth.token.email.lower())).data.role == 'admin')
+      );
+    }
+
+    function isAllowedRegisteredUser() {
+      return isAuthenticated() && !isAnonymous() && (
+        isAdmin() ||
+        (request.auth.token.email != null && exists(/databases/$(database)/documents/allowed_emails/$(request.auth.token.email.lower())))
+      );
+    }
+
+    // Reglas para la colección de usuarios y correos permitidos (allowed_emails)
+    match /allowed_emails/{email} {
+      // Cualquier usuario autenticado puede leer para verificar permisos
+      allow read: if isAuthenticated();
+      // Solo administradores pueden agregar, modificar o revocar accesos
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Reglas para la colección de auditorías (auditorias)
+    match /auditorias/{auditId} {
+      // Lectura global centralizada permitida a cualquier usuario autenticado (registrado o anónimo con link)
+      allow read: if isAuthenticated();
+
+      // Creación: permitida a usuarios registrados autorizados o administradores
+      allow create: if isAllowedRegisteredUser() || isAdmin();
+
+      // Actualización: permitida para sincronización, heartbeat de presencia y guardado de respuestas
+      allow update: if isAuthenticated();
+
+      // Eliminación definitiva: permitida solo a Administradores o usuarios registrados autorizados
+      allow delete: if isAdmin() || isAllowedRegisteredUser();
+    }
+
+    // Reglas para el historial de cambios y logs de auditoría (audit_logs)
+    match /audit_logs/{logId} {
+      // Lectura: auditores registrados y administradores
+      allow read: if isAllowedRegisteredUser() || isAdmin();
+
+      // Creación: cualquier usuario autenticado puede asentar un evento en la bitácora
+      allow create: if isAuthenticated();
+
+      // Modificación o eliminación de logs: estrictamente restringida a administradores
+      allow update, delete: if isAdmin();
+    }
+  }
+}
+

@@ -1,11 +1,11 @@
 import { DEFAULT_SECTIONS } from "./defaultSections";
 
 import React, { useEffect, useState } from 'react';
-import { ChevronDown, ChevronUp, ChevronRight, Download, FileText, FileSpreadsheet, RefreshCw, Mic, Sparkles, Building2, Shield, Brain, Hash, CheckCircle, Search, Settings, Share2, KeyRound, Trash2, Home, Plus, X, Globe, Copy, Check, ExternalLink, Loader2, Upload, FileCode, Layers, ArrowLeft, Calendar, User, BarChart2, ThumbsUp, ThumbsDown, AlertTriangle, Lightbulb, LayoutGrid, List, CheckCircle2, Maximize2, Minimize2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, ChevronRight, Download, FileText, FileSpreadsheet, RefreshCw, Mic, Sparkles, Building2, Shield, Brain, Hash, CheckCircle, Search, Settings, Share2, KeyRound, Trash2, Home, Plus, X, Globe, Copy, Check, ExternalLink, Loader2, Upload, FileCode, Layers, ArrowLeft, Calendar, User, Users, BarChart2, ThumbsUp, ThumbsDown, AlertTriangle, Lightbulb, LayoutGrid, List, CheckCircle2, Maximize2, Minimize2, LogOut, Pin, Lock, Archive, History, RotateCcw, Eye, EyeOff } from 'lucide-react';
 import { downloadExcelTemplate, parseQuestionsFile } from './excelTemplateHelper';
 import { db, auth } from "./firebase";
-import { collection, doc, setDoc, getDoc, updateDoc, getDocs, deleteDoc } from "firebase/firestore";
-import { onAuthStateChanged, signOut } from "firebase/auth";
+import { collection, doc, setDoc, getDoc, updateDoc, getDocs, deleteDoc, onSnapshot } from "firebase/firestore";
+import { onAuthStateChanged, signOut, signInAnonymously } from "firebase/auth";
 import LoginScreen from "./components/LoginScreen";
 import AccessManagement from "./components/AccessManagement";
 import GuestPinScreen from "./components/GuestPinScreen";
@@ -94,6 +94,22 @@ if (typeof window !== 'undefined') {
   }
 }
 
+// Auxiliares para avatar visual de la empresa
+const getCompanyInitials = (name) => {
+  if (!name || name.trim() === '' || name === 'Empresa sin nombre') return 'EM';
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 1) {
+    return words[0].slice(0, 2).toUpperCase();
+  }
+  return (words[0][0] + words[1][0]).toUpperCase();
+};
+
+// Estilo neutro, sobrio y minimalista para avatares de empresa
+const getCompanyAvatarBadgeClass = (_name) => {
+  return "w-9 h-9 rounded-lg bg-slate-100 border border-slate-200/80 flex items-center justify-center text-xs font-semibold text-slate-700 shrink-0 tracking-wider transition-colors";
+};
+const getCompanyAvatarGradient = getCompanyAvatarBadgeClass;
+
 // Auxiliar para extraer métricas detalladas de cada auditoría guardada
 const getAuditSummary = (audit) => {
   const sections = audit.data?.customSections || {};
@@ -120,13 +136,13 @@ const getAuditSummary = (audit) => {
   const percentage = totalQuestions > 0 ? Math.round((answeredQuestions / totalQuestions) * 100) : 0;
   const areasCount = Object.keys(sections).length;
 
-  let level = { label: 'Sin evaluar', badgeClass: 'text-slate-600 bg-slate-100 border-slate-300' };
+  let level = { label: 'Sin evaluar', badgeClass: 'text-slate-600 bg-slate-100 border border-slate-200/80' };
   if (answeredQuestions > 0) {
     const scoreNum = parseFloat(avgScore);
-    if (scoreNum >= 3.5) level = { label: 'Nivel 4: Optimizado', badgeClass: 'text-emerald-800 bg-emerald-100 border-emerald-300' };
-    else if (scoreNum >= 2.5) level = { label: 'Nivel 3: Gestionado', badgeClass: 'text-cyan-800 bg-cyan-100 border-cyan-300' };
-    else if (scoreNum >= 1.5) level = { label: 'Nivel 2: Parcial', badgeClass: 'text-amber-800 bg-amber-100 border-amber-300' };
-    else level = { label: 'Nivel 1: Inicial / Crítico', badgeClass: 'text-rose-800 bg-rose-100 border-rose-300' };
+    if (scoreNum >= 3.5) level = { label: 'Nivel 4: Optimizado', badgeClass: 'text-emerald-700 bg-emerald-50 border border-emerald-200/80' };
+    else if (scoreNum >= 2.5) level = { label: 'Nivel 3: Gestionado', badgeClass: 'text-blue-700 bg-blue-50 border border-blue-200/80' };
+    else if (scoreNum >= 1.5) level = { label: 'Nivel 2: Parcial', badgeClass: 'text-amber-700 bg-amber-50 border border-amber-200/80' };
+    else level = { label: 'Nivel 1: Inicial / Crítico', badgeClass: 'text-rose-700 bg-rose-50 border border-rose-200/80' };
   }
 
   return {
@@ -166,10 +182,83 @@ const AuditForm = () => {
   const [activeSection, setActiveSection] = useState('Información General');
   
   const [savedAudits, setSavedAudits] = useState([]);
+  const [pinnedAuditIds, setPinnedAuditIds] = useState(() => {
+    try {
+      const saved = localStorage.getItem('bytewise_pinned_audits');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  const togglePinAudit = (auditId, e) => {
+    if (e && e.stopPropagation) e.stopPropagation();
+    setPinnedAuditIds(prev => {
+      const next = prev.includes(auditId)
+        ? prev.filter(id => id !== auditId)
+        : [...prev, auditId];
+      try {
+        localStorage.setItem('bytewise_pinned_audits', JSON.stringify(next));
+      } catch (err) {}
+      return next;
+    });
+  };
   const [currentAuditId, setCurrentAuditId] = useState(null);
   const [step, setStep] = useState('dashboard'); // 'dashboard' | 'gate' | 'form' | 'access_management' | 'blocked'
   const [dashboardSearch, setDashboardSearch] = useState('');
   const [showSettings, setShowSettings] = useState(false);
+  const [showSettingsDropdown, setShowSettingsDropdown] = useState(false);
+  const [showArchivedModal, setShowArchivedModal] = useState(false);
+  const [showLogsModal, setShowLogsModal] = useState(false);
+  const [showPinGate, setShowPinGate] = useState(false);
+  const settingsMenuRef = React.useRef(null);
+
+  const [auditLogs, setAuditLogs] = useState(() => {
+    try {
+      const local = localStorage.getItem('bytewise_audit_logs');
+      return local ? JSON.parse(local) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  const logAuditEvent = async (action, description, entityName = '', auditId = '') => {
+    const newLog = {
+      id: 'log_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+      action, // 'create' | 'edit' | 'archive' | 'restore' | 'delete'
+      description,
+      entityName,
+      auditId,
+      userName: user?.email || 'Auditor',
+      timestamp: new Date().toISOString()
+    };
+
+    setAuditLogs(prev => {
+      const updated = [newLog, ...prev].slice(0, 300);
+      try {
+        localStorage.setItem('bytewise_audit_logs', JSON.stringify(updated));
+      } catch (err) {}
+      return updated;
+    });
+
+    if (db) {
+      try {
+        await setDoc(doc(db, "audit_logs", newLog.id), newLog);
+      } catch (err) {
+        console.warn("No se pudo registrar log en Firestore:", err);
+      }
+    }
+  };
+
+  useEffect(() => {
+    const handleClickOutsideSettings = (e) => {
+      if (settingsMenuRef.current && !settingsMenuRef.current.contains(e.target)) {
+        setShowSettingsDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutsideSettings);
+    return () => document.removeEventListener('mousedown', handleClickOutsideSettings);
+  }, []);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [actor, setActor] = useState({ nombreEmpresa: '', nombreAuditor: '', rol: '', contrasena: '', contrasenaHash: '' });
   const [isGuestMode, setIsGuestMode] = useState(() => {
@@ -177,6 +266,16 @@ const AuditForm = () => {
   });
   const [guestAuditToLoad, setGuestAuditToLoad] = useState(null);
   const [user, setUser] = useState(null);
+  const [currentUserRole, setCurrentUserRole] = useState(null); // 'admin' | 'auditor' | 'viewer' | 'guest'
+  const [isReadOnly, setIsReadOnly] = useState(false);
+  const [activeCollaborators, setActiveCollaborators] = useState([]);
+  const [accessModalAudit, setAccessModalAudit] = useState(null);
+  const [accessPinInput, setAccessPinInput] = useState('');
+  const [accessPinError, setAccessPinError] = useState('');
+  const [shareModalAudit, setShareModalAudit] = useState(null);
+  const [shareLinkMode, setShareLinkMode] = useState('view'); // 'view' | 'collab'
+  const [copiedLink, setCopiedLink] = useState(false);
+  const [editingQuestionData, setEditingQuestionData] = useState(null);
   const [authChecking, setAuthChecking] = useState(true);
   const [auditsLoading, setAuditsLoading] = useState(true);
   const [addingSubFor, setAddingSubFor] = useState(null);
@@ -331,62 +430,204 @@ const AuditForm = () => {
     setImportError('');
   };
 
-  const handleLoadAudit = async (audit) => {
-    const savedHash = audit.data?.actor?.contrasenaHash;
-    const nombreEmpresa = audit.nombreEmpresa || audit.data?.introData?.nombreEmpresa || 'esta empresa';
-    if (savedHash) {
-      const pin = await showPrompt({
-        title: 'Auditoría Protegida',
-        message: `La auditoría de "${nombreEmpresa}" está protegida con contraseña.\nIngresa el PIN para acceder a la evaluación:`,
-        inputType: 'password',
-        placeholder: 'Ingresa el PIN de acceso...',
-        confirmText: 'Acceder a Auditoría',
-        cancelText: 'Cancelar'
-      });
-      if (pin === null) return; 
-      const enteredHash = await hashPassword(pin);
-      if (enteredHash !== savedHash) {
-        await showAlert({
-          type: 'error',
-          title: 'Acceso Denegado',
-          message: 'La contraseña o PIN ingresado es incorrecto. Por favor verifica tus credenciales.'
-        });
-        return;
-      }
-    }
-
-    const lockAcquired = await acquireLock(audit.id, audit);
-    if (lockAcquired) {
-      setCurrentAuditId(audit.id);
-      setIntroData(audit.data?.introData || INITIAL_INTRO_DATA);
-      setResponses(audit.data?.responses || {});
-      setCustomSections(sortSections(audit.data?.customSections || getDefaultSections()));
-      setGeneralComments(audit.data?.generalComments || '');
-      setPositiveComments(audit.data?.positiveComments || '');
-      setNegativeComments(audit.data?.negativeComments || '');
-      setRecommendations(audit.data?.recommendations || '');
-      setActor(audit.data?.actor || { nombreAuditor: '', rol: '', contrasenaHash: savedHash || '' });
-      setStep('form');
-    }
+  const handleProceedLoad = (audit, readOnlyMode = false) => {
+    setIsReadOnly(readOnlyMode);
+    setCurrentAuditId(audit.id);
+    const data = audit.data || audit;
+    setIntroData(data.introData || audit.introData || INITIAL_INTRO_DATA);
+    setResponses(data.responses || audit.responses || {});
+    setCustomSections(sortSections(data.customSections || audit.customSections || getDefaultSections()));
+    setGeneralComments(data.generalComments || audit.generalComments || '');
+    setPositiveComments(data.positiveComments || audit.positiveComments || '');
+    setNegativeComments(data.negativeComments || audit.negativeComments || '');
+    setRecommendations(data.recommendations || audit.recommendations || '');
+    const actorData = data.actor || audit.actor || {};
+    setActor({
+      nombreEmpresa: actorData.nombreEmpresa || data.introData?.nombreEmpresa || audit.nombreEmpresa || '',
+      nombreAuditor: actorData.nombreAuditor || '',
+      rol: actorData.rol || '',
+      contrasena: '',
+      contrasenaHash: actorData.contrasenaHash || audit.contrasenaHash || ''
+    });
+    setActiveSection('Información General');
+    setShowSettings(false);
+    setShowExportMenu(false);
+    setAddingSubFor(null);
+    setStep('form');
   };
 
-  const handleDeleteAudit = async (audit, e) => {
+  const handleLoadAudit = async (audit) => {
+    const isAdmin = currentUserRole === 'admin' || user?.email?.toLowerCase() === 'thomason.mx@gmail.com';
+    const savedHash = audit.data?.actor?.contrasenaHash || audit.actor?.contrasenaHash || audit.contrasenaHash;
+
+    // Si es Administrador o la auditoría no cuenta con PIN protector, acceder directo en Modo Edición
+    if (isAdmin || !savedHash) {
+      handleProceedLoad(audit, false);
+      return;
+    }
+
+    // Si tiene PIN y el usuario es estándar: abrir modal con opciones de Edición (con PIN) o Modo Solo Lectura
+    setAccessPinInput('');
+    setAccessPinError('');
+    setAccessModalAudit(audit);
+  };
+
+  const handleConfirmAccessPin = async (e) => {
+    if (e) e.preventDefault();
+    if (!accessModalAudit) return;
+    const savedHash = accessModalAudit.data?.actor?.contrasenaHash || accessModalAudit.actor?.contrasenaHash || accessModalAudit.contrasenaHash;
+    const enteredHash = await hashPassword(accessPinInput);
+    if (enteredHash !== savedHash) {
+      setAccessPinError('El PIN ingresado es incorrecto. Inténtalo de nuevo o accede en Modo Solo Lectura.');
+      return;
+    }
+    const auditToLoad = accessModalAudit;
+    setAccessModalAudit(null);
+    handleProceedLoad(auditToLoad, false);
+  };
+
+  const handleEnterReadOnly = () => {
+    const auditToLoad = accessModalAudit;
+    setAccessModalAudit(null);
+    handleProceedLoad(auditToLoad, true);
+  };
+
+  const handleUnlockWithPin = async () => {
+    const targetAudit = savedAudits.find(a => a.id === currentAuditId);
+    const savedHash = actor.contrasenaHash || targetAudit?.data?.actor?.contrasenaHash;
+    if (!savedHash) {
+      setIsReadOnly(false);
+      await showAlert({
+        type: 'success',
+        title: 'Modo Edición Habilitado',
+        message: 'Esta auditoría no tiene PIN configurado. Se ha habilitado la edición completa.'
+      });
+      return;
+    }
+
+    const pin = await showPrompt({
+      title: 'Desbloquear Modo Edición',
+      message: 'Ingresa el PIN de seguridad de esta auditoría para autorizar la edición de respuestas y notas:',
+      inputType: 'password',
+      placeholder: 'PIN de acceso...',
+      confirmText: 'Desbloquear Edición',
+      cancelText: 'Cancelar'
+    });
+    if (pin === null) return;
+
+    const enteredHash = await hashPassword(pin);
+    if (enteredHash !== savedHash) {
+      await showAlert({
+        type: 'error',
+        title: 'PIN Incorrecto',
+        message: 'El PIN ingresado es incorrecto. Continuarás en Modo Solo Lectura.'
+      });
+      return;
+    }
+
+    setIsReadOnly(false);
+    await showAlert({
+      type: 'success',
+      title: '¡Modo Edición Habilitado!',
+      message: 'Ahora puedes modificar respuestas, notas y evaluaciones en tiempo real.'
+    });
+  };
+
+  const handleOpenShareModal = async (audit, e) => {
+    if (e && e.stopPropagation) e.stopPropagation();
+    let token = audit.shareToken;
+    if (!token) {
+      token = Math.random().toString(36).substring(2, 10) + Math.random().toString(36).substring(2, 10);
+      audit.shareToken = token;
+      if (db) {
+        updateDoc(doc(db, "auditorias", audit.id), { shareToken: token }).catch(() => {});
+      }
+    }
+    setShareModalAudit({ ...audit, shareToken: token });
+    setShareLinkMode('view');
+    setCopiedLink(false);
+  };
+
+  const handleArchiveAudit = async (audit, e) => {
     if (e && e.stopPropagation) e.stopPropagation();
     const nombre = audit.nombreEmpresa || audit.data?.introData?.nombreEmpresa || 'esta auditoría';
     const confirmed = await showConfirm({
-      title: 'Eliminar Auditoría',
-      message: `¿Estás seguro de que deseas eliminar permanentemente la auditoría de "${nombre}"?\nEsta acción no se puede deshacer.`,
+      title: 'Archivar Auditoría',
+      message: `¿Deseas mover la auditoría de "${nombre}" a la sección de Auditorías Archivadas?\n\nPodrás consultarla o restaurarla a la lista activa en cualquier momento desde Ajustes.`,
+      confirmText: 'Archivar',
+      cancelText: 'Cancelar'
+    });
+    if (!confirmed) return;
+
+    try {
+      const updatedAudit = { ...audit, archived: true, lastModified: new Date().toISOString() };
+      if (db) {
+        await setDoc(doc(db, "auditorias", audit.id), updatedAudit);
+      }
+      setSavedAudits(prev => prev.map(a => a.id === audit.id ? updatedAudit : a));
+      await logAuditEvent('archive', `Auditoría archivada: "${nombre}"`, nombre, audit.id);
+
+      await showAlert({
+        type: 'success',
+        title: 'Auditoría Archivada',
+        message: `La auditoría de "${nombre}" ha sido enviada a Auditorías Archivadas.`
+      });
+    } catch (err) {
+      console.error("Error al archivar la auditoría:", err);
+      await showAlert({
+        type: 'error',
+        title: 'Error al Archivar',
+        message: 'Ocurrió un error al intentar archivar la auditoría en la base de datos.'
+      });
+    }
+  };
+
+  const handleDeleteAudit = handleArchiveAudit;
+
+  const handleRestoreAudit = async (audit) => {
+    const nombre = audit.nombreEmpresa || audit.data?.introData?.nombreEmpresa || 'esta auditoría';
+    try {
+      const updatedAudit = { ...audit, archived: false, lastModified: new Date().toISOString() };
+      if (db) {
+        await setDoc(doc(db, "auditorias", audit.id), updatedAudit);
+      }
+      setSavedAudits(prev => prev.map(a => a.id === audit.id ? updatedAudit : a));
+      await logAuditEvent('restore', `Auditoría restaurada a la lista activa: "${nombre}"`, nombre, audit.id);
+
+      await showAlert({
+        type: 'success',
+        title: 'Auditoría Restaurada',
+        message: `La auditoría de "${nombre}" ha sido devuelta con éxito a la lista principal.`
+      });
+    } catch (err) {
+      console.error("Error al restaurar la auditoría:", err);
+      await showAlert({
+        type: 'error',
+        title: 'Error al Restaurar',
+        message: 'No se pudo restaurar la auditoría en la base de datos.'
+      });
+    }
+  };
+
+  const handlePermanentDeleteAudit = async (audit) => {
+    const nombre = audit.nombreEmpresa || audit.data?.introData?.nombreEmpresa || 'esta auditoría';
+    const isAdmin = currentUserRole === 'admin' || user?.email?.toLowerCase() === 'thomason.mx@gmail.com';
+
+    const confirmed = await showConfirm({
+      title: 'Eliminación Definitiva',
+      message: `¿Estás seguro de que deseas eliminar permanentemente la auditoría de "${nombre}"?\n\nEsta acción es irreversible y eliminará todos sus datos de evaluación de la base de datos.`,
       isDanger: true,
-      confirmText: 'Eliminar Auditoría',
+      confirmText: 'Eliminar Definitivamente',
       cancelText: 'Cancelar'
     });
     if (!confirmed) return;
 
     const savedHash = audit.data?.actor?.contrasenaHash;
-    if (savedHash) {
+    // Si NO es Administrador y la auditoría cuenta con PIN, se solicita verificación de PIN
+    if (!isAdmin && savedHash) {
       const pin = await showPrompt({
         title: 'Verificación de Seguridad',
-        message: `Esta auditoría está protegida con PIN. Ingresa el PIN para autorizar la eliminación de "${nombre}":`,
+        message: `Esta auditoría está protegida con PIN. Ingresa el PIN para autorizar la eliminación definitiva de "${nombre}":`,
         inputType: 'password',
         placeholder: 'Ingresa el PIN para confirmar...',
         confirmText: 'Confirmar Eliminación',
@@ -398,7 +639,7 @@ const AuditForm = () => {
         await showAlert({
           type: 'error',
           title: 'PIN Incorrecto',
-          message: 'El PIN ingresado es incorrecto. No se autorizó la eliminación de la auditoría.'
+          message: 'El PIN ingresado es incorrecto. No se autorizó la eliminación definitiva.'
         });
         return;
       }
@@ -409,6 +650,8 @@ const AuditForm = () => {
         await deleteDoc(doc(db, "auditorias", audit.id));
       }
       setSavedAudits(prev => prev.filter(a => a.id !== audit.id));
+      await logAuditEvent('delete', `Auditoría eliminada permanentemente: "${nombre}" (por ${isAdmin ? 'Administrador' : 'Auditor'})`, nombre, audit.id);
+
       await showAlert({
         type: 'success',
         title: 'Auditoría Eliminada',
@@ -424,18 +667,85 @@ const AuditForm = () => {
     }
   };
 
+  // Manejo de autenticación y detección de privilegios de rol (Admin vs Auditor vs Invitado)
   useEffect(() => {
     if (!auth) {
       setAuthChecking(false);
       return;
     }
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
+      if (currentUser) {
+        if (currentUser.isAnonymous) {
+          setCurrentUserRole('guest');
+        } else if (currentUser.email?.toLowerCase() === 'thomason.mx@gmail.com') {
+          setCurrentUserRole('admin');
+        } else {
+          try {
+            if (db && currentUser.email) {
+              const emailDocRef = doc(db, 'allowed_emails', currentUser.email.toLowerCase());
+              const emailDoc = await getDoc(emailDocRef);
+              if (emailDoc.exists()) {
+                const data = emailDoc.data();
+                const r = (data.role || '').toLowerCase();
+                if (r === 'admin' || r === 'administrador') {
+                  setCurrentUserRole('admin');
+                } else if (r === 'viewer' || r === 'solo lectura') {
+                  setCurrentUserRole('viewer');
+                } else {
+                  setCurrentUserRole('auditor');
+                }
+              } else {
+                setCurrentUserRole('auditor');
+              }
+            } else {
+              setCurrentUserRole('auditor');
+            }
+          } catch (e) {
+            console.warn("Error consultando rol del usuario en Firestore:", e);
+            setCurrentUserRole('auditor');
+          }
+        }
+      } else {
+        setCurrentUserRole(null);
+      }
       setAuthChecking(false);
     });
     return () => unsubscribe();
   }, []);
 
+  // Soporte para acceso directo con sesión anónima en enlaces compartidos
+  useEffect(() => {
+    const handleUrlSharedAccess = async () => {
+      if (!auth) return;
+      const urlParams = new URLSearchParams(window.location.search);
+      const auditId = urlParams.get('id');
+      const token = urlParams.get('token');
+      const mode = urlParams.get('mode');
+
+      if (!auditId) return;
+
+      if (!auth.currentUser) {
+        try {
+          console.log("Iniciando sesión anónima en Firebase Auth para enlace compartido...");
+          await signInAnonymously(auth);
+          console.log("Sesión anónima iniciada con éxito.");
+        } catch (anonErr) {
+          console.error("Error al iniciar sesión anónima:", anonErr);
+        }
+      }
+
+      if (mode === 'view') {
+        setIsReadOnly(true);
+      } else if (mode === 'collab') {
+        setIsReadOnly(false);
+      }
+    };
+
+    handleUrlSharedAccess();
+  }, []);
+
+  // Carga centralizada de auditorías (visibles para todos los usuarios autorizados)
   useEffect(() => {
     const loadAudits = async () => {
       const urlParams = new URLSearchParams(window.location.search);
@@ -458,27 +768,31 @@ const AuditForm = () => {
           setIsGuestMode(true);
           const targetAudit = audits.find(a => a.id === auditId);
           if (targetAudit) {
+            const token = urlParams.get('token');
+            const mode = urlParams.get('mode') || (token ? 'view' : null);
             const savedHash = targetAudit.data?.actor?.contrasenaHash;
-            const alreadyGranted = sessionStorage.getItem(`guest_granted_${targetAudit.id}`) === 'true';
+            const tokenValid = token && targetAudit.shareToken && token === targetAudit.shareToken;
 
-            if (savedHash && !alreadyGranted) {
-              setGuestAuditToLoad(targetAudit);
-              return;
+            if (mode === 'view') {
+              handleProceedLoad(targetAudit, true);
+            } else if (mode === 'collab') {
+              if (tokenValid || !savedHash) {
+                handleProceedLoad(targetAudit, false);
+              } else {
+                setAccessPinInput('');
+                setAccessPinError('');
+                setAccessModalAudit(targetAudit);
+              }
             } else {
-              acquireLock(targetAudit.id, targetAudit).then((success) => {
-                if (success) {
-                  setCurrentAuditId(targetAudit.id);
-                  setIntroData(targetAudit.data.introData || {});
-                  setResponses(targetAudit.data.responses || {});
-                  setCustomSections(sortSections(targetAudit.data.customSections || getDefaultSections()));
-                  setGeneralComments(targetAudit.data.generalComments || '');
-                  setPositiveComments(targetAudit.data.positiveComments || '');
-                  setNegativeComments(targetAudit.data.negativeComments || '');
-                  setRecommendations(targetAudit.data.recommendations || '');
-                  setActor(targetAudit.data.actor || { nombreAuditor:'', rol:'', contrasenaHash: savedHash || '' });
-                  setStep('form');
-                }
-              });
+              if (tokenValid) {
+                handleProceedLoad(targetAudit, true);
+              } else if (savedHash) {
+                setAccessPinInput('');
+                setAccessPinError('');
+                setAccessModalAudit(targetAudit);
+              } else {
+                handleProceedLoad(targetAudit, false);
+              }
             }
           }
         }
@@ -490,14 +804,32 @@ const AuditForm = () => {
       }
     };
     loadAudits();
+
+    const fetchLogs = async () => {
+      if (!db || !user) return;
+      try {
+        const snap = await getDocs(collection(db, "audit_logs"));
+        const logs = [];
+        snap.forEach(d => logs.push(d.data()));
+        logs.sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
+        if (logs.length > 0) {
+          setAuditLogs(logs);
+          localStorage.setItem('bytewise_audit_logs', JSON.stringify(logs.slice(0, 300)));
+        }
+      } catch (err) {
+        console.warn("No se pudieron cargar logs de auditoría:", err);
+      }
+    };
+    fetchLogs();
   }, [user]);
 
   const savedAuditsRef = React.useRef(savedAudits);
   useEffect(() => { savedAuditsRef.current = savedAudits; }, [savedAudits]);
 
+  // Guardado debounced en Firestore (protegido si isReadOnly === true)
   useEffect(() => {
-    // Si estamos navegando hacia el panel/dashboard o no estamos en form o no hay ID, salir inmediatamente
-    if (isNavigatingToHomeRef.current || step !== 'form' || !currentAuditId) {
+    // Si estamos navegando hacia el panel o no estamos en form o no hay ID o estamos en MODO SOLO LECTURA, no guardar en Firestore
+    if (isNavigatingToHomeRef.current || step !== 'form' || !currentAuditId || isReadOnly) {
       return;
     }
 
@@ -528,10 +860,10 @@ const AuditForm = () => {
     let timer;
     if (db) {
       timer = setTimeout(() => {
-        if (isNavigatingToHomeRef.current) return;
+        if (isNavigatingToHomeRef.current || isReadOnly) return;
         try {
           const docRef = doc(db, "auditorias", currentAuditId);
-          setDoc(docRef, auditData)
+          setDoc(docRef, auditData, { merge: true })
             .then(() => console.log("Auditoría guardada exitosamente en Firebase (debounced)."))
             .catch(e => console.error("Error al guardar en Firebase:", e));
         } catch(e) {}
@@ -542,45 +874,97 @@ const AuditForm = () => {
       if (timer) clearTimeout(timer);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [introData, responses, generalComments, positiveComments, negativeComments, recommendations, actor, customSections, currentAuditId, step]);
+  }, [introData, responses, generalComments, positiveComments, negativeComments, recommendations, actor, customSections, currentAuditId, step, isReadOnly]);
 
+  // Sincronización en tiempo real con onSnapshot y presencia activa
   useEffect(() => {
     if (step !== 'form' || !currentAuditId || !db) return;
 
-    const interval = setInterval(async () => {
+    const docRef = doc(db, "auditorias", currentAuditId);
+    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+      if (!docSnap.exists()) return;
+      const remoteData = docSnap.data();
+
+      // Sincronizar sesiones activas para presencia en vivo
+      const sessions = remoteData.activeSessions || {};
+      const now = Date.now();
+      const activeList = Object.values(sessions).filter(s => {
+        if (!s || !s.lastActive) return false;
+        return (now - new Date(s.lastActive).getTime()) < 45000;
+      });
+      setActiveCollaborators(activeList);
+
+      // Si el usuario actual está en modo solo lectura, sincronizar datos en vivo desde el auditor editor
+      if (isReadOnly) {
+        const freshData = remoteData.data;
+        if (freshData) {
+          if (freshData.responses) setResponses(freshData.responses);
+          if (freshData.introData) setIntroData(freshData.introData);
+          if (freshData.generalComments !== undefined) setGeneralComments(freshData.generalComments);
+          if (freshData.positiveComments !== undefined) setPositiveComments(freshData.positiveComments);
+          if (freshData.negativeComments !== undefined) setNegativeComments(freshData.negativeComments);
+          if (freshData.recommendations !== undefined) setRecommendations(freshData.recommendations);
+          if (freshData.customSections) setCustomSections(sortSections(freshData.customSections));
+        }
+      }
+    }, (error) => {
+      console.warn("Error en suscripción en vivo onSnapshot:", error);
+    });
+
+    return () => unsubscribe();
+  }, [step, currentAuditId, isReadOnly]);
+
+  // Heartbeat de presencia activa en Firestore
+  useEffect(() => {
+    if (step !== 'form' || !currentAuditId || !db) return;
+
+    const mySessionData = {
+      clientId,
+      userIdent: user?.email || actor.nombreAuditor || 'Invitado',
+      displayName: user?.displayName || (user?.email ? user.email.split('@')[0] : (actor.nombreAuditor || 'Invitado')),
+      mode: isReadOnly ? 'viewer' : 'editor',
+      lastActive: new Date().toISOString()
+    };
+
+    const updatePresence = async () => {
       try {
         const docRef = doc(db, "auditorias", currentAuditId);
-        await setDoc(docRef, {
-          editingStatus: {
-            isBeingEdited: true,
-            clientId: clientId,
-            userIdent: auth.currentUser?.email || actor.nombreAuditor || 'Invitado',
-            lastActive: new Date().toISOString()
-          }
-        }, { merge: true });
-        console.log("Bloqueo de edición extendido (heartbeat).");
-      } catch (e) {
-        console.error("Error en heartbeat de Firebase:", e);
+        await updateDoc(docRef, {
+          [`activeSessions.${clientId}`]: mySessionData
+        });
+      } catch (err) {
+        try {
+          const docRef = doc(db, "auditorias", currentAuditId);
+          await setDoc(docRef, {
+            activeSessions: {
+              [clientId]: mySessionData
+            }
+          }, { merge: true });
+        } catch (e) {}
       }
-    }, 25000);
+    };
+
+    updatePresence();
+    const interval = setInterval(updatePresence, 15000);
 
     return () => {
       clearInterval(interval);
+      try {
+        const docRef = doc(db, "auditorias", currentAuditId);
+        updateDoc(docRef, {
+          [`activeSessions.${clientId}`]: null
+        }).catch(() => {});
+      } catch (e) {}
     };
-  }, [step, currentAuditId, actor.nombreAuditor, user]);
+  }, [step, currentAuditId, isReadOnly, user, actor.nombreAuditor]);
 
   useEffect(() => {
     const handleBeforeUnload = () => {
       if (db && currentAuditId && step === 'form') {
         const docRef = doc(db, "auditorias", currentAuditId);
-        setDoc(docRef, {
-          editingStatus: {
-            isBeingEdited: false,
-            clientId: "",
-            userIdent: "",
-            lastActive: ""
-          }
-        }, { merge: true }).catch(() => {});
+        updateDoc(docRef, {
+          [`activeSessions.${clientId}`]: null
+        }).catch(() => {});
       }
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
@@ -961,6 +1345,29 @@ const updateSubquestionResponse = (section, itemId, subId, respuestaVal) => {
   });
 };
 
+const handleSaveQuickEditQuestion = (e) => {
+  if (e) e.preventDefault();
+  if (!editingQuestionData) return;
+  const { section, id, pregunta, requisito, evidencia, nota } = editingQuestionData;
+  setCustomSections(prev => {
+    const updated = { ...prev };
+    const list = [...(updated[section] || [])];
+    const idx = list.findIndex(q => q.id === id);
+    if (idx !== -1) {
+      list[idx] = {
+        ...list[idx],
+        pregunta: (pregunta || '').trim(),
+        requisito: (requisito || '').trim(),
+        evidencia: (evidencia || '').trim(),
+        nota: (nota || '').trim()
+      };
+      updated[section] = list;
+    }
+    return updated;
+  });
+  setEditingQuestionData(null);
+};
+
 const startInlineDictation = (section, id) => {
   const key = `${section}-${id}`;
   
@@ -1140,14 +1547,23 @@ const startInlineDictation = (section, id) => {
 
       const targetId = currentAuditId;
 
-      // 2. Guardar inmediatamente la auditoría activa antes de salir
-      if (targetId) {
+      // 2. Limpiar presencia de sesión activa en Firebase
+      if (db && targetId) {
+        try {
+          const docRef = doc(db, "auditorias", targetId);
+          await updateDoc(docRef, {
+            [`activeSessions.${clientId}`]: null
+          });
+        } catch (e) {}
+      }
+
+      // 3. Guardar inmediatamente la auditoría activa antes de salir (únicamente si está en modo editor)
+      if (targetId && !isReadOnly) {
         await saveCurrentAuditImmediate(targetId);
-        // 3. Liberar el bloqueo en Firebase
         await releaseLock(targetId);
       }
 
-      // 4. Limpiar cualquier parámetro "?id=" de la URL sin recargar
+      // 4. Limpiar cualquier parámetro "?id=" o tokens de la URL sin recargar
       if (window.location.search) {
         window.history.replaceState({}, document.title, window.location.origin + window.location.pathname);
       }
@@ -1157,9 +1573,13 @@ const startInlineDictation = (section, id) => {
 
       // 6. Resetear de forma segura los estados de edición
       setCurrentAuditId(null);
+      setIsReadOnly(false);
       setIntroData(INITIAL_INTRO_DATA);
       setResponses({});
       setGeneralComments('');
+      setPositiveComments('');
+      setNegativeComments('');
+      setRecommendations('');
       setCustomSections(getDefaultSections());
       setActor({ nombreEmpresa: '', nombreAuditor: '', rol: '', contrasena: '', contrasenaHash: '' });
       setExpandedSections({ 'Información General': true });
@@ -1184,6 +1604,7 @@ const startInlineDictation = (section, id) => {
   };
 
   const updateIntroData = (field, value) => {
+    if (isReadOnly) return;
     setIntroData(prev => ({
       ...prev,
       [field]: value
@@ -1193,6 +1614,7 @@ const startInlineDictation = (section, id) => {
 
 
   const startNewEvaluation = async () => {
+    if (isReadOnly) return;
     const confirmed = await showConfirm({
       title: 'Iniciar Nueva Evaluación',
       message: '¿Estás seguro de que deseas reiniciar la evaluación?\nSe perderán las respuestas y cambios no guardados en esta sesión.',
@@ -1222,7 +1644,7 @@ const startInlineDictation = (section, id) => {
       });
     });
     return list;
-  }, [responses]);
+  }, [responses, customSections]);
 
   const handleSuggestionClick = (section, id) => {
     setActiveSection(section);
@@ -1245,6 +1667,7 @@ const startInlineDictation = (section, id) => {
   };
 
   const updateResponse = (section, id, field, value) => {
+    if (isReadOnly) return;
     const key = `${section}-${id}`;
     setResponses(prev => ({
       ...prev,
@@ -1966,11 +2389,254 @@ const startInlineDictation = (section, id) => {
     return <AccessManagement onBack={() => setStep('dashboard')} />;
   }
 
+  const renderAccessModal = () => {
+    if (!accessModalAudit) return null;
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in duration-200">
+        <div className="bg-white rounded-2xl shadow-xl border border-slate-100 w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+          <div className="p-6 border-b border-slate-100 bg-slate-50/50">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                  <Lock size={20} />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-base font-bold text-slate-900 truncate">Auditoría Protegida</h3>
+                  <p className="text-xs text-slate-500 truncate">
+                    {accessModalAudit.nombreEmpresa || accessModalAudit.data?.introData?.nombreEmpresa || 'Empresa'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAccessModalAudit(null)}
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg transition-colors cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+          </div>
+
+          <div className="p-6 space-y-4">
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Esta evaluación está protegida por su autor. Selecciona tu modalidad de ingreso:
+            </p>
+
+            {/* Opción 1: Modo Edición con PIN */}
+            <div className="p-4 rounded-xl border border-blue-100 bg-blue-50/30 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-blue-900 flex items-center gap-1.5">
+                  <KeyRound size={15} className="text-blue-600" /> Modo Edición Completa
+                </span>
+                <span className="text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-semibold">
+                  Requiere PIN
+                </span>
+              </div>
+              <p className="text-xs text-slate-500">
+                Podrás responder preguntas, editar notas y guardar cambios en tiempo real.
+              </p>
+              <form onSubmit={handleConfirmAccessPin} className="space-y-2 pt-1">
+                <input
+                  type="password"
+                  value={accessPinInput}
+                  onChange={(e) => {
+                    setAccessPinInput(e.target.value);
+                    setAccessPinError('');
+                  }}
+                  placeholder="Ingresa el PIN de seguridad..."
+                  className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg focus:border-blue-600 focus:ring-2 focus:ring-blue-100 focus:outline-none transition"
+                  autoFocus
+                />
+                {accessPinError && (
+                  <p className="text-[11px] text-red-600 font-medium">{accessPinError}</p>
+                )}
+                <button
+                  type="submit"
+                  disabled={!accessPinInput.trim()}
+                  className="w-full py-2 px-3 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors cursor-pointer shadow-xs"
+                >
+                  Desbloquear en Modo Edición
+                </button>
+              </form>
+            </div>
+
+            {/* Separador */}
+            <div className="relative flex items-center justify-center my-2">
+              <div className="border-t border-slate-200 w-full"></div>
+              <span className="bg-white px-2.5 text-[11px] text-slate-400 font-medium uppercase tracking-wider absolute">o continuar como</span>
+            </div>
+
+            {/* Opción 2: Solo Lectura */}
+            <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/60 flex items-center justify-between gap-3">
+              <div className="space-y-1">
+                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <Eye size={15} className="text-slate-600" /> Modo Solo Lectura (Observador)
+                </span>
+                <p className="text-[11px] text-slate-500">
+                  Visualiza respuestas y métricas en vivo sin alterar los datos guardados.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleEnterReadOnly}
+                className="px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors whitespace-nowrap cursor-pointer shadow-2xs"
+              >
+                Entrar como Observador
+              </button>
+            </div>
+          </div>
+
+          <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end">
+            <button
+              type="button"
+              onClick={() => setAccessModalAudit(null)}
+              className="px-4 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-800 transition cursor-pointer"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderShareModal = () => {
+    if (!shareModalAudit) return null;
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in duration-200">
+        <div className="bg-white rounded-2xl shadow-xl border border-slate-100 w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200">
+          <div className="p-6 border-b border-slate-100 bg-slate-50/50">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                  <Share2 size={20} />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-base font-bold text-slate-900 truncate">Compartir Auditoría</h3>
+                  <p className="text-xs text-slate-500 truncate">
+                    {shareModalAudit.nombreEmpresa || shareModalAudit.data?.introData?.nombreEmpresa || 'Empresa'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShareModalAudit(null)}
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg transition-colors cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+          </div>
+
+          <div className="p-6 space-y-4">
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Genera un enlace seguro para que clientes, observadores o auditores externos accedan al instante sin necesidad de registrarse previamente.
+            </p>
+
+            {/* Selector de Modo */}
+            <div className="flex p-1 bg-slate-100 rounded-xl">
+              <button
+                type="button"
+                onClick={() => { setShareLinkMode('view'); setCopiedLink(false); }}
+                className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  shareLinkMode === 'view'
+                    ? 'bg-white text-blue-600 shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Eye size={14} />
+                <span>Solo Lectura (Observador)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => { setShareLinkMode('collab'); setCopiedLink(false); }}
+                className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  shareLinkMode === 'collab'
+                    ? 'bg-white text-blue-600 shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Edit2 size={14} />
+                <span>Colaborador (Edición)</span>
+              </button>
+            </div>
+
+            {/* Descripción del modo */}
+            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-100 text-xs text-slate-600 leading-relaxed">
+              {shareLinkMode === 'view' ? (
+                <p>
+                  <strong>Modo Observador:</strong> El destinatario podrá consultar en tiempo real las respuestas, avances y comentarios sin posibilidad de modificar ningún dato.
+                </p>
+              ) : (
+                <p>
+                  <strong>Modo Colaborador:</strong> El invitado podrá responder preguntas, redactar observaciones y trabajar concurrentemente en la auditoría.
+                </p>
+              )}
+            </div>
+
+            {/* Campo de Enlace y Botón de Copiar */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-slate-700">Enlace de Acceso Directo</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  readOnly
+                  value={`${window.location.origin}${window.location.pathname}?id=${shareModalAudit.id}&token=${shareModalAudit.shareToken || ''}&mode=${shareLinkMode}`}
+                  className="flex-1 px-3 py-2 text-xs font-mono bg-slate-50 border border-slate-200 rounded-lg text-slate-700 select-all focus:outline-none focus:border-blue-500"
+                />
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const url = `${window.location.origin}${window.location.pathname}?id=${shareModalAudit.id}&token=${shareModalAudit.shareToken || ''}&mode=${shareLinkMode}`;
+                    try {
+                      await navigator.clipboard.writeText(url);
+                      setCopiedLink(true);
+                      setTimeout(() => setCopiedLink(false), 2500);
+                    } catch (err) {
+                      console.error("Error al copiar enlace:", err);
+                    }
+                  }}
+                  className={`px-3.5 py-2 text-xs font-semibold rounded-lg transition-colors inline-flex items-center gap-1.5 cursor-pointer shrink-0 shadow-xs ${
+                    copiedLink
+                      ? 'bg-emerald-600 text-white'
+                      : 'bg-blue-600 hover:bg-blue-700 text-white'
+                  }`}
+                >
+                  {copiedLink ? <Check size={14} /> : <Copy size={14} />}
+                  <span>{copiedLink ? '¡Copiado!' : 'Copiar'}</span>
+                </button>
+              </div>
+              {copiedLink && (
+                <p className="text-[11px] text-emerald-600 font-medium">
+                  ✓ Enlace copiado al portapapeles. Listo para compartir.
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end">
+            <button
+              type="button"
+              onClick={() => setShareModalAudit(null)}
+              className="px-4 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-200 bg-slate-100 rounded-lg transition cursor-pointer"
+            >
+              Cerrar
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // ==========================================
   // PANTALLA INICIAL: DASHBOARD DE AUDITORÍAS
   // ==========================================
   if (step === 'dashboard') {
-    const filteredAudits = savedAudits.filter(audit => {
+    const isAuditPinned = (audit) => pinnedAuditIds.includes(audit.id) || !!audit.isPinned;
+    const archivedAudits = savedAudits.filter(audit => !!audit.archived);
+    const activeAudits = savedAudits.filter(audit => !audit.archived);
+
+    const filteredAudits = activeAudits.filter(audit => {
       if (!dashboardSearch.trim()) return true;
       const term = dashboardSearch.toLowerCase();
       const empresa = (audit.nombreEmpresa || audit.data?.introData?.nombreEmpresa || '').toLowerCase();
@@ -1979,233 +2645,371 @@ const startInlineDictation = (section, id) => {
       return empresa.includes(term) || auditor.includes(term) || giro.includes(term);
     });
 
+    // Ordenar: primero las fijadas con chincheta, luego por fecha de última modificación
+    const sortedAudits = [...filteredAudits].sort((a, b) => {
+      const pinA = isAuditPinned(a) ? 1 : 0;
+      const pinB = isAuditPinned(b) ? 1 : 0;
+      if (pinA !== pinB) return pinB - pinA;
+      return new Date(b.lastModified || 0) - new Date(a.lastModified || 0);
+    });
+
     return (
-      <div className="min-h-screen bg-slate-100/70 border-t-8 border-slate-900 flex flex-col font-sans">
+      <div className="min-h-screen bg-[#F8FAFC] flex flex-col font-sans text-slate-800">
         {/* Top Navbar */}
-        <header className="bg-white border-b border-slate-200 px-4 md:px-8 py-3.5 sticky top-0 z-30 shadow-xs">
-          <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
+        <header className="bg-white/85 backdrop-blur-md border-b border-slate-200/70 px-4 md:px-8 py-3.5 sticky top-0 z-30 shadow-2xs">
+          <div className="w-full max-w-[1700px] mx-auto flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <img src={logoPng} alt="ByteWise" className="h-8 md:h-10 w-auto object-contain brightness-0 invert" />
-              <div className="hidden sm:block border-l border-slate-200 pl-3">
-                <span className="text-xs font-bold text-slate-500 tracking-wider uppercase">Auditoría y Gestión de TI</span>
+              <div className="hidden sm:block border-l border-slate-200/80 pl-3">
+                <span className="text-xs font-semibold text-slate-500 tracking-wider uppercase">Auditoría y Gestión de TI</span>
               </div>
             </div>
 
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2">
               {user && (
-                <div className="hidden md:flex items-center gap-2 text-xs font-medium text-slate-600 bg-slate-50 px-3 py-1.5 border border-slate-200">
-                  <User size={14} className="text-slate-500" />
+                <div className="hidden md:flex items-center gap-2 text-xs font-medium text-slate-600 bg-slate-100/70 px-3 py-1.5 rounded-full border border-slate-200/60">
+                  <User size={13} className="text-slate-500" />
                   <span className="max-w-[180px] truncate">{user.email || 'Auditor Conectado'}</span>
                 </div>
               )}
-              <button 
-                onClick={() => setStep('access_management')} 
-                className="text-xs font-bold text-slate-700 hover:text-slate-900 hover:bg-slate-100 border border-slate-200 px-3 py-2 transition flex items-center gap-1.5 cursor-pointer"
-                title="Gestión de accesos y roles"
-              >
-                <Shield size={14} className="text-cyan-600" />
-                <span>Accesos</span>
-              </button>
+
+              {/* Botón de Ajustes con Dropdown */}
+              <div className="relative" ref={settingsMenuRef}>
+                <button 
+                  onClick={() => setShowSettingsDropdown(prev => !prev)}
+                  className={`w-9 h-9 rounded-lg border transition-all flex items-center justify-center cursor-pointer ${
+                    showSettingsDropdown 
+                      ? 'border-blue-400 text-blue-600 bg-blue-50/70 shadow-2xs' 
+                      : 'border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                  }`}
+                  title="Configuración y herramientas"
+                  aria-label="Configuración"
+                >
+                  <Settings size={18} strokeWidth={1.8} className={`transition-transform duration-200 ${showSettingsDropdown ? 'rotate-45 text-blue-600' : ''}`} />
+                </button>
+
+                {/* Dropdown Menu */}
+                {showSettingsDropdown && (
+                  <div className="absolute right-0 mt-2 w-60 bg-white rounded-xl shadow-lg border border-slate-100 py-1.5 z-40 text-sm animate-in fade-in slide-in-from-top-1 duration-150">
+                    <div className="px-3.5 py-1.5 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                      Opciones del Sistema
+                    </div>
+                    <button
+                      onClick={() => {
+                        setShowSettingsDropdown(false);
+                        setStep('access_management');
+                      }}
+                      className="w-full flex items-center gap-2.5 px-4 py-2.5 text-slate-700 hover:bg-slate-50 hover:text-blue-600 transition-colors text-left cursor-pointer group"
+                    >
+                      <KeyRound size={16} className="text-slate-400 group-hover:text-blue-600 transition-colors" />
+                      <span className="font-medium text-xs">Gestión de Accesos</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowSettingsDropdown(false);
+                        setShowArchivedModal(true);
+                      }}
+                      className="w-full flex items-center justify-between px-4 py-2.5 text-slate-700 hover:bg-slate-50 hover:text-blue-600 transition-colors text-left cursor-pointer group"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <Archive size={16} className="text-slate-400 group-hover:text-blue-600 transition-colors" />
+                        <span className="font-medium text-xs">Auditorías Archivadas</span>
+                      </div>
+                      {archivedAudits.length > 0 && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200/60">
+                          {archivedAudits.length}
+                        </span>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowSettingsDropdown(false);
+                        setShowLogsModal(true);
+                      }}
+                      className="w-full flex items-center gap-2.5 px-4 py-2.5 text-slate-700 hover:bg-slate-50 hover:text-blue-600 transition-colors text-left cursor-pointer group"
+                    >
+                      <History size={16} className="text-slate-400 group-hover:text-blue-600 transition-colors" />
+                      <span className="font-medium text-xs">Historial de Cambios</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Botón de Logout */}
               <button 
                 onClick={() => { signOut(auth); resetToInitialState(); setStep('dashboard'); }} 
-                className="text-xs font-bold text-slate-600 hover:text-rose-600 hover:bg-rose-50 border border-slate-200 px-3 py-2 transition flex items-center gap-1.5 cursor-pointer"
+                className="w-9 h-9 rounded-lg border border-slate-200 text-slate-500 hover:text-rose-600 hover:bg-rose-50 hover:border-rose-200 flex items-center justify-center transition-all shadow-2xs cursor-pointer"
                 title="Cerrar sesión"
+                aria-label="Cerrar sesión"
               >
-                <span>Cerrar Sesión</span>
+                <LogOut size={16} strokeWidth={1.8} />
               </button>
             </div>
           </div>
         </header>
 
-        {/* Hero Banner & Action Header */}
-        <div className="bg-white border-b border-slate-200 py-8 px-4 md:px-8">
-          <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-6">
+        {/* Cabecera de Página */}
+        <div className="bg-white border-b border-slate-200/70 py-6 px-4 md:px-8">
+          <div className="w-full max-w-[1700px] mx-auto flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-cyan-50 border border-cyan-200 text-cyan-800 text-[11px] font-bold uppercase tracking-wider mb-2">
-                <Shield size={13} className="text-[#00d4ff]" /> Control de Evaluaciones
-              </div>
-              <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">
-                Auditorías Guardadas
+              <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+                Gestión de Auditorías
               </h1>
-              <p className="text-sm text-slate-500 mt-1 max-w-2xl">
-                Revisa el avance, madurez y resultados de cada empresa evaluada, o inicia una nueva sesión de auditoría.
+              <p className="text-sm text-slate-500 mt-0.5">
+                Supervisión de madurez tecnológica, cumplimiento y evaluaciones activas.
               </p>
             </div>
 
-            <button
-              onClick={() => {
-                resetToInitialState();
-                setStep('gate');
-              }}
-              className="inline-flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm px-6 py-3.5 border-b-4 border-[#00d4ff] shadow-sm hover:shadow transition-all cursor-pointer shrink-0"
-            >
-              <Plus size={18} className="text-[#00d4ff]" />
-              <span>+ Nueva Auditoría</span>
-            </button>
+            <div className="flex items-center gap-3 shrink-0">
+              <button
+                onClick={() => {
+                  resetToInitialState();
+                  setStep('gate');
+                }}
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm transition-colors cursor-pointer"
+              >
+                <Plus size={16} strokeWidth={2.2} />
+                <span>Nueva Auditoría</span>
+              </button>
+            </div>
           </div>
         </div>
 
         {/* Dashboard Content */}
-        <main className="max-w-7xl mx-auto w-full p-4 md:p-8 flex-1">
+        <main className="w-full max-w-[1700px] mx-auto p-4 md:p-8 flex-1">
           {/* Barra de Filtro y Resumen */}
-          <div className="mb-6 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white p-3 border border-slate-200 shadow-2xs">
-            <div className="relative flex-1 max-w-md">
-              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <div className="mb-6 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white p-3.5 rounded-2xl border border-slate-200/80 shadow-xs">
+            <div className="relative flex-1 max-w-lg">
+              <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
                 value={dashboardSearch}
                 onChange={(e) => setDashboardSearch(e.target.value)}
                 placeholder="Buscar por empresa, auditor o giro..."
-                className="w-full pl-9 pr-8 py-2 text-xs bg-slate-50 border border-slate-200 focus:bg-white focus:border-slate-800 focus:outline-none transition"
+                className="w-full pl-9 pr-8 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none transition"
               />
               {dashboardSearch && (
                 <button
                   onClick={() => setDashboardSearch('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full"
                 >
                   <X size={14} />
                 </button>
               )}
             </div>
 
-            <div className="text-xs font-semibold text-slate-500 flex items-center justify-between sm:justify-end gap-2 px-1">
+            <div className="text-xs font-semibold text-slate-500 flex items-center justify-between sm:justify-end gap-2 px-2">
               <span>
-                {filteredAudits.length} {filteredAudits.length === 1 ? 'auditoría encontrada' : 'auditorías registradas'}
+                {sortedAudits.length} {sortedAudits.length === 1 ? 'auditoría encontrada' : 'auditorías registradas'}
               </span>
-              {savedAudits.length > 0 && filteredAudits.length !== savedAudits.length && (
+              {savedAudits.length > 0 && sortedAudits.length !== savedAudits.length && (
                 <span className="text-slate-400">(filtradas de {savedAudits.length})</span>
               )}
             </div>
           </div>
 
-          {/* Grid de Auditorías */}
-          {filteredAudits.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {filteredAudits.map((audit) => {
-                const summary = getAuditSummary(audit);
-                const nombreEmpresa = audit.nombreEmpresa || audit.data?.introData?.nombreEmpresa || 'Empresa sin nombre';
-                const giro = audit.data?.introData?.giro;
-                const sitioWeb = audit.data?.introData?.sitioWeb;
-                const auditorNombre = audit.data?.actor?.nombreAuditor || 'Sin asignar';
-                const auditorRol = audit.data?.actor?.rol || 'Auditor';
-                const tienePin = !!audit.data?.actor?.contrasenaHash;
-                const fechaMod = audit.lastModified ? new Date(audit.lastModified) : new Date();
+          {/* Tabla de Auditorías */}
+          {sortedAudits.length > 0 ? (
+            <div className="w-full bg-white rounded-xl shadow-xs border border-slate-100 overflow-hidden">
+              <div className="w-full overflow-x-auto">
+                <table className="w-full table-auto text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-100 bg-slate-50/75">
+                      <th className="p-4 text-xs font-semibold uppercase tracking-wider text-slate-500 w-[30%] min-w-[260px]">
+                        Empresa / Entidad
+                      </th>
+                      <th className="p-4 text-xs font-semibold uppercase tracking-wider text-slate-500 w-[18%] min-w-[170px]">
+                        Auditor a Cargo
+                      </th>
+                      <th className="p-4 text-xs font-semibold uppercase tracking-wider text-slate-500 w-[18%] min-w-[160px]">
+                        Progreso
+                      </th>
+                      <th className="p-4 text-xs font-semibold uppercase tracking-wider text-slate-500 w-[14%] min-w-[130px]">
+                        Madurez / Puntos
+                      </th>
+                      <th className="p-4 text-xs font-semibold uppercase tracking-wider text-slate-500 w-[10%] min-w-[110px]">
+                        Modificado
+                      </th>
+                      <th className="p-4 text-xs font-semibold uppercase tracking-wider text-slate-500 text-right w-[10%] min-w-[140px] whitespace-nowrap">
+                        Acciones
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {sortedAudits.map((audit) => {
+                      const summary = getAuditSummary(audit);
+                      const nombreEmpresa = audit.nombreEmpresa || audit.data?.introData?.nombreEmpresa || 'Empresa sin nombre';
+                      const giro = audit.data?.introData?.giro;
+                      const sitioWeb = audit.data?.introData?.sitioWeb;
+                      const auditorNombre = audit.data?.actor?.nombreAuditor || 'Sin asignar';
+                      const auditorRol = audit.data?.actor?.rol || 'Auditor';
+                      const tienePin = !!audit.data?.actor?.contrasenaHash;
+                      const fechaMod = audit.lastModified ? new Date(audit.lastModified) : new Date();
+                      const isPinned = isAuditPinned(audit);
 
-                return (
-                  <div
-                    key={audit.id}
-                    className="bg-white border border-slate-200 hover:border-slate-300 border-t-4 border-t-[#00d4ff] shadow-sm hover:shadow-md transition flex flex-col justify-between"
-                  >
-                    {/* Tarjeta Cabecera */}
-                    <div className="p-5 md:p-6 border-b border-slate-100">
-                      <div className="flex items-start justify-between gap-3 mb-3">
-                        <div className="flex items-start gap-3 min-w-0">
-                          <div className="w-10 h-10 bg-slate-900 text-[#00d4ff] flex items-center justify-center shrink-0">
-                            <Building2 size={20} />
-                          </div>
-                          <div className="min-w-0">
-                            <h2 className="text-lg font-bold text-slate-900 truncate leading-snug" title={nombreEmpresa}>
-                              {nombreEmpresa}
-                            </h2>
-                            <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5 flex-wrap">
-                              {giro ? (
-                                <span className="font-medium text-slate-600">{giro}</span>
-                              ) : (
-                                <span className="italic text-slate-400">Giro no especificado</span>
-                              )}
-                              {sitioWeb && (
-                                <span className="inline-flex items-center gap-1 text-cyan-700 bg-cyan-50 px-1.5 py-0.5 text-[11px] font-medium truncate max-w-[180px]">
-                                  <Globe size={11} /> {sitioWeb.replace(/^https?:\/\//, '')}
+                      return (
+                        <tr 
+                          key={audit.id} 
+                          className={`transition-colors ${
+                            isPinned 
+                              ? 'bg-blue-50/25 hover:bg-blue-50/50' 
+                              : 'hover:bg-slate-50/60'
+                          }`}
+                        >
+                          {/* Empresa / Entidad */}
+                          <td className="p-4">
+                            <div className="flex items-center gap-3">
+                              <div className={getCompanyAvatarBadgeClass(nombreEmpresa)}>
+                                {getCompanyInitials(nombreEmpresa)}
+                              </div>
+                              <div className="flex flex-col min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span 
+                                    className="text-sm font-semibold text-slate-800 hover:text-blue-600 transition-colors cursor-pointer truncate max-w-sm xl:max-w-md" 
+                                    onClick={() => handleLoadAudit(audit)}
+                                    title={nombreEmpresa}
+                                  >
+                                    {nombreEmpresa}
+                                  </span>
+                                  {tienePin && (
+                                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-medium shrink-0" title="Auditoría protegida con PIN">
+                                      <Lock size={10} className="text-slate-500" />
+                                      <span>PIN</span>
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="text-xs text-slate-400 truncate max-w-sm xl:max-w-md">
+                                  {giro || 'Giro no especificado'}
+                                  {sitioWeb && (
+                                    <>
+                                      {' • '}
+                                      <a
+                                        href={sitioWeb.startsWith('http') ? sitioWeb : `https://${sitioWeb}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-blue-600 hover:underline"
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
+                                        {sitioWeb.replace(/^https?:\/\//, '')}
+                                      </a>
+                                    </>
+                                  )}
                                 </span>
-                              )}
+                              </div>
                             </div>
-                          </div>
-                        </div>
+                          </td>
 
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          {tienePin && (
-                            <span
-                              className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-bold"
-                              title="Esta auditoría está protegida con contraseña / PIN"
-                            >
-                              <KeyRound size={12} className="text-amber-600" />
-                              <span>PIN</span>
-                            </span>
-                          )}
-                          <button
-                            onClick={(e) => handleDeleteAudit(audit, e)}
-                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 transition cursor-pointer"
-                            title="Eliminar esta auditoría"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      </div>
+                          {/* Auditor a Cargo */}
+                          <td className="p-4">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-7 h-7 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center text-xs font-semibold shrink-0">
+                                {getCompanyInitials(auditorNombre)}
+                              </div>
+                              <div className="flex flex-col">
+                                <span className="text-sm text-slate-700 font-medium leading-tight">{auditorNombre}</span>
+                                {auditorRol && (
+                                  <span className="text-[11px] text-slate-400">{auditorRol}</span>
+                                )}
+                              </div>
+                            </div>
+                          </td>
 
-                      {/* Métricas y Madurez */}
-                      <div className="flex items-center justify-between gap-2 mt-4 pt-3 border-t border-slate-100">
-                        <span className={`text-xs font-bold px-2.5 py-1 border ${summary.level.badgeClass}`}>
-                          {summary.level.label}
-                        </span>
-                        <div className="text-right">
-                          <span className="text-sm font-bold text-slate-800">{summary.avgScore}</span>
-                          <span className="text-[11px] text-slate-500"> / 4.0 pts</span>
-                        </div>
-                      </div>
+                          {/* Progreso */}
+                          <td className="p-4">
+                            <div className="w-full max-w-[200px]">
+                              <div className="flex justify-between items-center mb-1 text-xs">
+                                <span className="text-slate-500 font-medium">{summary.answeredQuestions} de {summary.totalQuestions}</span>
+                                <span className="font-semibold text-blue-600">{summary.percentage}%</span>
+                              </div>
+                              <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                                <div 
+                                  className="bg-blue-600 h-1.5 rounded-full transition-all duration-300" 
+                                  style={{ width: `${summary.percentage}%` }}
+                                />
+                              </div>
+                            </div>
+                          </td>
 
-                      {/* Barra de Progreso */}
-                      <div className="mt-3">
-                        <div className="flex justify-between text-[11px] font-semibold text-slate-600 mb-1">
-                          <span>Preguntas completadas</span>
-                          <span className="text-cyan-700 font-bold">{summary.percentage}%</span>
-                        </div>
-                        <div className="w-full bg-slate-100 h-2 overflow-hidden">
-                          <div
-                            className="bg-[#00d4ff] h-full transition-all duration-300"
-                            style={{ width: `${summary.percentage}%` }}
-                          />
-                        </div>
-                        <div className="flex justify-between text-[10px] text-slate-500 mt-1.5">
-                          <span>{summary.answeredQuestions} de {summary.totalQuestions} respondidas</span>
-                          <span>{summary.areasCount} áreas evaluadas</span>
-                        </div>
-                      </div>
-                    </div>
+                          {/* Madurez / Puntos */}
+                          <td className="p-4">
+                            <div className="flex flex-col gap-1 items-start">
+                              <span className={`w-max px-2.5 py-0.5 rounded-full text-xs font-medium ${summary.level.badgeClass}`}>
+                                {summary.level.label}
+                              </span>
+                              <span className="text-xs text-slate-500 font-semibold">{summary.avgScore} / 4.0 pts</span>
+                            </div>
+                          </td>
 
-                    {/* Metadatos y Botón de Apertura */}
-                    <div className="bg-slate-50 p-4 md:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
-                      <div className="space-y-1 text-slate-600">
-                        <div className="flex items-center gap-1.5">
-                          <User size={13} className="text-slate-400 shrink-0" />
-                          <span className="font-semibold text-slate-800">{auditorNombre}</span>
-                          <span className="text-slate-400">({auditorRol})</span>
-                        </div>
-                        <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
-                          <Calendar size={13} className="text-slate-400 shrink-0" />
-                          <span>Modificado: {fechaMod.toLocaleDateString()} {fechaMod.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                        </div>
-                      </div>
+                          {/* Modificado */}
+                          <td className="p-4 text-xs text-slate-500 whitespace-nowrap">
+                            <div className="flex flex-col">
+                              <span className="font-medium text-slate-600">{fechaMod.toLocaleDateString()}</span>
+                              <span className="text-[11px] text-slate-400">{fechaMod.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                            </div>
+                          </td>
 
-                      <button
-                        onClick={() => handleLoadAudit(audit)}
-                        className="w-full sm:w-auto px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition shadow-xs cursor-pointer shrink-0"
-                      >
-                        <span>Abrir Auditoría</span>
-                        <ChevronRight size={14} className="text-[#00d4ff]" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
+                          {/* Acciones */}
+                          <td className="p-4 text-right whitespace-nowrap">
+                            <div className="flex items-center justify-end gap-1">
+                              {/* Botón PIN */}
+                              <button
+                                onClick={(e) => togglePinAudit(audit.id, e)}
+                                className={`p-2 rounded-lg transition-colors cursor-pointer ${
+                                  isPinned 
+                                    ? 'text-blue-600 bg-blue-50 hover:bg-blue-100' 
+                                    : 'text-slate-400 hover:text-amber-500 hover:bg-slate-100'
+                                }`}
+                                title={isPinned ? "Desanclar del inicio" : "Fijar auditoría al inicio"}
+                                aria-label="Fijar auditoría"
+                              >
+                                <Pin size={16} className={isPinned ? "fill-blue-600 rotate-45" : ""} />
+                              </button>
+                              
+                              {/* Botón Compartir */}
+                              <button
+                                onClick={(e) => handleOpenShareModal(audit, e)}
+                                className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
+                                title="Compartir enlace seguro de auditoría"
+                                aria-label="Compartir auditoría"
+                              >
+                                <Share2 size={16} />
+                              </button>
+
+                              {/* Botón Eliminar / Archivar */}
+                              <button
+                                onClick={(e) => handleArchiveAudit(audit, e)}
+                                className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                                title="Archivar auditoría"
+                                aria-label="Archivar auditoría"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+
+                              {/* Botón Abrir Auditoría */}
+                              <button
+                                onClick={() => handleLoadAudit(audit)}
+                                className="ml-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-sm cursor-pointer group/btn"
+                              >
+                                <span>Abrir</span>
+                                <ChevronRight size={14} className="transition-transform duration-200 group-hover/btn:translate-x-0.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           ) : (
-            <div className="bg-white border border-slate-200 p-12 text-center max-w-xl mx-auto shadow-sm">
-              <div className="w-16 h-16 bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-4">
-                <Shield size={32} className="text-cyan-600" />
+            <div className="bg-white border border-slate-200/80 rounded-2xl p-12 text-center max-w-xl mx-auto shadow-xs">
+              <div className="w-14 h-14 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                <Shield size={28} />
               </div>
-              {savedAudits.length === 0 ? (
+              {activeAudits.length === 0 ? (
                 <>
-                  <h3 className="text-lg font-bold text-slate-800">No hay auditorías registradas todavía</h3>
+                  <h3 className="text-lg font-bold text-slate-900">No hay auditorías activas todavía</h3>
                   <p className="text-xs text-slate-500 mt-2 leading-relaxed">
                     Comienza tu primera evaluación de seguridad y TI. Podrás utilizar la plantilla base oficial de ByteWise, comenzar desde cero o importar preguntas desde Excel.
                   </p>
@@ -2214,21 +3018,21 @@ const startInlineDictation = (section, id) => {
                       resetToInitialState();
                       setStep('gate');
                     }}
-                    className="mt-6 inline-flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs px-6 py-3 border-b-2 border-[#00d4ff] shadow-sm transition cursor-pointer"
+                    className="mt-6 inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs px-5 py-2.5 rounded-xl shadow-xs transition-all cursor-pointer"
                   >
-                    <Plus size={16} className="text-[#00d4ff]" />
-                    <span>+ Crear Primera Auditoría</span>
+                    <Plus size={16} />
+                    <span>Crear Primera Auditoría</span>
                   </button>
                 </>
               ) : (
                 <>
-                  <h3 className="text-lg font-bold text-slate-800">Sin coincidencias para "{dashboardSearch}"</h3>
+                  <h3 className="text-lg font-bold text-slate-900">Sin coincidencias para "{dashboardSearch}"</h3>
                   <p className="text-xs text-slate-500 mt-2">
                     No se encontró ninguna auditoría con ese término. Intenta con otro nombre de empresa, auditor o giro.
                   </p>
                   <button
                     onClick={() => setDashboardSearch('')}
-                    className="mt-4 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition cursor-pointer"
+                    className="mt-4 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl transition cursor-pointer"
                   >
                     Limpiar Búsqueda
                   </button>
@@ -2237,6 +3041,215 @@ const startInlineDictation = (section, id) => {
             </div>
           )}
         </main>
+
+        {/* Modal de Auditorías Archivadas */}
+        {showArchivedModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in duration-200">
+            <div 
+              className="w-full max-w-3xl bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden flex flex-col max-h-[85vh] animate-in zoom-in-95 duration-200"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Modal Header */}
+              <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center border border-amber-200/50">
+                    <Archive size={20} />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-900 leading-tight">Auditorías Archivadas</h2>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Auditorías retiradas de la vista activa. Puedes restaurarlas a la lista principal o eliminarlas de forma definitiva.
+                    </p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setShowArchivedModal(false)}
+                  className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                  title="Cerrar"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-6 overflow-y-auto flex-1">
+                {archivedAudits.length === 0 ? (
+                  <div className="text-center py-12">
+                    <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-3">
+                      <Archive size={24} />
+                    </div>
+                    <h3 className="text-sm font-semibold text-slate-700">No hay auditorías archivadas</h3>
+                    <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+                      Cuando archives una auditoría desde la tabla principal aparecerá aquí para su recuperación o eliminación permanente.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-slate-100 border border-slate-200/80 rounded-xl overflow-hidden bg-white">
+                    {archivedAudits.map((audit) => {
+                      const nombre = audit.nombreEmpresa || audit.data?.introData?.nombreEmpresa || 'Empresa sin nombre';
+                      const auditor = audit.data?.actor?.nombreAuditor || 'Sin asignar';
+                      const fecha = audit.lastModified ? new Date(audit.lastModified).toLocaleDateString() : '';
+
+                      return (
+                        <div key={audit.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/50 transition-colors">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className={getCompanyAvatarBadgeClass(nombre)}>
+                              {getCompanyInitials(nombre)}
+                            </div>
+                            <div className="min-w-0">
+                              <h4 className="text-sm font-semibold text-slate-800 truncate" title={nombre}>{nombre}</h4>
+                              <p className="text-xs text-slate-400 truncate">
+                                Auditor: <span className="text-slate-600">{auditor}</span> • Modificado: {fecha}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                            <button
+                              onClick={() => handleRestoreAudit(audit)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 bg-blue-50/70 hover:bg-blue-100 border border-blue-200/60 rounded-lg transition-colors cursor-pointer"
+                              title="Restaurar a la lista activa"
+                            >
+                              <RotateCcw size={13} />
+                              <span>Restaurar</span>
+                            </button>
+                            <button
+                              onClick={() => handlePermanentDeleteAudit(audit)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-red-600 hover:text-red-700 bg-red-50/70 hover:bg-red-100 border border-red-200/60 rounded-lg transition-colors cursor-pointer"
+                              title="Eliminar de la base de datos"
+                            >
+                              <Trash2 size={13} />
+                              <span>Eliminar Definitiva</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="px-6 py-3.5 border-t border-slate-100 bg-slate-50/50 flex justify-between items-center text-xs text-slate-500">
+                <span>{archivedAudits.length} {archivedAudits.length === 1 ? 'auditoría archivada' : 'auditorías archivadas'}</span>
+                <button
+                  onClick={() => setShowArchivedModal(false)}
+                  className="px-4 py-2 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 font-medium rounded-lg transition-colors cursor-pointer"
+                >
+                  Cerrar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal de Historial de Cambios */}
+        {showLogsModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in duration-200">
+            <div 
+              className="w-full max-w-3xl bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden flex flex-col max-h-[85vh] animate-in zoom-in-95 duration-200"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Modal Header */}
+              <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-200/50">
+                    <History size={20} />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-900 leading-tight">Historial de Cambios</h2>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Registro cronológico de actividades, modificaciones, archivados y eliminaciones.
+                    </p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setShowLogsModal(false)}
+                  className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                  title="Cerrar"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-6 overflow-y-auto flex-1">
+                {auditLogs.length === 0 ? (
+                  <div className="text-center py-12">
+                    <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-3">
+                      <History size={24} />
+                    </div>
+                    <h3 className="text-sm font-semibold text-slate-700">Sin eventos registrados</h3>
+                    <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+                      Las acciones de creación, modificación, archivado y eliminación se registrarán automáticamente aquí.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="relative border-l-2 border-slate-100 ml-4 pl-5 space-y-6">
+                    {auditLogs.map((log) => {
+                      const date = new Date(log.timestamp || 0);
+                      const formattedDate = date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                      
+                      let badgeColor = 'bg-slate-100 text-slate-700 border-slate-200';
+                      let dotColor = 'bg-slate-400';
+                      let actionLabel = 'Modificación';
+
+                      if (log.action === 'create') {
+                        badgeColor = 'bg-emerald-50 text-emerald-700 border-emerald-200/60';
+                        dotColor = 'bg-emerald-500';
+                        actionLabel = 'Creación';
+                      } else if (log.action === 'archive') {
+                        badgeColor = 'bg-amber-50 text-amber-700 border-amber-200/60';
+                        dotColor = 'bg-amber-500';
+                        actionLabel = 'Archivado';
+                      } else if (log.action === 'restore') {
+                        badgeColor = 'bg-blue-50 text-blue-700 border-blue-200/60';
+                        dotColor = 'bg-blue-500';
+                        actionLabel = 'Restauración';
+                      } else if (log.action === 'delete') {
+                        badgeColor = 'bg-rose-50 text-rose-700 border-rose-200/60';
+                        dotColor = 'bg-rose-500';
+                        actionLabel = 'Eliminación';
+                      }
+
+                      return (
+                        <div key={log.id} className="relative group">
+                          <div className={`absolute -left-[27px] top-1 w-3.5 h-3.5 rounded-full ${dotColor} ring-4 ring-white`} />
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-1">
+                            <span className="text-xs font-semibold text-slate-800">{log.description}</span>
+                            <span className="text-[11px] text-slate-400 shrink-0">{formattedDate}</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-xs text-slate-500">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${badgeColor}`}>
+                              {actionLabel}
+                            </span>
+                            <span className="text-[11px] text-slate-400">Por: {log.userName || 'Auditor'}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="px-6 py-3.5 border-t border-slate-100 bg-slate-50/50 flex justify-between items-center text-xs text-slate-500">
+                <span>{auditLogs.length} {auditLogs.length === 1 ? 'evento registrado' : 'eventos registrados'}</span>
+                <button
+                  onClick={() => setShowLogsModal(false)}
+                  className="px-4 py-2 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 font-medium rounded-lg transition-colors cursor-pointer"
+                >
+                  Cerrar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modales de Acceso y Compartir en Dashboard */}
+        {renderAccessModal()}
+        {renderShareModal()}
+
         <CustomDialogModal config={modalConfig} onClose={() => setModalConfig(null)} />
       </div>
     );
@@ -2246,190 +3259,281 @@ const startInlineDictation = (section, id) => {
   // PANTALLA DE CONFIGURACIÓN DE NUEVA AUDITORÍA
   // ==========================================
   if (step === 'gate') {
-     return (
-       <div className="min-h-screen bg-slate-50 p-4 md:p-12 flex flex-col items-center justify-start gap-6 border-t-8 border-slate-900 relative">
-         
-         <div className="w-full max-w-3xl flex items-center justify-between">
-            <button 
-              onClick={() => setStep('dashboard')} 
-              className="text-xs font-bold text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-100 border border-slate-300 px-3 py-2 flex items-center gap-1.5 transition cursor-pointer shadow-xs"
-            >
-              <ArrowLeft size={16} />
-              <span>Volver al Panel</span>
-            </button>
-
+    return (
+      <div className="min-h-screen bg-[#F8FAFC] flex flex-col font-sans text-slate-800">
+        {/* Top Navbar Unificada */}
+        <header className="bg-white/85 backdrop-blur-md border-b border-slate-200/70 px-4 md:px-8 py-3.5 sticky top-0 z-30 shadow-2xs">
+          <div className="w-full max-w-[1700px] mx-auto flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <button onClick={() => setStep('access_management')} className="text-xs font-bold text-slate-500 hover:text-slate-800 transition flex items-center gap-1.5">
-                <Shield size={14} /> Accesos
-              </button>
-              <button onClick={() => { signOut(auth); resetToInitialState(); setStep('dashboard'); }} className="text-xs font-bold text-slate-500 hover:text-red-600 transition flex items-center gap-1.5">
-                Cerrar Sesión
-              </button>
-            </div>
-         </div>
-
-         <img src={logoPng} alt="ByteWise" className="h-10 md:h-14 w-auto object-contain drop-shadow-none brightness-0 invert" />
-
-         {/* NUEVA AUDITORIA */}
-        <div className="w-full max-w-3xl bg-white p-8 md:p-12 border border-slate-200 border-t-4 border-t-[#00d4ff] shadow-sm">
-          <div className="flex flex-col items-center mb-8">
-             <div className="w-14 h-14 bg-slate-900 rounded-none flex items-center justify-center shadow-none mb-3">
-                <Shield size={28} className="text-[#00d4ff]" />
-             </div>
-             <h1 className="text-2xl md:text-3xl font-extrabold text-slate-800 text-center">Nueva Auditoría de TI</h1>
-             <p className="text-slate-500 mt-1.5 text-center text-sm font-medium">Configura los datos de la empresa y estructura de evaluación</p>
-          </div>
-
-          <div className="space-y-5">
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-1.5">Nombre de la Empresa *</label>
-              <input
-                type="text"
-                value={actor.nombreEmpresa}
-                onChange={(e) => setActor(prev => ({ ...prev, nombreEmpresa: e.target.value }))}
-                placeholder="Ej: ByteWise S.A. de C.V."
-                className="w-full px-3 py-2 bg-white border border-slate-300 focus:border-slate-800 focus:outline-none transition-colors rounded-none"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-1.5">Nombre de quien audita *</label>
-              <input
-                type="text"
-                value={actor.nombreAuditor}
-                onChange={(e) => setActor(prev => ({ ...prev, nombreAuditor: e.target.value }))}
-                placeholder="Ej: Oscar Pérez"
-                className="w-full px-3 py-2 bg-white border border-slate-300 focus:border-slate-800 focus:outline-none transition-colors rounded-none"
-              />
+              <img src={logoPng} alt="ByteWise" className="h-8 md:h-10 w-auto object-contain brightness-0 invert" />
+              <div className="hidden sm:block border-l border-slate-200/80 pl-3">
+                <span className="text-xs font-semibold text-slate-500 tracking-wider uppercase">Auditoría y Gestión de TI</span>
+              </div>
             </div>
 
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-1.5">Rol en la evaluación *</label>
-              <select
-                value={actor.rol}
-                onChange={(e) => setActor(prev => ({ ...prev, rol: e.target.value }))}
-                className="w-full px-3 py-2 bg-white border border-slate-300 focus:border-slate-800 focus:outline-none transition-colors rounded-none appearance-none"
-              >
-                <option value="">Selecciona tu rol...</option>
-                <option value="Auditor">Auditor (Realiza la evaluación)</option>
-                <option value="Cliente">Cliente (Contesta y aporta evidencia)</option>
-              </select>
-            </div>
+            <div className="flex items-center gap-2">
+              {user && (
+                <div className="hidden md:flex items-center gap-2 text-xs font-medium text-slate-600 bg-slate-100/70 px-3 py-1.5 rounded-full border border-slate-200/60">
+                  <User size={13} className="text-slate-500" />
+                  <span className="max-w-[180px] truncate">{user.email || 'Auditor Conectado'}</span>
+                </div>
+              )}
 
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-1.5">Contraseña de acceso (PIN) *</label>
-              <input
-                type="password"
-                value={actor.contrasena}
-                onChange={(e) => setActor(prev => ({ ...prev, contrasena: e.target.value }))}
-                placeholder="Protege esta auditoría"
-                className="w-full px-3 py-2 bg-white border border-slate-300 focus:border-slate-800 focus:outline-none transition-colors rounded-none"
-              />
-            </div>
-
-            {/* Modalidad de Cuestionario Inicial */}
-            <div className="pt-2 border-t border-slate-100">
-              <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center justify-between">
-                <span>Estructura del Cuestionario</span>
-                <span className="text-xs text-slate-400 font-normal">Elige cómo iniciar</span>
-              </label>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                {/* Opción 1: Base */}
-                <button
-                  type="button"
-                  onClick={() => setCreationMode('base')}
-                  className={`p-3 text-left border transition-all cursor-pointer flex flex-col justify-between rounded-none relative ${
-                    creationMode === 'base'
-                      ? 'border-slate-900 bg-slate-900 text-white shadow-sm'
-                      : 'border-slate-200 bg-white hover:border-slate-300 text-slate-700'
+              {/* Botón de Ajustes con Dropdown */}
+              <div className="relative" ref={settingsMenuRef}>
+                <button 
+                  onClick={() => setShowSettingsDropdown(prev => !prev)}
+                  className={`w-9 h-9 rounded-lg border transition-all flex items-center justify-center cursor-pointer ${
+                    showSettingsDropdown 
+                      ? 'border-blue-400 text-blue-600 bg-blue-50/70 shadow-2xs' 
+                      : 'border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                   }`}
+                  title="Configuración y herramientas"
                 >
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <Shield size={18} className={creationMode === 'base' ? 'text-[#00d4ff]' : 'text-slate-600'} />
-                      <span className={`text-[10px] font-bold px-1.5 py-0.5 ${
-                        creationMode === 'base' ? 'bg-[#00d4ff] text-slate-950' : 'bg-slate-100 text-slate-600'
-                      }`}>
-                        Recomendado
-                      </span>
-                    </div>
-                    <div className="font-bold text-xs">Auditoría Base</div>
-                    <p className={`text-[11px] mt-1 leading-snug ${
-                      creationMode === 'base' ? 'text-slate-300' : 'text-slate-500'
-                    }`}>
-                      Carga la plantilla estándar de ByteWise (ISO 27001 e infraestructura).
-                    </p>
-                  </div>
+                  <Settings size={18} strokeWidth={1.8} className={`transition-transform duration-200 ${showSettingsDropdown ? 'rotate-45 text-blue-600' : ''}`} />
                 </button>
 
-                {/* Opción 2: Desde Cero */}
-                <button
-                  type="button"
-                  onClick={() => setCreationMode('blank')}
-                  className={`p-3 text-left border transition-all cursor-pointer flex flex-col justify-between rounded-none relative ${
-                    creationMode === 'blank'
-                      ? 'border-slate-900 bg-slate-900 text-white shadow-sm'
-                      : 'border-slate-200 bg-white hover:border-slate-300 text-slate-700'
-                  }`}
-                >
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <Layers size={18} className={creationMode === 'blank' ? 'text-[#00d4ff]' : 'text-slate-600'} />
-                      <span className={`text-[10px] font-bold px-1.5 py-0.5 ${
-                        creationMode === 'blank' ? 'bg-[#00d4ff] text-slate-950' : 'bg-slate-100 text-slate-600'
-                      }`}>
-                        Limpio
-                      </span>
+                {showSettingsDropdown && (
+                  <div className="absolute right-0 mt-2 w-60 bg-white rounded-xl shadow-lg border border-slate-100 py-1.5 z-40 text-sm animate-in fade-in slide-in-from-top-1 duration-150">
+                    <div className="px-3.5 py-1.5 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                      Opciones del Sistema
                     </div>
-                    <div className="font-bold text-xs">Desde Cero</div>
-                    <p className={`text-[11px] mt-1 leading-snug ${
-                      creationMode === 'blank' ? 'text-slate-300' : 'text-slate-500'
-                    }`}>
-                      Inicia en blanco para crear tus propias áreas y preguntas personalizadas.
-                    </p>
+                    <button
+                      onClick={() => { setShowSettingsDropdown(false); setStep('access_management'); }}
+                      className="w-full flex items-center gap-2.5 px-4 py-2.5 text-slate-700 hover:bg-slate-50 hover:text-blue-600 transition-colors text-left cursor-pointer"
+                    >
+                      <KeyRound size={16} className="text-slate-400" />
+                      <span className="font-medium text-xs">Gestión de Accesos</span>
+                    </button>
+                    <button
+                      onClick={() => { setShowSettingsDropdown(false); setShowArchivedModal(true); setStep('dashboard'); }}
+                      className="w-full flex items-center justify-between px-4 py-2.5 text-slate-700 hover:bg-slate-50 hover:text-blue-600 transition-colors text-left cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <Archive size={16} className="text-slate-400" />
+                        <span className="font-medium text-xs">Auditorías Archivadas</span>
+                      </div>
+                      {savedAudits.filter(a => !!a.archived).length > 0 && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200/60">
+                          {savedAudits.filter(a => !!a.archived).length}
+                        </span>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => { setShowSettingsDropdown(false); setShowLogsModal(true); setStep('dashboard'); }}
+                      className="w-full flex items-center gap-2.5 px-4 py-2.5 text-slate-700 hover:bg-slate-50 hover:text-blue-600 transition-colors text-left cursor-pointer"
+                    >
+                      <History size={16} className="text-slate-400" />
+                      <span className="font-medium text-xs">Historial de Cambios</span>
+                    </button>
                   </div>
-                </button>
-
-                {/* Opción 3: Importar Cuestionario */}
-                <button
-                  type="button"
-                  onClick={() => setCreationMode('import')}
-                  className={`p-3 text-left border transition-all cursor-pointer flex flex-col justify-between rounded-none relative ${
-                    creationMode === 'import'
-                      ? 'border-slate-900 bg-slate-900 text-white shadow-sm'
-                      : 'border-slate-200 bg-white hover:border-slate-300 text-slate-700'
-                  }`}
-                >
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <FileSpreadsheet size={18} className={creationMode === 'import' ? 'text-[#00d4ff]' : 'text-slate-600'} />
-                      <span className={`text-[10px] font-bold px-1.5 py-0.5 ${
-                        creationMode === 'import' ? 'bg-[#00d4ff] text-slate-950' : 'bg-slate-100 text-slate-600'
-                      }`}>
-                        Excel / JSON
-                      </span>
-                    </div>
-                    <div className="font-bold text-xs">Importar Excel</div>
-                    <p className={`text-[11px] mt-1 leading-snug ${
-                      creationMode === 'import' ? 'text-slate-300' : 'text-slate-500'
-                    }`}>
-                      Carga tus preguntas desde un archivo Excel (.xlsx) o JSON.
-                    </p>
-                  </div>
-                </button>
+                )}
               </div>
 
-              {/* Subida de archivo si seleccionó Importar */}
+              {/* Botón de Logout */}
+              <button 
+                onClick={() => { signOut(auth); resetToInitialState(); setStep('dashboard'); }} 
+                className="w-9 h-9 rounded-lg border border-slate-200 text-slate-500 hover:text-rose-600 hover:bg-rose-50 hover:border-rose-200 flex items-center justify-center transition-all shadow-2xs cursor-pointer"
+                title="Cerrar sesión"
+              >
+                <LogOut size={16} strokeWidth={1.8} />
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {/* Contenido Principal */}
+        <main className="flex-1 py-10 px-4">
+          {/* Botón Volver al Panel */}
+          <div className="max-w-4xl mx-auto mb-6">
+            <button 
+              onClick={() => {
+                resetToInitialState();
+                setStep('dashboard');
+              }} 
+              className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors cursor-pointer"
+            >
+              <ArrowLeft size={16} />
+              <span>Volver al panel principal</span>
+            </button>
+          </div>
+
+          {/* Tarjeta del Formulario */}
+          <div className="max-w-4xl mx-auto bg-white rounded-2xl border border-slate-100 shadow-sm p-8 md:p-10">
+            {/* Encabezado */}
+            <div className="border-b border-slate-100 pb-6 mb-8">
+              <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+                Nueva Auditoría de TI
+              </h1>
+              <p className="text-sm text-slate-500 mt-1">
+                Configura los datos de la entidad y la metodología de evaluación.
+              </p>
+            </div>
+
+            {/* Grid de 2 Columnas para Campos */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+              {/* Fila 1 - Columna 1: Empresa */}
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-2">
+                  Nombre de la Empresa *
+                </label>
+                <input
+                  type="text"
+                  value={actor.nombreEmpresa}
+                  onChange={(e) => setActor(prev => ({ ...prev, nombreEmpresa: e.target.value }))}
+                  placeholder="Ej. ByteWise S.A. de C.V."
+                  className="w-full text-sm rounded-lg border border-slate-200 px-3.5 py-2.5 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 outline-none transition text-slate-800 placeholder:text-slate-400"
+                />
+              </div>
+
+              {/* Fila 1 - Columna 2: Contraseña/PIN con Toggle */}
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-2">
+                  Contraseña de acceso (PIN) *
+                </label>
+                <div className="relative">
+                  <input
+                    type={showPinGate ? "text" : "password"}
+                    value={actor.contrasena}
+                    onChange={(e) => setActor(prev => ({ ...prev, contrasena: e.target.value }))}
+                    placeholder="Código o clave de seguridad"
+                    className="w-full text-sm rounded-lg border border-slate-200 pl-3.5 pr-10 py-2.5 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 outline-none transition text-slate-800 placeholder:text-slate-400"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPinGate(prev => !prev)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 rounded-md cursor-pointer transition-colors"
+                    title={showPinGate ? "Ocultar PIN" : "Mostrar PIN"}
+                  >
+                    {showPinGate ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Fila 2 - Columna 1: Auditor Principal */}
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-2">
+                  Auditor Principal *
+                </label>
+                <input
+                  type="text"
+                  value={actor.nombreAuditor}
+                  onChange={(e) => setActor(prev => ({ ...prev, nombreAuditor: e.target.value }))}
+                  placeholder="Ej. Oscar Thomason"
+                  className="w-full text-sm rounded-lg border border-slate-200 px-3.5 py-2.5 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 outline-none transition text-slate-800 placeholder:text-slate-400"
+                />
+              </div>
+
+              {/* Fila 2 - Columna 2: Rol en la Evaluación */}
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-2">
+                  Rol en la Evaluación *
+                </label>
+                <select
+                  value={actor.rol}
+                  onChange={(e) => setActor(prev => ({ ...prev, rol: e.target.value }))}
+                  className="w-full text-sm rounded-lg border border-slate-200 px-3.5 py-2.5 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 outline-none transition bg-white text-slate-700 cursor-pointer"
+                >
+                  <option value="">Selecciona tu rol...</option>
+                  <option value="Auditor Líder">Auditor Líder</option>
+                  <option value="Especialista Técnico de TI">Especialista Técnico de TI</option>
+                  <option value="Oficial de Cumplimiento / CISO">Oficial de Cumplimiento / CISO</option>
+                  <option value="Consultor Externo">Consultor Externo</option>
+                  <option value="Auditor">Auditor General</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Selector de Metodología / Estructura del Cuestionario */}
+            <div className="mb-6">
+              <div className="flex items-center justify-between mb-3">
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600">
+                  Estructura del Cuestionario
+                </label>
+                <span className="text-xs text-slate-400">Selecciona el método de inicio</span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Opción 1: Base */}
+                <div
+                  onClick={() => setCreationMode('base')}
+                  className={`relative rounded-xl p-5 cursor-pointer transition-all ${
+                    creationMode === 'base'
+                      ? 'border-2 border-blue-600 bg-blue-50/20 ring-2 ring-blue-100 shadow-xs'
+                      : 'border border-slate-200 hover:border-blue-400 bg-white'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-sm">
+                      <Shield size={18} />
+                    </span>
+                    <span className="text-[10px] font-semibold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+                      Recomendado
+                    </span>
+                  </div>
+                  <h4 className="text-sm font-semibold text-slate-900 mb-1">Auditoría Estándar</h4>
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    Carga la plantilla completa ByteWise (ISO 27001, marcos NIST e infraestructura).
+                  </p>
+                </div>
+
+                {/* Opción 2: Desde Cero */}
+                <div
+                  onClick={() => setCreationMode('blank')}
+                  className={`relative rounded-xl p-5 cursor-pointer transition-all ${
+                    creationMode === 'blank'
+                      ? 'border-2 border-blue-600 bg-blue-50/20 ring-2 ring-blue-100 shadow-xs'
+                      : 'border border-slate-200 hover:border-blue-400 bg-white'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="w-8 h-8 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center font-bold text-sm">
+                      <Layers size={18} />
+                    </span>
+                    <span className="text-[10px] font-semibold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">
+                      En blanco
+                    </span>
+                  </div>
+                  <h4 className="text-sm font-semibold text-slate-900 mb-1">Desde Cero</h4>
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    Cuestionario vacío para crear dominios y controles personalizados manualmente.
+                  </p>
+                </div>
+
+                {/* Opción 3: Importación */}
+                <div
+                  onClick={() => setCreationMode('import')}
+                  className={`relative rounded-xl p-5 cursor-pointer transition-all ${
+                    creationMode === 'import'
+                      ? 'border-2 border-blue-600 bg-blue-50/20 ring-2 ring-blue-100 shadow-xs'
+                      : 'border border-slate-200 hover:border-blue-400 bg-white'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="w-8 h-8 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center font-bold text-sm">
+                      <FileSpreadsheet size={18} />
+                    </span>
+                    <span className="text-[10px] font-semibold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">
+                      Excel / JSON
+                    </span>
+                  </div>
+                  <h4 className="text-sm font-semibold text-slate-900 mb-1">Importación</h4>
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    Carga masiva de preguntas desde archivo estructurado (.xlsx o .json).
+                  </p>
+                </div>
+              </div>
+
+              {/* Panel de Importación cuando creationMode === 'import' */}
               {creationMode === 'import' && (
-                <div className="mt-3 p-4 bg-slate-50 border border-slate-300 animate-in fade-in duration-200 space-y-3">
-                  <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 border-b border-slate-200 pb-3">
+                <div className="mt-4 p-5 bg-slate-50/80 border border-slate-200 rounded-xl space-y-4 animate-in fade-in duration-200">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-200/80 pb-4">
                     <div>
                       <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                         <FileSpreadsheet size={16} className="text-emerald-600" />
-                        Plantilla oficial en Excel (.xlsx)
+                        <span>Plantilla oficial en Excel (.xlsx)</span>
                       </div>
-                      <p className="text-[11px] text-slate-500 mt-0.5">
+                      <p className="text-xs text-slate-500 mt-0.5">
                         Descarga la plantilla con las preguntas base como ejemplo, modifícala en Excel y súbela aquí.
                       </p>
                     </div>
@@ -2437,45 +3541,45 @@ const startInlineDictation = (section, id) => {
                     <button
                       type="button"
                       onClick={() => downloadExcelTemplate()}
-                      className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold cursor-pointer transition shrink-0 flex items-center gap-1.5 shadow-none"
+                      className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg transition shrink-0 flex items-center gap-1.5 shadow-2xs cursor-pointer"
                     >
                       <Download size={14} />
                       <span>Descargar Plantilla Excel</span>
                     </button>
                   </div>
 
-                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-1">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-1">
                     <div>
                       <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                        <Upload size={16} className="text-cyan-600" />
-                        Subir cuestionario diligenciado
+                        <Upload size={16} className="text-blue-600" />
+                        <span>Subir cuestionario diligenciado</span>
                       </div>
-                      <p className="text-[11px] text-slate-500 mt-0.5">
-                        Formatos soportados: <strong>.xlsx</strong>, <strong>.xls</strong> o <strong>.json</strong>.
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Formatos admitidos: <strong>.xlsx</strong>, <strong>.xls</strong> o <strong>.json</strong>.
                       </p>
                     </div>
 
-                    <label className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold cursor-pointer transition shrink-0 flex items-center gap-1.5 shadow-none">
-                      <Upload size={14} className="text-[#00d4ff]" />
-                      <span>{importedFileName ? 'Cambiar Archivo' : 'Seleccionar Archivo Excel'}</span>
+                    <label className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg cursor-pointer transition shrink-0 flex items-center gap-1.5 shadow-2xs">
+                      <Upload size={14} />
+                      <span>{importedFileName ? 'Cambiar Archivo' : 'Seleccionar Archivo'}</span>
                       <input type="file" accept=".xlsx,.xls,.json" onChange={handleGateFileImport} className="hidden" />
                     </label>
                   </div>
 
                   {importedFileName && importSummary && (
-                    <div className="mt-3 p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center justify-between">
+                    <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-lg flex items-center justify-between">
                       <div className="flex items-center gap-2 truncate">
                         <CheckCircle size={16} className="text-emerald-600 shrink-0" />
                         <span className="font-semibold truncate">{importedFileName}</span>
                       </div>
-                      <span className="text-[11px] font-bold bg-emerald-200 text-emerald-950 px-2.5 py-1 shrink-0 ml-2">
+                      <span className="text-[11px] font-bold bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-md shrink-0 ml-2">
                         {importSummary.areasCount} áreas / {importSummary.questionsCount} preguntas detectadas
                       </span>
                     </div>
                   )}
 
                   {importError && (
-                    <div className="mt-3 p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
+                    <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-lg flex items-center gap-2">
                       <X size={16} className="shrink-0" />
                       <span>{importError}</span>
                     </div>
@@ -2484,53 +3588,73 @@ const startInlineDictation = (section, id) => {
               )}
             </div>
 
-            <button
-              onClick={async () => {
-                if (!actor.nombreEmpresa.trim() || !actor.nombreAuditor.trim() || !actor.rol || !actor.contrasena.trim()) {
-                  alert("Por favor llena todos los campos obligatorios, incluyendo la contraseña, para continuar.");
-                  return;
-                }
-
-                let initialSecs = getDefaultSections();
-                if (creationMode === 'blank') {
-                  initialSecs = { 'Área Inicial': [] };
-                } else if (creationMode === 'import') {
-                  if (!importedSections || Object.keys(importedSections).length === 0) {
-                    alert("Por favor sube un archivo Excel (.xlsx) o JSON válido para importar el cuestionario.");
+            {/* Botones de Acción al Pie */}
+            <div className="flex items-center justify-end gap-3 pt-6 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => {
+                  resetToInitialState();
+                  setStep('dashboard');
+                }}
+                className="px-5 py-2.5 text-sm font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!actor.nombreEmpresa.trim() || !actor.nombreAuditor.trim() || !actor.rol || !actor.contrasena.trim()) {
+                    alert("Por favor llena todos los campos obligatorios, incluyendo la contraseña o PIN, para continuar.");
                     return;
                   }
-                  initialSecs = sortSections(importedSections);
-                }
 
-                const hashed = await hashPassword(actor.contrasena);
-                const newId = Date.now().toString();
-                const lockAcquired = await acquireLock(newId);
-                if (lockAcquired) {
-                  setCurrentAuditId(newId);
-                  setIntroData({
-                    ...INITIAL_INTRO_DATA,
-                    nombreEmpresa: actor.nombreEmpresa.trim(),
-                    nombre: actor.nombreAuditor.trim()
-                  });
-                  setResponses({});
-                  setGeneralComments('');
-                  setCustomSections(initialSecs);
-                  setExpandedSections({ 'Información General': true });
-                  setActiveSection(creationMode === 'blank' ? 'Área Inicial' : 'Información General');
-                  setActor(prev => ({ ...prev, contrasenaHash: hashed, contrasena: '' }));
-                  setStep('form');
-                }
-              }}
-              className="w-full mt-4 flex items-center justify-center gap-2 bg-slate-900 text-white font-semibold border border-slate-900 hover:bg-slate-800 px-6 py-4 rounded-none hover:bg-slate-800 transition-all font-bold shadow-none cursor-pointer"
-            >
-              Comenzar Auditoría <ChevronRight size={18} />
-            </button>
+                  let initialSecs = getDefaultSections();
+                  if (creationMode === 'blank') {
+                    initialSecs = { 'Área Inicial': [] };
+                  } else if (creationMode === 'import') {
+                    if (!importedSections || Object.keys(importedSections).length === 0) {
+                      alert("Por favor sube un archivo Excel (.xlsx) o JSON válido para importar el cuestionario.");
+                      return;
+                    }
+                    initialSecs = sortSections(importedSections);
+                  }
+
+                  const hashed = await hashPassword(actor.contrasena);
+                  const newId = Date.now().toString();
+                  const lockAcquired = await acquireLock(newId);
+                  if (lockAcquired) {
+                    setCurrentAuditId(newId);
+                    setIntroData({
+                      ...INITIAL_INTRO_DATA,
+                      nombreEmpresa: actor.nombreEmpresa.trim(),
+                      nombre: actor.nombreAuditor.trim()
+                    });
+                    setResponses({});
+                    setGeneralComments('');
+                    setCustomSections(initialSecs);
+                    setExpandedSections({ 'Información General': true });
+                    setActiveSection(creationMode === 'blank' ? 'Área Inicial' : 'Información General');
+                    setActor(prev => ({ ...prev, contrasenaHash: hashed, contrasena: '' }));
+                    logAuditEvent('create', `Nueva auditoría creada para "${actor.nombreEmpresa.trim()}"`, actor.nombreEmpresa.trim(), newId);
+                    setStep('form');
+                  }
+                }}
+                className="px-6 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm transition inline-flex items-center gap-2 cursor-pointer"
+              >
+                <span>Comenzar Auditoría</span>
+                <ChevronRight size={16} />
+              </button>
+            </div>
           </div>
-        </div>
+        </main>
+
+        {/* Modales de Acceso y Compartir en Dashboard */}
+        {renderAccessModal()}
+        {renderShareModal()}
 
         <CustomDialogModal config={modalConfig} onClose={() => setModalConfig(null)} />
-       </div>
-     );
+      </div>
+    );
   }
 
   return (
@@ -2550,228 +3674,313 @@ const startInlineDictation = (section, id) => {
         </button>
       )}
       <div className="relative z-10 max-w-6xl mx-auto">
-        {/* Dashboard Compacto */}
-        <div className="mb-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
-          
-          {/* Columna 1: Resumen y Acciones */}
-          <div className="lg:col-span-1 bg-white border border-slate-200 border-t-2 border-t-[#00d4ff] p-6 flex flex-col justify-between shadow-sm">
-            <div>
+        {/* Banner de Modo Solo Lectura (Observador) */}
+        {isReadOnly && (
+          <div className="mb-6 bg-amber-50 border border-amber-200 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3 text-amber-900 text-xs md:text-sm shadow-xs animate-in fade-in">
+            <div className="flex items-center gap-2.5">
+              <Eye size={20} className="text-amber-600 shrink-0" />
+              <span>
+                <strong>Modo Solo Lectura (Observador):</strong> Estás viendo los avances de la auditoría en tiempo real. Los cambios no se guardarán en la base de datos.
+              </span>
+            </div>
+            <button
+              onClick={handleUnlockWithPin}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-xl text-xs transition-colors shadow-2xs cursor-pointer"
+            >
+              <Lock size={13} />
+              <span>Desbloquear Edición con PIN</span>
+            </button>
+          </div>
+        )}
+
+        {/* Header de la Auditoría Activa */}
+        <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 md:p-6 mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5">
               <img
                 src={logoPng}
                 alt="ByteWise"
-                className="h-10 md:h-12 w-auto object-contain mb-4"
+                className="h-9 w-auto object-contain"
               />
-              <div className="flex items-start justify-between mb-1 gap-2">
-                <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight leading-tight">
-                  Auditoría de TI
-                </h1>
-                <div className="flex items-center gap-2">
+              <div>
+                <div className="flex items-center gap-2.5">
+                  <h1 className="text-xl md:text-2xl font-bold text-slate-900 tracking-tight">
+                    {introData.nombreEmpresa || 'Auditoría de TI'}
+                  </h1>
+                  {activeCollaborators.length > 0 && (
+                    <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-emerald-50 border border-emerald-200/60 rounded-full text-[11px] text-emerald-700 font-medium">
+                      <span className="relative flex h-1.5 w-1.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                      </span>
+                      <span>{activeCollaborators.length} en línea</span>
+                    </div>
+                  )}
+                </div>
+                <p className="text-xs md:text-sm text-slate-500 mt-0.5">
+                  {introData.giro || 'Evaluación integral de infraestructura y seguridad'}
+                </p>
+              </div>
+            </div>
+
+            {/* Botones de Acción Rápida en la esquina superior derecha */}
+            <div className="flex items-center gap-2 self-end sm:self-center">
                   {step === 'form' && !isGuestMode && (
-                    <button onClick={handleReturnToDashboard} className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-none transition cursor-pointer" title="Guardar y volver al Panel de Auditorías">
-                      <Home size={20} />
+                    <button
+                      onClick={handleReturnToDashboard}
+                      className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200/80 cursor-pointer"
+                      title="Guardar y volver al panel"
+                    >
+                      <Home size={18} />
                     </button>
                   )}
+                  {/* Botón Compartir */}
+                  <button
+                    onClick={(e) => {
+                      const currentObj = savedAudits.find(a => a.id === currentAuditId) || {
+                        id: currentAuditId,
+                        nombreEmpresa: introData.nombreEmpresa,
+                        data: { actor, introData }
+                      };
+                      handleOpenShareModal(currentObj, e);
+                    }}
+                    className="p-2 text-slate-500 hover:text-blue-600 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200/80 cursor-pointer"
+                    title="Compartir enlace seguro de auditoría"
+                  >
+                    <Share2 size={18} />
+                  </button>
+                  {/* Botón Descargar Informe */}
                   <div className="relative">
-                    <button onClick={() => { setShowExportMenu(!showExportMenu); setShowSettings(false); }} className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-none transition" title="Exportar">
-                      <Download size={20} />
+                    <button
+                      onClick={() => { setShowExportMenu(!showExportMenu); setShowSettings(false); }}
+                      className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200/80 cursor-pointer"
+                      title="Descargar informe"
+                    >
+                      <Download size={18} />
                     </button>
                     {showExportMenu && (
                       <>
                         <div className="fixed inset-0 z-40" onClick={() => setShowExportMenu(false)}></div>
-                        <div className="absolute right-0 mt-2 w-48 bg-white rounded-none shadow-none border border-slate-100 py-2 z-50">
-                        <button onClick={() => { exportToDocxPro(); setShowExportMenu(false); }} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2">
-                          <FileText size={16} /> Descargar en Word
-                        </button>
-                        <button onClick={() => { exportToExcel(); setShowExportMenu(false); }} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2">
-                          <FileSpreadsheet size={16} /> Descargar en Excel
-                        </button>
-                      </div>
+                        <div className="absolute right-0 mt-2 w-52 bg-white rounded-xl shadow-lg border border-slate-100 py-1.5 z-50 text-sm animate-in fade-in zoom-in-95 duration-150">
+                          <button
+                            onClick={() => { exportToDocxPro(); setShowExportMenu(false); }}
+                            className="w-full flex items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-slate-50 transition-colors text-left cursor-pointer"
+                          >
+                            <FileText size={16} className="text-slate-400" />
+                            <span>Descargar en Word (.docx)</span>
+                          </button>
+                          <button
+                            onClick={() => { exportToExcel(); setShowExportMenu(false); }}
+                            className="w-full flex items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-slate-50 transition-colors text-left cursor-pointer"
+                          >
+                            <FileSpreadsheet size={16} className="text-slate-400" />
+                            <span>Descargar en Excel (.xlsx)</span>
+                          </button>
+                        </div>
                       </>
                     )}
                   </div>
+                  {/* Botón Ajustes de Auditoría */}
                   {!isGuestMode && (
-                  <div className="relative">
-                    <button onClick={() => { setShowSettings(!showSettings); setShowExportMenu(false); }} className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-none transition" title="Configuración">
-                      <Settings size={20} />
-                    </button>
-                    {showSettings && (
-                      <>
-                        <div className="fixed inset-0 z-40" onClick={() => setShowSettings(false)}></div>
-                        <div className="absolute right-0 mt-2 w-52 bg-white rounded-none shadow-xl border border-slate-200 py-2 z-50">
-                        <button onClick={async () => {
-                          const url = window.location.origin + window.location.pathname + "?id=" + currentAuditId;
-                          navigator.clipboard.writeText(url);
-                          setShowSettings(false);
-                          await showAlert({
-                            type: 'success',
-                            title: 'Enlace Copiado',
-                            message: 'El enlace de acceso para esta auditoría ha sido copiado al portapapeles con éxito.'
-                          });
-                        }} className="w-full text-left px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer">
-                          <Share2 size={15} className="text-cyan-600" /> Compartir Enlace
-                        </button>
-                        <button onClick={async () => {
-                          setShowSettings(false);
-                          const oldPin = await showPrompt({
-                            title: 'Verificación de Seguridad',
-                            message: 'Ingresa tu PIN actual para autorizar el cambio:',
-                            inputType: 'password',
-                            placeholder: 'PIN actual...',
-                            confirmText: 'Verificar'
-                          });
-                          if (oldPin === null) return;
-                          const oldHash = await hashPassword(oldPin);
-                          if (oldHash !== actor.contrasenaHash) {
-                            await showAlert({
-                              type: 'error',
-                              title: 'PIN Incorrecto',
-                              message: 'El PIN actual ingresado no coincide. No se puede cambiar el PIN.'
-                            });
-                            return;
-                          }
-                          const newPin = await showPrompt({
-                            title: 'Nuevo PIN de Seguridad',
-                            message: 'Ingresa el nuevo PIN para proteger esta auditoría:',
-                            inputType: 'password',
-                            placeholder: 'Nuevo PIN...',
-                            confirmText: 'Guardar Nuevo PIN'
-                          });
-                          if (newPin) {
-                            const newHash = await hashPassword(newPin);
-                            setActor(prev => ({...prev, contrasenaHash: newHash}));
-                            await showAlert({
-                              type: 'success',
-                              title: 'PIN Actualizado',
-                              message: 'El PIN de seguridad ha sido actualizado exitosamente.'
-                            });
-                          }
-                        }} className="w-full text-left px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer">
-                          <KeyRound size={15} className="text-amber-600" /> Cambiar PIN
-                        </button>
-                        <button onClick={() => { setShowEditModal(true); setShowSettings(false); }} className="w-full text-left px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer">
-                          <Edit2 size={15} className="text-[#00d4ff]" /> Editar Cuestionario
-                        </button>
-                        <hr className="my-1 border-slate-100" />
-                        <button onClick={async () => {
-                          setShowSettings(false);
-                          const confirmed = await showConfirm({
-                            title: 'Eliminar Auditoría',
-                            message: '¿Estás seguro de que deseas eliminar esta auditoría permanentemente?\nEsta acción borrará todos los datos en la nube y no se puede deshacer.',
-                            isDanger: true,
-                            confirmText: 'Eliminar Auditoría',
-                            cancelText: 'Cancelar'
-                          });
-                          if (confirmed) {
-                            isNavigatingToHomeRef.current = true;
-                            if (db) {
-                              try {
-                                await deleteDoc(doc(db, "auditorias", currentAuditId));
-                              } catch(e) { console.error(e); }
-                            }
-                            setSavedAudits(prev => prev.filter(a => a.id !== currentAuditId));
-                            resetToInitialState();
-                            setStep('dashboard');
-                            setTimeout(() => {
-                              isNavigatingToHomeRef.current = false;
-                            }, 400);
-                          }
-                        }} className="w-full text-left px-4 py-2.5 text-xs font-bold text-rose-600 hover:bg-rose-50 flex items-center gap-2 cursor-pointer">
-                          <Trash2 size={15} /> Eliminar Auditoría
-                        </button>
-                      </div>
-                      </>
-                    )}
-                  </div>
+                    <div className="relative inline-block text-left">
+                      <button
+                        onClick={() => { setShowSettings(!showSettings); setShowExportMenu(false); }}
+                        className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200/80 cursor-pointer"
+                        title="Ajustes de auditoría"
+                      >
+                        <Settings size={18} />
+                      </button>
+                      {showSettings && (
+                        <>
+                          <div className="fixed inset-0 z-40" onClick={() => setShowSettings(false)}></div>
+                          <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-lg border border-slate-100 py-1.5 z-50 text-sm animate-in fade-in zoom-in-95 duration-150">
+                            <button
+                              onClick={async () => {
+                                setShowSettings(false);
+                                const currentObj = savedAudits.find(a => a.id === currentAuditId) || {
+                                  id: currentAuditId,
+                                  nombreEmpresa: introData.nombreEmpresa,
+                                  data: { actor, introData }
+                                };
+                                handleOpenShareModal(currentObj);
+                              }}
+                              className="w-full flex items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-slate-50 transition-colors text-left cursor-pointer"
+                            >
+                              <Share2 size={16} className="text-slate-400" />
+                              <span>Compartir Enlace</span>
+                            </button>
+                            <button
+                              onClick={async () => {
+                                setShowSettings(false);
+                                const oldPin = await showPrompt({
+                                  title: 'Verificación de Seguridad',
+                                  message: 'Ingresa tu PIN actual para autorizar el cambio:',
+                                  inputType: 'password',
+                                  placeholder: 'PIN actual...',
+                                  confirmText: 'Verificar'
+                                });
+                                if (oldPin === null) return;
+                                const oldHash = await hashPassword(oldPin);
+                                if (oldHash !== actor.contrasenaHash) {
+                                  await showAlert({
+                                    type: 'error',
+                                    title: 'PIN Incorrecto',
+                                    message: 'El PIN actual ingresado no coincide. No se puede cambiar el PIN.'
+                                  });
+                                  return;
+                                }
+                                const newPin = await showPrompt({
+                                  title: 'Nuevo PIN de Seguridad',
+                                  message: 'Ingresa el nuevo PIN para proteger esta auditoría:',
+                                  inputType: 'password',
+                                  placeholder: 'Nuevo PIN...',
+                                  confirmText: 'Guardar Nuevo PIN'
+                                });
+                                if (newPin) {
+                                  const newHash = await hashPassword(newPin);
+                                  setActor(prev => ({...prev, contrasenaHash: newHash}));
+                                  await showAlert({
+                                    type: 'success',
+                                    title: 'PIN Actualizado',
+                                    message: 'El PIN de seguridad ha sido actualizado exitosamente.'
+                                  });
+                                }
+                              }}
+                              className="w-full flex items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-slate-50 transition-colors text-left cursor-pointer"
+                            >
+                              <KeyRound size={16} className="text-slate-400" />
+                              <span>Cambiar PIN</span>
+                            </button>
+                            <button
+                              onClick={() => { setShowEditModal(true); setShowSettings(false); }}
+                              className="w-full flex items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-slate-50 transition-colors text-left cursor-pointer"
+                            >
+                              <FileCode size={16} className="text-slate-400" />
+                              <span>Editar Cuestionario</span>
+                            </button>
+                            <div className="border-t border-slate-100 my-1"></div>
+                            <button
+                              onClick={async () => {
+                                setShowSettings(false);
+                                const currentObj = savedAudits.find(a => a.id === currentAuditId) || {
+                                  id: currentAuditId,
+                                  nombreEmpresa: introData.nombreEmpresa,
+                                  data: { actor, introData }
+                                };
+                                await handleArchiveAudit(currentObj);
+                                handleReturnToDashboard();
+                              }}
+                              className="w-full flex items-center gap-2.5 px-4 py-2 text-red-600 hover:bg-red-50 transition-colors text-left font-medium cursor-pointer"
+                            >
+                              <Trash2 size={16} className="text-red-500" />
+                              <span>Eliminar Auditoría</span>
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
                   )}
                 </div>
+          </div>
+        </div>
+
+        {/* Dashboard de Métricas Limpio */}
+        <div className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-5">
+          {/* Métrica 1: Puntuación Real Obtenida */}
+          <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 flex flex-col justify-between">
+            <div className="text-xs text-slate-400 font-semibold uppercase tracking-wider">
+              Puntuación Real Obtenida
+            </div>
+            <div className="my-2">
+              <div className="text-3xl font-bold text-slate-900 tracking-tight">
+                {calculateTotalRealScore()} <span className="text-sm font-normal text-slate-400">pts</span>
               </div>
-              <p className="text-xs text-gray-500 mb-6">Evaluación integral de infraestructura y seguridad</p>
-              
-              {/* Score Dashboard */}
-              <div className="space-y-3">
-                <div className="bg-slate-50 border border-slate-200 border-l-4 border-l-[#00d4ff] p-5 shadow-sm">
-                  <div className="text-xs text-slate-500 font-semibold mb-1 uppercase tracking-wider">Puntuación Real Obtenida</div>
-                  <div className="text-3xl font-bold text-slate-900 tracking-tight">{calculateTotalRealScore()} pts</div>
-                  <div className="text-xs mt-1 font-semibold text-slate-700">{getScoreLevel(calculateTotalScore()).nivel}</div>
-                </div>
-                
-                <div className="bg-slate-50 border border-slate-200 border-l-4 border-l-cyan-600 p-5 shadow-sm mt-3">
-                  <div className="flex justify-between items-end mb-2">
-                    <div className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Avance</div>
-                    <div className="text-2xl font-bold text-slate-900 tracking-tight">{((getAnsweredQuestions() / getTotalQuestions()) * 100).toFixed(0)}%</div>
-                  </div>
-                  <div className="h-2 bg-slate-200 overflow-hidden mb-1.5 rounded-none">
-                    <div className="h-2 bg-cyan-600 transition-all duration-500" style={{ width: `${(getAnsweredQuestions() / getTotalQuestions()) * 100}%` }} />
-                  </div>
-                  <div className="text-xs text-slate-500 font-medium text-right mt-1">{getAnsweredQuestions()} de {getTotalQuestions()} completadas</div>
-                </div>
+              <div className="mt-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-100">
+                {getScoreLevel(calculateTotalScore()).nivel}
               </div>
             </div>
-
+            <div className="text-[11px] text-slate-400 font-medium">
+              Escala global ponderada de 0 a 4 puntos
+            </div>
           </div>
 
-          {/* Columna 2: Puntuación por Áreas */}
-          <div className="lg:col-span-2 bg-white border border-slate-200 border-t-2 border-t-[#00d4ff] p-6 flex flex-col shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-gray-900">Desglose por Áreas</h2>
-              <span className="text-[10px] bg-cyan-50 text-cyan-700 px-2 py-1 rounded-none font-semibold">Tiempo Real</span>
+          {/* Métrica 2: Avance */}
+          <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 flex flex-col justify-between">
+            <div className="flex justify-between items-center">
+              <div className="text-xs text-slate-400 font-semibold uppercase tracking-wider">
+                Avance General
+              </div>
+              <div className="text-2xl font-bold text-slate-900 tracking-tight">
+                {((getAnsweredQuestions() / getTotalQuestions()) * 100).toFixed(0)}%
+              </div>
             </div>
-            
-            {(() => {
-              const getAreaIcon = (areaName) => {
-                if (areaName === 'Infraestructura del Site') return <Building2 size={16} className="text-cyan-600" />;
-                if (areaName === 'Seguridad de la Información') return <Shield size={16} className="text-cyan-600" />;
-                if (areaName === 'Cláusulas ISO 27001') return <FileText size={16} className="text-cyan-600" />;
-                if (areaName === 'IA y LFPDPPP') return <Brain size={16} className="text-cyan-600" />;
-                return <Hash size={16} className="text-cyan-600" />;
-              };
+            <div className="my-3">
+              <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-blue-600 rounded-full transition-all duration-500"
+                  style={{ width: `${(getAnsweredQuestions() / getTotalQuestions()) * 100}%` }}
+                />
+              </div>
+            </div>
+            <div className="text-xs text-slate-500 font-medium">
+              {getAnsweredQuestions()} de {getTotalQuestions()} preguntas respondidas
+            </div>
+          </div>
 
-              const rows = Object.entries(calculateAreaScores());
-              return (
-                <div className="flex flex-col gap-4 h-full content-start mt-2">
-                  {rows.map(([area, data]) => {
-                    const answeredPct = data.total > 0 ? (data.answered / data.total) * 100 : 0;
-                    return (
-                      <div key={area} className="flex items-center justify-between pb-3 border-b border-gray-100 last:border-0 last:pb-0">
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div className="flex items-center justify-center shrink-0">
-                            {getAreaIcon(area)}
-                          </div>
-                          <div className="min-w-0">
-                            <div className="font-semibold text-sm text-gray-800 truncate pr-2" title={area}>{area}</div>
-                            <div className="flex items-center gap-2 mt-1">
-                               <div className="w-20 h-1 bg-gray-100 rounded-none overflow-hidden">
-                                  <div className="h-1 bg-[#00d4ff] rounded-none transition-all duration-500" style={{ width: `${answeredPct}%` }} />
-                               </div>
-                               <span className="text-[10px] text-gray-400">{data.answered}/{data.total}</span>
-                            </div>
-                          </div>
+          {/* Métrica 3: Desglose por Áreas */}
+          <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 flex flex-col justify-between">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-xs text-slate-400 font-semibold uppercase tracking-wider">
+                Desglose por Áreas
+              </div>
+              <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-medium">
+                En tiempo real
+              </span>
+            </div>
+            <div className="space-y-2 overflow-y-auto max-h-[95px] pr-1 custom-scrollbar">
+              {(() => {
+                const rows = Object.entries(calculateAreaScores());
+                return rows.map(([area, data]) => {
+                  const answeredPct = data.total > 0 ? (data.answered / data.total) * 100 : 0;
+                  return (
+                    <div key={area} className="flex items-center justify-between text-xs py-0.5">
+                      <span className="truncate text-slate-700 font-medium max-w-[130px]" title={area}>
+                        {area}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-blue-600 rounded-full transition-all duration-500"
+                            style={{ width: `${answeredPct}%` }}
+                          />
                         </div>
-                        <div className="text-right shrink-0 pl-2">
-                          <div className="font-bold text-sm text-slate-800">{data.percentage}%</div>
-                          <div className="text-[10px] text-gray-500 font-medium">{data.score} / 4</div>
-                        </div>
+                        <span className="font-semibold text-slate-800 w-8 text-right">
+                          {data.percentage}%
+                        </span>
                       </div>
-                    );
-                  })}
-                </div>
-              );
-            })()}
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+            <div className="text-[11px] text-slate-400 font-medium mt-1">
+              {Object.keys(customSections).length} dominios evaluados
+            </div>
           </div>
         </div>
 
         {/* Secciones y Navegación Lateral */}
         <div className="flex flex-col md:flex-row gap-6">
           {/* Menú Lateral (Sidebar) */}
-          <div className="w-full md:w-1/4 flex-shrink-0 space-y-2 md:sticky md:top-4 md:self-start max-h-[200px] md:max-h-[90vh] overflow-y-auto pr-2 custom-scrollbar">
-            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 ml-2">Navegación</h3>
+          <div className="w-full md:w-1/4 flex-shrink-0 space-y-1.5 md:sticky md:top-4 md:self-start max-h-[200px] md:max-h-[90vh] overflow-y-auto pr-2 custom-scrollbar">
+            <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2.5 ml-1">Navegación</h3>
             
             <button
               onClick={() => setActiveSection('Información General')}
-              className={`w-full text-left px-4 py-3 rounded-none text-sm font-semibold transition-all flex items-center justify-between ${
+              className={`w-full text-left px-3.5 py-2.5 rounded-lg text-sm transition-colors flex items-center justify-between cursor-pointer ${
                 activeSection === 'Información General' 
-                ? 'bg-cyan-50 text-cyan-700 border-l-4 border-slate-800 shadow-none' 
-                : 'text-gray-600 hover:bg-gray-100 border-l-4 border-transparent'
+                ? 'bg-blue-50 text-blue-700 font-semibold' 
+                : 'text-slate-600 hover:bg-slate-50 font-medium'
               }`}
             >
               <span className="truncate">Información General</span>
@@ -2779,22 +3988,22 @@ const startInlineDictation = (section, id) => {
 
             <button
               onClick={() => setActiveSection('Preliminar de la Empresa')}
-              className={`w-full text-left px-4 py-3 rounded-none text-sm font-semibold transition-all flex items-center justify-between ${
+              className={`w-full text-left px-3.5 py-2.5 rounded-lg text-sm transition-colors flex items-center justify-between cursor-pointer ${
                 activeSection === 'Preliminar de la Empresa' 
-                ? 'bg-cyan-50 text-cyan-700 border-l-4 border-slate-800 shadow-none' 
-                : 'text-gray-600 hover:bg-gray-100 border-l-4 border-transparent'
+                ? 'bg-blue-50 text-blue-700 font-semibold' 
+                : 'text-slate-600 hover:bg-slate-50 font-medium'
               }`}
             >
               <div className="flex items-center gap-2 truncate">
-                <Sparkles size={16} className={introData.preliminarEmpresa ? "text-[#00d4ff]" : "text-gray-400"} />
+                <Sparkles size={16} className={introData.preliminarEmpresa ? "text-blue-600" : "text-slate-400"} />
                 <span className="truncate">Preliminar de la Empresa</span>
               </div>
               {introData.preliminarEmpresa ? (
-                <span className="text-[10px] px-2 py-0.5 rounded-none bg-emerald-100 text-emerald-700 font-bold">
+                <span className="text-xs px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-medium">
                   Listo
                 </span>
               ) : (
-                <span className="text-[10px] px-2 py-0.5 rounded-none bg-cyan-100 text-cyan-700 font-bold">
+                <span className="text-xs px-2 py-0.5 rounded-md bg-slate-100 text-slate-500 font-medium">
                   IA
                 </span>
               )}
@@ -2812,15 +4021,15 @@ const startInlineDictation = (section, id) => {
                 <button
                   key={section}
                   onClick={() => setActiveSection(section)}
-                  className={`w-full text-left px-4 py-3 rounded-none text-sm font-semibold transition-all flex items-center justify-between ${
+                  className={`w-full text-left px-3.5 py-2.5 rounded-lg text-sm transition-colors flex items-center justify-between cursor-pointer ${
                     activeSection === section 
-                    ? 'bg-cyan-50 text-cyan-700 border-l-4 border-[#00d4ff] shadow-none' 
-                    : 'text-gray-600 hover:bg-gray-100 border-l-4 border-transparent'
+                    ? 'bg-blue-50 text-blue-700 font-semibold' 
+                    : 'text-slate-600 hover:bg-slate-50 font-medium'
                   }`}
                 >
                   <span className="truncate mr-2" title={section}>{section}</span>
-                  <span className={`text-[10px] px-2 py-0.5 rounded-none ${
-                    isComplete ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-200 text-gray-500'
+                  <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${
+                    isComplete ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'
                   }`}>
                     {answered}/{questions.length}
                   </span>
@@ -2830,14 +4039,14 @@ const startInlineDictation = (section, id) => {
 
             <button
               onClick={() => setActiveSection('Reporte Final')}
-              className={`w-full text-left px-4 py-3 rounded-none text-sm font-semibold transition-all flex items-center justify-between mt-6 ${
+              className={`w-full text-left px-3.5 py-2.5 rounded-lg text-sm font-semibold transition-colors flex items-center justify-between mt-4 cursor-pointer ${
                 activeSection === 'Reporte Final' 
-                ? 'bg-slate-900 text-white border-l-4 border-l-[#00d4ff] shadow-sm' 
-                : 'text-slate-700 bg-white hover:bg-slate-100 border-l-4 border-slate-200'
+                ? 'bg-slate-900 text-white shadow-xs' 
+                : 'text-slate-700 bg-white hover:bg-slate-50 border border-slate-200/80'
               }`}
             >
               <div className="flex items-center gap-2 truncate">
-                <Sparkles size={16} className={activeSection === 'Reporte Final' ? 'text-[#00d4ff]' : 'text-slate-400'} />
+                <Sparkles size={16} className={activeSection === 'Reporte Final' ? 'text-blue-400' : 'text-slate-400'} />
                 <span className="truncate">Reporte Final y Conclusiones</span>
               </div>
               {(positiveComments.trim() || negativeComments.trim() || recommendations.trim() || generalComments.trim()) && (
@@ -3612,20 +4821,21 @@ const startInlineDictation = (section, id) => {
             {Object.keys(customSections).map(section => {
               if (section !== activeSection) return null;
               return (
-                <div key={section} className="mb-4 bg-white rounded-none shadow-none overflow-hidden border border-slate-200 animate-in fade-in slide-in-from-bottom-4 duration-300">
-                  <div className="p-6 bg-slate-50 border-b flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div key={section} className="mb-6 bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-300">
+                  <div className="p-5 md:p-6 bg-slate-50/60 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div>
-                      <h2 className="text-xl font-bold text-gray-800">{section}</h2>
-                      <p className="text-sm text-gray-500">
-                        {customSections[section].length} preguntas • Promedio actual: <span className="font-bold text-cyan-600">{calculateSectionScore(section)}/4</span>
+                      <h2 className="text-xl font-bold text-slate-900 tracking-tight">{section}</h2>
+                      <p className="text-xs md:text-sm text-slate-500 mt-0.5">
+                        {customSections[section].length} preguntas configuradas • Promedio actual:{' '}
+                        <span className="font-semibold text-blue-600">{calculateSectionScore(section)}/4</span>
                       </p>
                     </div>
                   </div>
 
-                  <div className="p-6 space-y-8">
+                  <div className="p-5 md:p-6 space-y-4">
                     {(!customSections[section] || customSections[section].length === 0) ? (
-                      <div className="p-10 border-2 border-dashed border-slate-200 text-center flex flex-col items-center justify-center">
-                        <div className="w-14 h-14 bg-slate-100 flex items-center justify-center text-slate-400 mb-3">
+                      <div className="p-10 border-2 border-dashed border-slate-200 rounded-xl text-center flex flex-col items-center justify-center">
+                        <div className="w-14 h-14 bg-slate-100 rounded-xl flex items-center justify-center text-slate-400 mb-3">
                           <Plus size={28} />
                         </div>
                         <h4 className="font-bold text-slate-800 text-base">Esta área no tiene preguntas aún</h4>
@@ -3635,9 +4845,9 @@ const startInlineDictation = (section, id) => {
                         <button
                           type="button"
                           onClick={() => setShowEditModal(true)}
-                          className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold flex items-center gap-2 cursor-pointer transition shadow-none"
+                          className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-lg flex items-center gap-2 cursor-pointer transition shadow-xs"
                         >
-                          <Edit2 size={15} className="text-[#00d4ff]" /> Abrir Editor de Preguntas
+                          <Edit2 size={15} className="text-blue-400" /> Abrir Editor de Preguntas
                         </button>
                       </div>
                     ) : (
@@ -3646,59 +4856,96 @@ const startInlineDictation = (section, id) => {
                   const response = responses[key] || {};
                   
                   return (
-                    <div key={item.id} id={`question-${section}-${item.id}`} className="border-l-4 border-slate-800 pl-4 py-2 transition-all duration-500 rounded-none">
-                      <div className="flex items-start gap-2 mb-3">
-                        <span className="bg-cyan-100 text-cyan-700 px-2 py-1 rounded-none text-sm font-semibold">
-                          {item.id}
-                        </span>
-                        <p className="text-gray-700 flex-1">{item.pregunta}</p>
+                    <div
+                      key={item.id}
+                      id={`question-${section}-${item.id}`}
+                      className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 hover:border-slate-200 transition-all duration-200 group/q"
+                    >
+                      <div className="flex items-start justify-between gap-3 mb-3">
+                        <div className="flex items-start gap-2.5 flex-1">
+                          <span className="bg-slate-100 text-slate-700 px-2.5 py-0.5 rounded-md text-xs font-semibold shrink-0 mt-0.5">
+                            {item.id}
+                          </span>
+                          <p className="text-slate-900 font-medium text-sm sm:text-base leading-snug flex-1">
+                            {item.pregunta}
+                          </p>
+                        </div>
+
+                        {/* Botón de acción rápida: Editar Pregunta */}
+                        {!isGuestMode && (
+                          <button
+                            type="button"
+                            onClick={() => setEditingQuestionData({
+                              section,
+                              id: item.id,
+                              pregunta: item.pregunta,
+                              requisito: item.requisito || '',
+                              evidencia: item.evidencia || '',
+                              nota: item.nota || ''
+                            })}
+                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors opacity-80 md:opacity-0 group-hover/q:opacity-100 cursor-pointer shrink-0"
+                            title="Editar pregunta"
+                          >
+                            <Edit2 size={15} />
+                          </button>
+                        )}
                       </div>
 
-
-
                       {item.requisito && (
-                        <p className="text-xs text-gray-500 italic mb-3 flex items-center gap-1.5"><FileText size={14} className="shrink-0" /> {item.requisito}</p>
+                        <p className="text-xs text-slate-500 italic mb-2.5 flex items-center gap-1.5 pl-0.5">
+                          <FileText size={14} className="shrink-0 text-slate-400" /> {item.requisito}
+                        </p>
                       )}
 
                       {item.nota && (
-                        <p className="text-xs text-green-700 bg-green-50 px-3 py-2 rounded-none mb-3 flex items-center gap-1.5">
-                          <CheckCircle size={14} className="shrink-0" /> {item.nota}
+                        <p className="text-xs text-emerald-800 bg-emerald-50/80 border border-emerald-100 px-3 py-2 rounded-lg mb-2.5 flex items-center gap-1.5">
+                          <CheckCircle size={14} className="shrink-0 text-emerald-600" /> {item.nota}
                         </p>
                       )}
 
                       {item.evidencia && (
-                        <p className="text-xs text-blue-600 mb-3 flex items-center gap-1.5">
-                          <Search size={14} className="shrink-0" /> Evidencia sugerida: {item.evidencia}
+                        <p className="text-xs text-blue-700 bg-blue-50/50 border border-blue-100/70 px-3 py-1.5 rounded-lg mb-3 flex items-center gap-1.5">
+                          <Search size={14} className="shrink-0 text-blue-500" /> <span className="font-medium">Evidencia sugerida:</span> {item.evidencia}
                         </p>
                       )}
 
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3 border-t border-slate-100">
                         <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-2">
-                            Evaluación (0-4)
-                          </label>
-                          <div className="bg-blue-50 border border-blue-200 rounded-none p-3 mb-3 text-xs text-blue-800">
-                            <div className="font-bold mb-1">Escala de Evaluación:</div>
+                          <div className="flex items-center justify-between mb-2">
+                            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                              Evaluación (0-4)
+                            </label>
+                            {response.evaluacion !== undefined && (
+                              <span className="text-xs font-semibold text-blue-600">
+                                Seleccionado: {response.evaluacion}/4
+                              </span>
+                            )}
+                          </div>
+                          
+                          <div className="bg-slate-50 border border-slate-200/80 rounded-lg p-2.5 mb-2.5 text-[11px] text-slate-600">
+                            <div className="font-semibold text-slate-700 mb-0.5">Criterio de Evaluación:</div>
                             {(item.escalaEvaluacion || GENERIC_EVALUATION_SCALE).map((line, index) => (
-                              <div key={`${item.id}-${index}`}>{line}</div>
+                              <div key={`${item.id}-${index}`} className="leading-tight">{line}</div>
                             ))}
                           </div>
+
                           <div className="flex gap-2">
                             {[0, 1, 2, 3, 4].map(score => (
                               <button
                                 key={score}
+                                type="button"
                                 onClick={() => updateResponse(section, item.id, 'evaluacion', score)}
-                                className={`w-12 h-12 rounded-none font-bold transition-all ${
+                                className={`w-11 h-11 rounded-lg font-bold text-sm transition-all cursor-pointer flex items-center justify-center ${
                                   response.evaluacion === score
-                                    ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-slate-100 shadow-none scale-110'
-                                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                    ? 'bg-blue-600 text-white shadow-xs ring-2 ring-blue-600 ring-offset-2'
+                                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200/80'
                                 }`}
                                 title={
-                                  score === 0 ? 'No existe' :
-                                  score === 1 ? 'Existe informalmente' :
-                                  score === 2 ? 'Parcialmente documentado' :
-                                  score === 3 ? 'Documentado y aplicado' :
-                                  'Óptimo, aprobado y en mejora continua'
+                                  score === 0 ? '0 - No existe' :
+                                  score === 1 ? '1 - Existe informalmente' :
+                                  score === 2 ? '2 - Parcialmente documentado' :
+                                  score === 3 ? '3 - Documentado y aplicado' :
+                                  '4 - Óptimo, aprobado y en mejora continua'
                                 }
                               >
                                 {score}
@@ -3708,60 +4955,73 @@ const startInlineDictation = (section, id) => {
                         </div>
 
                         <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-2">
-                            Evidencia
+                          <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
+                            Evidencia Documental
                           </label>
                           <input
                             type="text"
                             value={response.evidencia || ''}
                             onChange={(e) => updateResponse(section, item.id, 'evidencia', e.target.value)}
-                            placeholder="Documentos, sistemas, procesos..."
-                            className="w-full px-4 py-2 border border-gray-300 rounded-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                            placeholder="Documentos, capturas, políticas, tickets..."
+                            className="w-full px-3.5 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-blue-600 transition"
                           />
                         </div>
-                        
                       </div>
 
-                      <div className="mt-3">
-                        <div className="flex justify-between items-end mb-2">
-                          <label className="block text-sm font-semibold text-gray-700">
-                            Observaciones
+                      <div className="mt-4 pt-3 border-t border-slate-100">
+                        <div className="flex justify-between items-center mb-2">
+                          <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                            Observaciones y Hallazgos
                           </label>
                           <div className="flex gap-2">
                             <button
+                              type="button"
                               onClick={() => startInlineDictation(section, item.id)}
-                              className={`p-1.5 rounded-none transition-all shadow-none flex items-center gap-1 text-xs font-semibold ${dictatingKey === key ? 'bg-red-500 text-slate-100 animate-pulse' : 'bg-white border border-gray-200 text-slate-600 hover:bg-slate-50'}`}
-                              title={dictatingKey === key ? "Detener dictado" : "Dictar observación"}
+                              className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1.5 text-xs font-medium cursor-pointer ${
+                                dictatingKey === key 
+                                  ? 'bg-red-500 text-white animate-pulse' 
+                                  : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                              }`}
+                              title={dictatingKey === key ? "Detener dictado" : "Dictar observación por voz"}
                             >
                               <Mic size={14} /> {dictatingKey === key ? "Escuchando..." : "Dictar"}
                             </button>
                             <button
+                              type="button"
                               onClick={() => rewriteObservationWithAI(section, item)}
                               disabled={rewritingKey === key || !response.observaciones}
-                              className={`p-1.5 rounded-none transition-all shadow-none flex items-center gap-1 text-xs font-semibold ${rewritingKey === key ? 'bg-cyan-100 text-cyan-700 animate-pulse' : !response.observaciones ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-slate-800 text-white font-medium border border-slate-800 hover:bg-slate-700 hover:shadow-none hover:scale-105'}`}
+                              className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1.5 text-xs font-medium cursor-pointer ${
+                                rewritingKey === key 
+                                  ? 'bg-blue-100 text-blue-700 animate-pulse' 
+                                  : !response.observaciones 
+                                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed' 
+                                    : 'bg-slate-900 text-white hover:bg-slate-800'
+                              }`}
                               title="Mejorar redacción con IA"
                             >
-                              <Sparkles size={14} /> IA
+                              <Sparkles size={14} /> {rewritingKey === key ? 'Optimizando...' : 'Mejorar con IA'}
                             </button>
                           </div>
                         </div>
                         <textarea
                           value={response.observaciones || ''}
                           onChange={(e) => updateResponse(section, item.id, 'observaciones', e.target.value)}
-                          placeholder="Dicta o escribe tus hallazgos, luego presiona el botón IA para estructurarlo..."
+                          placeholder="Escribe o dicta los hallazgos observados..."
                           rows="3"
-                          className={`w-full px-3 py-2 border border-slate-300 resize-y transition-colors focus:border-slate-800 focus:outline-none rounded-none ${dictatingKey === key ? 'border-red-400 bg-red-50/30' : 'border-gray-200 focus:ring-2 focus:ring-cyan-500 focus:border-transparent'}`}
+                          className={`w-full px-3.5 py-2.5 text-sm bg-white border border-slate-200 rounded-lg resize-y transition-colors focus:ring-2 focus:ring-blue-600 focus:border-blue-600 ${
+                            dictatingKey === key ? 'border-red-400 bg-red-50/20' : ''
+                          }`}
                         />
                       </div>
 
                       {/* Renderizar Subpreguntas/Preguntas Guía Guardadas al final de las observaciones */}
                       {item.subquestions && item.subquestions.length > 0 && (
-                        <div className="mt-4 mb-3 bg-slate-50 border border-slate-200 p-3 space-y-2 animate-in fade-in duration-200">
+                        <div className="mt-4 mb-3 bg-slate-50 border border-slate-200/80 rounded-lg p-3 space-y-2 animate-in fade-in duration-200">
                           <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider block mb-1">
                             Preguntas Guía Sugeridas (Para obtener más información):
                           </span>
                           {item.subquestions.map(sub => (
-                            <div key={sub.id} className="text-xs text-slate-700 space-y-1.5 pl-2 border-l-2 border-slate-300 pb-2 border-b border-slate-200/50 last:border-b-0 last:pb-0">
+                            <div key={sub.id} className="text-xs text-slate-700 space-y-1.5 pl-2.5 border-l-2 border-blue-400 pb-2 border-b border-slate-200/60 last:border-b-0 last:pb-0">
                               <div className="flex items-start justify-between gap-2">
                                 <span className="italic font-medium flex-1">
                                   • {sub.texto}
@@ -3770,7 +5030,7 @@ const startInlineDictation = (section, id) => {
                                   <button
                                     type="button"
                                     onClick={() => deleteSubquestion(section, item.id, sub.id)}
-                                    className="text-gray-400 hover:text-red-600 transition shrink-0 bg-transparent border-0 cursor-pointer"
+                                    className="text-slate-400 hover:text-red-600 transition shrink-0 bg-transparent border-0 cursor-pointer"
                                     title="Eliminar pregunta guía"
                                   >
                                     <X size={12} />
@@ -3782,7 +5042,7 @@ const startInlineDictation = (section, id) => {
                                 value={sub.respuesta || ''}
                                 onChange={(e) => updateSubquestionResponse(section, item.id, sub.id, e.target.value)}
                                 placeholder="Escribe aquí la respuesta a esta pregunta sugerida..."
-                                className="w-full px-2.5 py-1 bg-white border border-slate-200 text-xs focus:border-slate-800 focus:outline-none transition-colors rounded-none font-normal"
+                                className="w-full px-2.5 py-1 bg-white border border-slate-200 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 rounded-md font-normal transition"
                               />
                             </div>
                           ))}
@@ -3797,7 +5057,7 @@ const startInlineDictation = (section, id) => {
                             setAddingSubFor(key);
                             setSubpromptText('');
                           }}
-                          className="mt-2 mb-1 flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-800 transition cursor-pointer"
+                          className="mt-2.5 mb-1 inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-800 transition cursor-pointer"
                           title="Añadir pregunta sugerida"
                         >
                           <Plus size={14} /> Añadir pregunta guía
@@ -3806,22 +5066,22 @@ const startInlineDictation = (section, id) => {
 
                       {/* Formulario Inline para Añadir Subpregunta */}
                       {addingSubFor === key && (
-                        <div className="mt-3 mb-2 bg-slate-50 border border-slate-200 p-4 animate-in fade-in duration-200">
-                          <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase">
+                        <div className="mt-3 mb-2 bg-slate-50 border border-slate-200 rounded-xl p-4 animate-in fade-in duration-200">
+                          <label className="block text-xs font-semibold text-slate-700 mb-1.5 uppercase">
                             ¿De qué se trata la pregunta guía sugerida?
                           </label>
                           <textarea
                             value={subpromptText}
                             onChange={(e) => setSubpromptText(e.target.value)}
                             placeholder="Escribe el tema (ej: 'mfa en correos corporativos') o ingresa la pregunta directamente..."
-                            className="w-full text-xs px-3 py-2 bg-white border border-slate-300 focus:border-slate-800 focus:outline-none transition-colors rounded-none mb-3 resize-y"
+                            className="w-full text-xs px-3 py-2 bg-white border border-slate-200 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition rounded-lg mb-3 resize-y"
                             rows={2}
                           />
                           <div className="flex flex-wrap gap-2 justify-end">
                             <button
                               type="button"
                               onClick={() => setAddingSubFor(null)}
-                              className="bg-white text-slate-700 text-xs font-semibold border border-slate-300 hover:bg-slate-100 px-3 py-1.5 rounded-none transition cursor-pointer"
+                              className="bg-white text-slate-700 text-xs font-medium border border-slate-200 hover:bg-slate-100 px-3 py-1.5 rounded-lg transition cursor-pointer"
                             >
                               Cancelar
                             </button>
@@ -3829,7 +5089,7 @@ const startInlineDictation = (section, id) => {
                               type="button"
                               onClick={() => generateSubquestionWithAI(item.pregunta)}
                               disabled={isGeneratingSub}
-                              className="bg-indigo-50 text-indigo-700 text-xs font-semibold border border-indigo-200 hover:bg-indigo-100 px-3 py-1.5 rounded-none transition cursor-pointer flex items-center gap-1"
+                              className="bg-blue-50 text-blue-700 text-xs font-medium border border-blue-200 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1"
                             >
                               <Sparkles size={12} className={isGeneratingSub ? "animate-pulse" : ""} />
                               {isGeneratingSub ? 'Generando...' : 'Mejorar con IA'}
@@ -3837,7 +5097,7 @@ const startInlineDictation = (section, id) => {
                             <button
                               type="button"
                               onClick={() => saveSubquestion(section, item.id)}
-                              className="bg-slate-900 text-white text-xs font-semibold border border-slate-900 hover:bg-slate-800 px-3 py-1.5 rounded-none transition cursor-pointer"
+                              className="bg-slate-900 text-white text-xs font-medium hover:bg-slate-800 px-3 py-1.5 rounded-lg transition cursor-pointer"
                             >
                               Guardar Sugerencia
                             </button>
@@ -3871,6 +5131,106 @@ const startInlineDictation = (section, id) => {
           setCustomSections(newSections);
         }}
       />
+
+      {renderAccessModal()}
+
+      {renderShareModal()}
+
+      {/* Modal Ágil de Edición de Pregunta */}
+      {editingQuestionData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-100 max-w-lg w-full overflow-hidden animate-in zoom-in-95 duration-150">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <span className="text-[11px] font-semibold text-blue-600 uppercase tracking-wider block">
+                  Edición Rápida • {editingQuestionData.section}
+                </span>
+                <h3 className="text-base font-bold text-slate-900 mt-0.5">
+                  Modificar Pregunta {editingQuestionData.id}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingQuestionData(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveQuickEditQuestion} className="p-5 space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Enunciado de la Pregunta <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  required
+                  rows="3"
+                  value={editingQuestionData.pregunta}
+                  onChange={(e) => setEditingQuestionData(prev => ({ ...prev, pregunta: e.target.value }))}
+                  className="w-full px-3.5 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-blue-600 transition resize-y"
+                  placeholder="Escribe la formulación clara de la pregunta..."
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Guía o Requisito Normativo
+                </label>
+                <input
+                  type="text"
+                  value={editingQuestionData.requisito}
+                  onChange={(e) => setEditingQuestionData(prev => ({ ...prev, requisito: e.target.value }))}
+                  className="w-full px-3.5 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-blue-600 transition"
+                  placeholder="Ej. ISO 27001 A.8.1 / Política interna..."
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Evidencia Sugerida
+                </label>
+                <input
+                  type="text"
+                  value={editingQuestionData.evidencia}
+                  onChange={(e) => setEditingQuestionData(prev => ({ ...prev, evidencia: e.target.value }))}
+                  className="w-full px-3.5 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-blue-600 transition"
+                  placeholder="Ej. Matriz de riesgos, tickets de soporte, capturas..."
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Nota Explicativa (Opcional)
+                </label>
+                <input
+                  type="text"
+                  value={editingQuestionData.nota}
+                  onChange={(e) => setEditingQuestionData(prev => ({ ...prev, nota: e.target.value }))}
+                  className="w-full px-3.5 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-blue-600 transition"
+                  placeholder="Ej. Criterio de aceptación para auditor..."
+                />
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setEditingQuestionData(null)}
+                  className="px-4 py-2 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs transition cursor-pointer"
+                >
+                  Guardar Cambios
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       <CustomDialogModal config={modalConfig} onClose={() => setModalConfig(null)} />
     </div>
