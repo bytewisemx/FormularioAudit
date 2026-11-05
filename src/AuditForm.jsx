@@ -1412,7 +1412,7 @@ const updateSubquestionResponse = (section, itemId, subId, respuestaVal) => {
 const handleSaveQuickEditQuestion = (e) => {
   if (e) e.preventDefault();
   if (!editingQuestionData) return;
-  const { section, id, pregunta, requisito, evidencia, nota } = editingQuestionData;
+  const { section, id, pregunta, requisito, evidencia, nota, escalaEvaluacion } = editingQuestionData;
   setCustomSections(prev => {
     const updated = { ...prev };
     const list = [...(updated[section] || [])];
@@ -1423,7 +1423,10 @@ const handleSaveQuickEditQuestion = (e) => {
         pregunta: (pregunta || '').trim(),
         requisito: (requisito || '').trim(),
         evidencia: (evidencia || '').trim(),
-        nota: (nota || '').trim()
+        nota: (nota || '').trim(),
+        escalaEvaluacion: Array.isArray(escalaEvaluacion)
+          ? escalaEvaluacion.map(s => (s || '').trim())
+          : list[idx].escalaEvaluacion
       };
       updated[section] = list;
     }
@@ -4964,16 +4967,25 @@ const startInlineDictation = (section, id) => {
                         {!isGuestMode && (
                           <button
                             type="button"
-                            onClick={() => setEditingQuestionData({
-                              section,
-                              id: item.id,
-                              pregunta: item.pregunta,
-                              requisito: item.requisito || '',
-                              evidencia: item.evidencia || '',
-                              nota: item.nota || ''
-                            })}
+                            onClick={() => {
+                              const currentScale = item.escalaEvaluacion && Array.isArray(item.escalaEvaluacion) && item.escalaEvaluacion.length > 0
+                                ? [...item.escalaEvaluacion]
+                                : [...GENERIC_EVALUATION_SCALE];
+                              while (currentScale.length < 5) {
+                                currentScale.push(GENERIC_EVALUATION_SCALE[currentScale.length] || '');
+                              }
+                              setEditingQuestionData({
+                                section,
+                                id: item.id,
+                                pregunta: item.pregunta,
+                                requisito: item.requisito || '',
+                                evidencia: item.evidencia || '',
+                                nota: item.nota || '',
+                                escalaEvaluacion: currentScale
+                              });
+                            }}
                             className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors opacity-80 md:opacity-0 group-hover/q:opacity-100 cursor-pointer shrink-0"
-                            title="Editar pregunta"
+                            title="Editar pregunta y criterios de evaluación"
                           >
                             <Edit2 size={15} />
                           </button>
@@ -5029,13 +5041,7 @@ const startInlineDictation = (section, id) => {
                                     ? 'bg-blue-600 text-white shadow-xs ring-2 ring-blue-600 ring-offset-2'
                                     : 'bg-slate-100 text-slate-700 hover:bg-slate-200/80'
                                 }`}
-                                title={
-                                  score === 0 ? '0 - No existe' :
-                                  score === 1 ? '1 - Existe informalmente' :
-                                  score === 2 ? '2 - Parcialmente documentado' :
-                                  score === 3 ? '3 - Documentado y aplicado' :
-                                  '4 - Óptimo, aprobado y en mejora continua'
-                                }
+                                title={item.escalaEvaluacion?.[score] || GENERIC_EVALUATION_SCALE[score]}
                               >
                                 {score}
                               </button>
@@ -5225,11 +5231,11 @@ const startInlineDictation = (section, id) => {
 
       {renderShareModal()}
 
-      {/* Modal Ágil de Edición de Pregunta */}
+      {/* Modal Ágil de Edición de Pregunta y Parámetros */}
       {editingQuestionData && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl shadow-xl border border-slate-100 max-w-lg w-full overflow-hidden animate-in zoom-in-95 duration-150">
-            <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-100 max-w-2xl w-full overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-150">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-slate-50/50">
               <div>
                 <span className="text-[11px] font-semibold text-blue-600 uppercase tracking-wider block">
                   Edición Rápida • {editingQuestionData.section}
@@ -5242,12 +5248,13 @@ const startInlineDictation = (section, id) => {
                 type="button"
                 onClick={() => setEditingQuestionData(null)}
                 className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition cursor-pointer"
+                title="Cerrar"
               >
                 <X size={18} />
               </button>
             </div>
 
-            <form onSubmit={handleSaveQuickEditQuestion} className="p-5 space-y-4">
+            <form onSubmit={handleSaveQuickEditQuestion} className="p-6 space-y-4 overflow-y-auto flex-1">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                   Enunciado de la Pregunta <span className="text-red-500">*</span>
@@ -5262,30 +5269,32 @@ const startInlineDictation = (section, id) => {
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  Guía o Requisito Normativo
-                </label>
-                <input
-                  type="text"
-                  value={editingQuestionData.requisito}
-                  onChange={(e) => setEditingQuestionData(prev => ({ ...prev, requisito: e.target.value }))}
-                  className="w-full px-3.5 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-blue-600 transition"
-                  placeholder="Ej. ISO 27001 A.8.1 / Política interna..."
-                />
-              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Guía o Requisito Normativo
+                  </label>
+                  <input
+                    type="text"
+                    value={editingQuestionData.requisito}
+                    onChange={(e) => setEditingQuestionData(prev => ({ ...prev, requisito: e.target.value }))}
+                    className="w-full px-3.5 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-blue-600 transition"
+                    placeholder="Ej. ISO 27001 A.8.1 / Política interna..."
+                  />
+                </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  Evidencia Sugerida
-                </label>
-                <input
-                  type="text"
-                  value={editingQuestionData.evidencia}
-                  onChange={(e) => setEditingQuestionData(prev => ({ ...prev, evidencia: e.target.value }))}
-                  className="w-full px-3.5 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-blue-600 transition"
-                  placeholder="Ej. Matriz de riesgos, tickets de soporte, capturas..."
-                />
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Evidencia Sugerida
+                  </label>
+                  <input
+                    type="text"
+                    value={editingQuestionData.evidencia}
+                    onChange={(e) => setEditingQuestionData(prev => ({ ...prev, evidencia: e.target.value }))}
+                    className="w-full px-3.5 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-blue-600 transition"
+                    placeholder="Ej. Matriz de riesgos, tickets de soporte, capturas..."
+                  />
+                </div>
               </div>
 
               <div>
@@ -5301,7 +5310,64 @@ const startInlineDictation = (section, id) => {
                 />
               </div>
 
-              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2.5">
+              {/* Criterios / Parámetros de Evaluación (Escala 0 a 4) */}
+              <div className="pt-2 border-t border-slate-100">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 mb-2.5">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-800">
+                      Criterio o Parámetro de Evaluación (Escala 0 a 4)
+                    </label>
+                    <p className="text-[11px] text-slate-500">
+                      Define la descripción o condición esperada para cada puntaje de madurez en esta pregunta.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setEditingQuestionData(prev => ({
+                      ...prev,
+                      escalaEvaluacion: [...GENERIC_EVALUATION_SCALE]
+                    }))}
+                    className="text-[11px] text-blue-600 hover:text-blue-800 font-medium hover:underline self-start sm:self-auto cursor-pointer"
+                  >
+                    Restablecer escala estándar
+                  </button>
+                </div>
+
+                <div className="bg-slate-50/80 border border-slate-200/80 rounded-xl p-3.5 space-y-2.5">
+                  {[0, 1, 2, 3, 4].map((score) => {
+                    const badgeStyles = [
+                      'bg-rose-50 text-rose-700 border-rose-200/60',
+                      'bg-amber-50 text-amber-700 border-amber-200/60',
+                      'bg-blue-50 text-blue-700 border-blue-200/60',
+                      'bg-indigo-50 text-indigo-700 border-indigo-200/60',
+                      'bg-emerald-50 text-emerald-700 border-emerald-200/60',
+                    ];
+                    return (
+                      <div key={score} className="flex items-center gap-2.5">
+                        <span className={`w-7 h-7 rounded-lg text-xs font-bold flex items-center justify-center shrink-0 border ${badgeStyles[score]}`}>
+                          {score}
+                        </span>
+                        <input
+                          type="text"
+                          value={editingQuestionData.escalaEvaluacion?.[score] ?? ''}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setEditingQuestionData(prev => {
+                              const newScale = prev.escalaEvaluacion ? [...prev.escalaEvaluacion] : [...GENERIC_EVALUATION_SCALE];
+                              newScale[score] = val;
+                              return { ...prev, escalaEvaluacion: newScale };
+                            });
+                          }}
+                          className="flex-1 px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-blue-600 transition"
+                          placeholder={`Criterio para puntuación ${score}...`}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2.5 shrink-0">
                 <button
                   type="button"
                   onClick={() => setEditingQuestionData(null)}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Plus, Trash2, Edit2, Save, FileText, CheckCircle, Search, Sparkles, RotateCcw, Upload, Download, FileSpreadsheet, Loader2 } from 'lucide-react';
+import { X, Plus, Trash2, Edit2, Save, FileText, CheckCircle, Search, Sparkles, RotateCcw, Upload, Download, FileSpreadsheet, Loader2, Layers } from 'lucide-react';
 import { DEFAULT_SECTIONS } from '../defaultSections';
 import { downloadExcelTemplate, parseQuestionsFile } from '../excelTemplateHelper';
 import CustomDialogModal from './CustomDialogModal';
@@ -480,6 +480,62 @@ const EditQuestionsModal = ({ isOpen, onClose, initialSections, onSave }) => {
                                 className="w-full text-sm p-2 border border-slate-300 focus:border-cyan-500 focus:outline-none"
                                 placeholder="Ej: Cubre: UPS, planta, enlaces..."
                              />
+                          </div>
+
+                          {/* Criterios / Parámetros de Evaluación (Escala 0 a 4) */}
+                          <div className="pt-2 border-t border-slate-100">
+                            <div className="flex items-center justify-between mb-1.5">
+                              <label className="block text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                                <Layers size={13} className="text-blue-600" />
+                                <span>Criterios de Evaluación (Escala 0 a 4)</span>
+                              </label>
+                              <button
+                                type="button"
+                                onClick={() => updateQuestion(selectedArea, q.id, 'escalaEvaluacion', [
+                                  '0 - No existe',
+                                  '1 - Existe informalmente',
+                                  '2 - Parcialmente documentado',
+                                  '3 - Documentado y aplicado',
+                                  '4 - Óptimo, aprobado y en mejora continua'
+                                ])}
+                                className="text-[11px] text-blue-600 hover:text-blue-800 font-medium hover:underline cursor-pointer"
+                              >
+                                Restablecer escala estándar
+                              </button>
+                            </div>
+                            
+                            <div className="grid grid-cols-1 gap-1.5 bg-slate-50 p-2.5 rounded-lg border border-slate-200/80">
+                              {[0, 1, 2, 3, 4].map(score => {
+                                const currentScale = Array.isArray(q.escalaEvaluacion) && q.escalaEvaluacion.length > 0
+                                  ? q.escalaEvaluacion
+                                  : [
+                                      '0 - No existe',
+                                      '1 - Existe informalmente',
+                                      '2 - Parcialmente documentado',
+                                      '3 - Documentado y aplicado',
+                                      '4 - Óptimo, aprobado y en mejora continua'
+                                    ];
+                                return (
+                                  <div key={score} className="flex items-center gap-2">
+                                    <span className="w-6 h-6 rounded bg-slate-200 text-slate-700 text-xs font-bold flex items-center justify-center shrink-0">
+                                      {score}
+                                    </span>
+                                    <input
+                                      type="text"
+                                      value={currentScale[score] || ''}
+                                      onChange={(e) => {
+                                        const newArr = [...currentScale];
+                                        while (newArr.length < 5) newArr.push('');
+                                        newArr[score] = e.target.value;
+                                        updateQuestion(selectedArea, q.id, 'escalaEvaluacion', newArr);
+                                      }}
+                                      className="flex-1 text-xs p-1.5 bg-white border border-slate-200 rounded focus:border-blue-600 focus:outline-none"
+                                      placeholder={`Criterio para puntuación ${score}...`}
+                                    />
+                                  </div>
+                                );
+                              })}
+                            </div>
                           </div>
                         </div>
                       </div>
