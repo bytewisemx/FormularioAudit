@@ -1,7 +1,7 @@
 import { DEFAULT_SECTIONS } from "./defaultSections";
 
 import React, { useEffect, useState } from 'react';
-import { ChevronDown, ChevronUp, ChevronRight, Download, FileText, FileSpreadsheet, RefreshCw, Mic, Sparkles, Building2, Shield, Brain, Hash, CheckCircle, Search, Settings, Share2, KeyRound, Trash2, Home, Plus, X, Globe, Copy, Check, ExternalLink, Loader2, Upload, FileCode, Layers, ArrowLeft, Calendar, User, Users, BarChart2, ThumbsUp, ThumbsDown, AlertTriangle, Lightbulb, LayoutGrid, List, CheckCircle2, Maximize2, Minimize2, LogOut, Pin, Lock, Archive, History, RotateCcw, Eye, EyeOff } from 'lucide-react';
+import { ChevronDown, ChevronUp, ChevronRight, Download, FileText, FileSpreadsheet, RefreshCw, Mic, Sparkles, Building2, Shield, Brain, Hash, CheckCircle, Search, Settings, Share2, KeyRound, Trash2, Home, Plus, X, Globe, Copy, Check, ExternalLink, Loader2, Upload, FileCode, Layers, ArrowLeft, Calendar, User, Users, BarChart2, ThumbsUp, ThumbsDown, AlertTriangle, Lightbulb, LayoutGrid, List, CheckCircle2, Maximize2, Minimize2, LogOut, Pin, Lock, Unlock, Archive, History, RotateCcw, Eye, EyeOff } from 'lucide-react';
 import { downloadExcelTemplate, parseQuestionsFile } from './excelTemplateHelper';
 import { db, auth } from "./firebase";
 import { collection, doc, setDoc, getDoc, updateDoc, getDocs, deleteDoc, onSnapshot } from "firebase/firestore";
@@ -268,6 +268,8 @@ const AuditForm = () => {
   const [guestAuditToLoad, setGuestAuditToLoad] = useState(null);
   const [user, setUser] = useState(null);
   const [currentUserRole, setCurrentUserRole] = useState(null); // 'admin' | 'auditor' | 'viewer' | 'guest'
+  const [currentUserBypassPin, setCurrentUserBypassPin] = useState(false);
+  const [globalPinBypass, setGlobalPinBypass] = useState(false);
   const [isReadOnly, setIsReadOnly] = useState(false);
   const [activeCollaborators, setActiveCollaborators] = useState([]);
   const [accessModalAudit, setAccessModalAudit] = useState(null);
@@ -464,15 +466,16 @@ const AuditForm = () => {
 
   const handleLoadAudit = async (audit) => {
     const isAdmin = currentUserRole === 'admin' || user?.email?.toLowerCase() === 'thomason.mx@gmail.com';
+    const canBypassPin = isAdmin || globalPinBypass || currentUserBypassPin;
     const savedHash = audit.data?.actor?.contrasenaHash || audit.actor?.contrasenaHash || audit.contrasenaHash;
 
-    // Si es Administrador o la auditoría no cuenta con PIN protector, acceder directo en Modo Edición
-    if (isAdmin || !savedHash) {
+    // Si tiene permiso de bypass de PIN, es Administrador o la auditoría no cuenta con PIN protector, acceder directo en Modo Edición
+    if (canBypassPin || !savedHash) {
       handleProceedLoad(audit, false);
       return;
     }
 
-    // Si tiene PIN y el usuario es estándar: abrir modal con opciones de Edición (con PIN) o Modo Solo Lectura
+    // Si tiene PIN y el usuario requiere validación: abrir modal con opciones de Edición (con PIN) o Modo Solo Lectura
     setAccessPinInput('');
     setAccessPinError('');
     setAccessModalAudit(audit);
@@ -499,6 +502,18 @@ const AuditForm = () => {
   };
 
   const handleUnlockWithPin = async () => {
+    const isAdmin = currentUserRole === 'admin' || user?.email?.toLowerCase() === 'thomason.mx@gmail.com';
+    const canBypassPin = isAdmin || globalPinBypass || currentUserBypassPin;
+    if (canBypassPin) {
+      setIsReadOnly(false);
+      await showAlert({
+        type: 'success',
+        title: 'Modo Edición Habilitado',
+        message: 'Tienes permiso de acceso a auditorías sin PIN. Se ha habilitado la edición completa.'
+      });
+      return;
+    }
+
     const targetAudit = savedAudits.find(a => a.id === currentAuditId);
     const savedHash = actor.contrasenaHash || targetAudit?.data?.actor?.contrasenaHash;
     if (!savedHash) {
@@ -624,6 +639,7 @@ const AuditForm = () => {
   const handlePermanentDeleteAudit = async (audit) => {
     const nombre = audit.nombreEmpresa || audit.data?.introData?.nombreEmpresa || 'esta auditoría';
     const isAdmin = currentUserRole === 'admin' || user?.email?.toLowerCase() === 'thomason.mx@gmail.com';
+    const canBypassPin = isAdmin || globalPinBypass || currentUserBypassPin;
 
     const confirmed = await showConfirm({
       title: 'Eliminación Definitiva',
@@ -635,8 +651,8 @@ const AuditForm = () => {
     if (!confirmed) return;
 
     const savedHash = audit.data?.actor?.contrasenaHash;
-    // Si NO es Administrador y la auditoría cuenta con PIN, se solicita verificación de PIN
-    if (!isAdmin && savedHash) {
+    // Si NO cuenta con privilegio de bypass de PIN y la auditoría tiene PIN, se solicita verificación
+    if (!canBypassPin && savedHash) {
       const pin = await showPrompt({
         title: 'Verificación de Seguridad',
         message: `Esta auditoría está protegida con PIN. Ingresa el PIN para autorizar la eliminación definitiva de "${nombre}":`,
@@ -693,8 +709,10 @@ const AuditForm = () => {
       if (currentUser) {
         if (currentUser.isAnonymous) {
           setCurrentUserRole('guest');
+          setCurrentUserBypassPin(false);
         } else if (currentUser.email?.toLowerCase() === 'thomason.mx@gmail.com') {
           setCurrentUserRole('admin');
+          setCurrentUserBypassPin(true);
         } else {
           try {
             if (db && currentUser.email) {
@@ -703,6 +721,7 @@ const AuditForm = () => {
               if (emailDoc.exists()) {
                 const data = emailDoc.data();
                 const r = (data.role || '').toLowerCase();
+                setCurrentUserBypassPin(data.bypassPin === true);
                 if (r === 'admin' || r === 'administrador') {
                   setCurrentUserRole('admin');
                 } else if (r === 'viewer' || r === 'solo lectura') {
@@ -712,21 +731,39 @@ const AuditForm = () => {
                 }
               } else {
                 setCurrentUserRole('auditor');
+                setCurrentUserBypassPin(false);
               }
             } else {
               setCurrentUserRole('auditor');
+              setCurrentUserBypassPin(false);
             }
           } catch (e) {
             console.warn("Error consultando rol del usuario en Firestore:", e);
             setCurrentUserRole('auditor');
+            setCurrentUserBypassPin(false);
           }
         }
       } else {
         setCurrentUserRole(null);
+        setCurrentUserBypassPin(false);
       }
       setAuthChecking(false);
     });
     return () => unsubscribe();
+  }, []);
+
+  // Escucha en tiempo real de la política global de acceso sin PIN
+  useEffect(() => {
+    if (!db) return;
+    const unsub = onSnapshot(doc(db, 'system_settings', 'access_policy'), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        setGlobalPinBypass(data.globalPinBypass === true);
+      }
+    }, (err) => {
+      console.warn("Error en listener de política de PIN:", err);
+    });
+    return () => unsub();
   }, []);
 
   // Soporte para acceso directo con sesión anónima en enlaces compartidos
@@ -2661,6 +2698,7 @@ const startInlineDictation = (section, id) => {
   // PANTALLA INICIAL: DASHBOARD DE AUDITORÍAS
   // ==========================================
   if (step === 'dashboard') {
+    const canBypassPin = currentUserRole === 'admin' || user?.email?.toLowerCase() === 'thomason.mx@gmail.com' || globalPinBypass || currentUserBypassPin;
     const isAuditPinned = (audit) => pinnedAuditIds.includes(audit.id) || !!audit.isPinned;
     const archivedAudits = savedAudits.filter(audit => !!audit.archived);
     const activeAudits = savedAudits.filter(audit => !audit.archived);
@@ -2905,9 +2943,20 @@ const startInlineDictation = (section, id) => {
                                     {nombreEmpresa}
                                   </span>
                                   {tienePin && (
-                                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-medium shrink-0" title="Auditoría protegida con PIN">
-                                      <Lock size={10} className="text-slate-500" />
-                                      <span>PIN</span>
+                                    <span 
+                                      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium shrink-0 ${
+                                        canBypassPin
+                                          ? 'bg-blue-50 text-blue-700 border border-blue-200/60'
+                                          : 'bg-slate-100 text-slate-600'
+                                      }`} 
+                                      title={canBypassPin ? "Auditoría protegida con PIN (Acceso directo sin PIN habilitado)" : "Auditoría protegida con PIN"}
+                                    >
+                                      {canBypassPin ? (
+                                        <Unlock size={10} className="text-blue-600" />
+                                      ) : (
+                                        <Lock size={10} className="text-slate-500" />
+                                      )}
+                                      <span>{canBypassPin ? 'Sin PIN' : 'PIN'}</span>
                                     </span>
                                   )}
                                 </div>
