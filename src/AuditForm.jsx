@@ -33,6 +33,7 @@ import { Edit2 } from "lucide-react";
 import AudioAssistant from "./components/AudioAssistant";
 import CustomDialogModal from "./components/CustomDialogModal";
 import CubeLoader from "./components/CubeLoader";
+import { filterAiResponse } from "./utils/aiResponseFilter";
 
 const GENERIC_EVALUATION_SCALE = [
   '0 - No existe',
@@ -1123,15 +1124,7 @@ const AuditForm = () => {
       if (!res.ok) throw new Error("Error al llamar IA");
 
       const data = await res.json();
-
-      let cleanText = String(data.rewritten || data.output || data.text || (typeof data === 'string' ? data : JSON.stringify(data)))
-        .replace(/^({\s*)?"?rewritten"?\s*:\s*"?/i, "")
-        .replace(/"}\s*$/, "")
-        .replace(/\\n/g, "\n")
-        .replace(/\\r/g, "")
-        .replace(/"\s*$/, "")
-        .replace(/\s*}\s*$/, "")
-        .trim();
+      let cleanText = filterAiResponse(data);
 
       cleanText = cleanText
         .replace(/OBSERVACIÓN:\s*/gi, "OBSERVACIÓN:\n")
@@ -1174,6 +1167,7 @@ const rewriteObservationWithAI = async (section, item) => {
         },
         body: JSON.stringify({
           text: userText,
+          instruccion: "Redacta de forma profesional y clara la observación y hallazgo para esta pregunta de auditoría de TI. Omite cualquier estructura o metadato JSON y devuelve únicamente el texto redactado.",
           context: {
             tipo: "observacion_especifica",
             pregunta: item.pregunta,
@@ -1187,14 +1181,7 @@ const rewriteObservationWithAI = async (section, item) => {
     if (!res.ok) throw new Error("Error al llamar IA");
 
     const data = await res.json();
-    let cleanText = String(data.rewritten || data.output || data.text || (typeof data === 'string' ? data : JSON.stringify(data)))
-      .replace(/^({\s*)?"?rewritten"?\s*:\s*"?/i, "") 
-      .replace(/"}\s*$/, "")                          
-      .replace(/\\n/g, "\n")                           
-      .replace(/\\r/g, "")
-      .replace(/"\s*$/, "")  
-      .replace(/\s*}\s*$/, "") 
-      .trim();
+    const cleanText = filterAiResponse(data);
 
     updateResponse(section, item.id, 'observaciones', cleanText);
   } catch (err) {
@@ -1230,14 +1217,7 @@ const generateSubquestionWithAI = async (itemQuestionText) => {
 
     if (!res.ok) throw new Error("Error en webhook de IA");
     const data = await res.json();
-    let cleanText = String(data.rewritten || data.output || data.text || (typeof data === 'string' ? data : JSON.stringify(data)))
-      .replace(/^({\s*)?"?rewritten"?\s*:\s*"?/i, "") 
-      .replace(/"}\s*$/, "")                          
-      .replace(/\\n/g, "\n")                           
-      .replace(/\\r/g, "")
-      .replace(/"\s*$/, "")  
-      .replace(/\s*}\s*$/, "") 
-      .trim();
+    const cleanText = filterAiResponse(data);
 
     setSubpromptText(cleanText);
   } catch (e) {
@@ -1328,15 +1308,7 @@ Aporta valor concreto, análisis certero y profesionalismo técnico.]`;
 
     if (!res.ok) throw new Error("Error en webhook de IA");
     const data = await res.json();
-    let cleanText = String(data.output || data.rewritten || data.text || (typeof data === 'string' ? data : JSON.stringify(data)))
-      .replace(/^({\s*)?"?rewritten"?\s*:\s*"?/i, "")
-      .replace(/^({\s*)?"?output"?\s*:\s*"?/i, "")
-      .replace(/"}\s*$/, "")
-      .replace(/\\n/g, "\n")
-      .replace(/\\r/g, "")
-      .replace(/"\s*$/, "")
-      .replace(/\s*}\s*$/, "")
-      .trim();
+    const cleanText = filterAiResponse(data);
 
     updateIntroData('preliminarEmpresa', cleanText);
   } catch (err) {

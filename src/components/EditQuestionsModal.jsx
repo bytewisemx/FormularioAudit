@@ -3,6 +3,7 @@ import { X, Plus, Trash2, Edit2, Save, FileText, CheckCircle, Search, Sparkles, 
 import { DEFAULT_SECTIONS } from '../defaultSections';
 import { downloadExcelTemplate, parseQuestionsFile } from '../excelTemplateHelper';
 import CustomDialogModal from './CustomDialogModal';
+import { filterAiResponse } from '../utils/aiResponseFilter';
 
 const EditQuestionsModal = ({ isOpen, onClose, initialSections, onSave }) => {
   const [sections, setSections] = useState({});
@@ -106,14 +107,7 @@ const EditQuestionsModal = ({ isOpen, onClose, initialSections, onSave }) => {
       if (!res.ok) throw new Error('Error al llamar IA');
 
       const data = await res.json();
-      let cleanText = String(data.rewritten || data.output || data.text || (typeof data === 'string' ? data : JSON.stringify(data)))
-        .replace(/^({\s*)?\"?rewritten\"?\s*:\s*\"?/i, '') 
-        .replace(/\"}\s*$/, '')                          
-        .replace(/\\n/g, '\n')                           
-        .replace(/\\r/g, '')
-        .replace(/\"\s*$/, '')  
-        .replace(/\s*}\s*$/, '') 
-        .trim();
+      const cleanText = filterAiResponse(data);
 
       updateQuestion(area, item.id, 'pregunta', cleanText);
     } catch (err) {
