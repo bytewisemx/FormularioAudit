@@ -117,8 +117,23 @@ const getCompanyAvatarGradient = getCompanyAvatarBadgeClass;
 
 // Auxiliar para extraer métricas detalladas de cada auditoría guardada
 const getAuditSummary = (audit) => {
-  const sections = audit.data?.customSections || {};
-  const responses = audit.data?.responses || {};
+  const sections = audit.data?.customSections || audit.customSections || {};
+  let responses = audit.data?.responses || audit.responses || {};
+
+  // Resiliencia Fork & Merge: si responses directo está vacío, extraer respuestas de evaluations o finalAudit
+  if (!responses || Object.keys(responses).length === 0) {
+    const evals = audit.data?.evaluations || audit.evaluations || {};
+    const evalList = Object.values(evals);
+    if (evalList.length > 0) {
+      const evalWithAns = evalList.find(e => e.answers && Object.keys(e.answers).length > 0);
+      if (evalWithAns) {
+        responses = evalWithAns.answers;
+      }
+    } else if (audit.data?.finalAudit?.answers || audit.finalAudit?.answers) {
+      responses = audit.data?.finalAudit?.answers || audit.finalAudit?.answers;
+    }
+  }
+
   let totalQuestions = 0;
   let answeredQuestions = 0;
   let totalScore = 0;
@@ -128,7 +143,8 @@ const getAuditSummary = (audit) => {
       questions.forEach(q => {
         totalQuestions++;
         const key = `${section}-${q.id}`;
-        const val = responses[key]?.evaluacion;
+        const respObj = responses[key];
+        const val = respObj?.evaluacion ?? respObj?.score;
         if (val !== undefined && val !== null && val !== '') {
           answeredQuestions++;
           totalScore += parseInt(val, 10);
@@ -478,9 +494,31 @@ const AuditForm = () => {
     setIntroData(data.introData || audit.introData || INITIAL_INTRO_DATA);
     
     // Cargar Evaluaciones Paralelas (Fork & Merge) y Respuestas
-    const evals = data.evaluations || audit.evaluations || {};
+    let evals = data.evaluations || audit.evaluations || {};
     const finalA = data.finalAudit || audit.finalAudit || { status: 'draft', answers: {} };
-    const initialResponses = data.responses || audit.responses || {};
+    let initialResponses = data.responses || audit.responses || {};
+
+    // Si initialResponses está vacío pero evaluations tiene respuestas, recuperarlas
+    if (Object.keys(initialResponses).length === 0 && Object.keys(evals).length > 0) {
+      const evalList = Object.values(evals);
+      const evalWithAns = evalList.find(e => e.answers && Object.keys(e.answers).length > 0);
+      if (evalWithAns) {
+        initialResponses = { ...evalWithAns.answers };
+      }
+    }
+
+    // Compatibilidad retroactiva: si la auditoría no tenía evaluations pero ya tenía responses
+    if (Object.keys(evals).length === 0 && Object.keys(initialResponses).length > 0) {
+      const fallbackUid = (data.actor?.nombreAuditor || 'auditor_base').replace(/\s+/g, '_');
+      evals = {
+        [fallbackUid]: {
+          auditorName: data.actor?.nombreAuditor || 'Auditor Inicial',
+          role: data.actor?.rol || 'Auditor',
+          updatedAt: audit.lastModified || new Date().toISOString(),
+          answers: { ...initialResponses }
+        }
+      };
+    }
 
     setEvaluations(evals);
     setFinalAudit(finalA);
@@ -488,26 +526,28 @@ const AuditForm = () => {
     // Ajustar vista activa y respuestas correspondientes
     setActiveEvaluationView(targetView);
     if (targetView === 'official') {
-      setResponses(finalA.answers && Object.keys(finalA.answers).length > 0 ? finalA.answers : initialResponses);
+      const offAns = finalA.answers && Object.keys(finalA.answers).length > 0 ? finalA.answers : initialResponses;
+      setResponses(offAns);
     } else if (targetView !== 'my_draft' && evals[targetView]?.answers) {
       setResponses(evals[targetView].answers);
     } else {
-      // my_draft
-      const myAnswers = evals[currentAuditorUid]?.answers;
-      setResponses(myAnswers && Object.keys(myAnswers).length > 0 ? myAnswers : initialResponses);
-    }
-
-    // Compatibilidad retroactiva: si la auditoría no tenía evaluations pero ya tenía responses
-    if (Object.keys(evals).length === 0 && Object.keys(initialResponses).length > 0) {
-      const fallbackUid = (data.actor?.nombreAuditor || 'auditor_base').replace(/\s+/g, '_');
-      setEvaluations({
-        [fallbackUid]: {
-          auditorName: data.actor?.nombreAuditor || 'Auditor Inicial',
-          role: data.actor?.rol || 'Auditor',
-          updatedAt: audit.lastModified || new Date().toISOString(),
-          answers: initialResponses
+      // my_draft: buscar primero por currentAuditorUid, o por coincidencia de nombre, o fallback a initialResponses
+      let myAnswers = evals[currentAuditorUid]?.answers;
+      if (!myAnswers || Object.keys(myAnswers).length === 0) {
+        const evalEntries = Object.entries(evals);
+        const matched = evalEntries.find(([_, ev]) => 
+          ev.auditorName && currentAuditorName && 
+          (ev.auditorName.toLowerCase().includes(currentAuditorName.toLowerCase()) || 
+           currentAuditorName.toLowerCase().includes(ev.auditorName.toLowerCase()))
+        );
+        if (matched && matched[1]?.answers && Object.keys(matched[1].answers).length > 0) {
+          myAnswers = matched[1].answers;
+        } else if (evalEntries.length === 1 && evalEntries[0][1]?.answers) {
+          // Si solo hay un set de respuestas guardadas en evaluations, usarlo
+          myAnswers = evalEntries[0][1].answers;
         }
-      });
+      }
+      setResponses(myAnswers && Object.keys(myAnswers).length > 0 ? myAnswers : initialResponses);
     }
 
     setCustomSections(sortSections(data.customSections || audit.customSections || getDefaultSections()));
@@ -1043,11 +1083,24 @@ const AuditForm = () => {
     const prevList = savedAuditsRef.current;
     const index = prevList.findIndex(a => a.id === currentAuditId);
     let newList = [...prevList];
+
+    // Resguardo de respuestas: asegurar que data.responses nunca se guarde vacío si existen respuestas en evaluations o prevList
+    let safeResponses = responses || {};
+    if (Object.keys(safeResponses).length === 0) {
+      const evalList = Object.values(evaluations || {});
+      const evalWithAns = evalList.find(e => e.answers && Object.keys(e.answers).length > 0);
+      if (evalWithAns) {
+        safeResponses = evalWithAns.answers;
+      } else if (index >= 0 && prevList[index]?.data?.responses && Object.keys(prevList[index].data.responses).length > 0) {
+        safeResponses = prevList[index].data.responses;
+      }
+    }
+
     const auditData = {
       id: currentAuditId,
       lastModified: new Date().toISOString(),
       nombreEmpresa: companyName || 'Empresa sin nombre',
-      data: { introData, responses, generalComments, positiveComments, negativeComments, recommendations, actor, customSections, deletedQuestions, evaluations, finalAudit }
+      data: { introData, responses: safeResponses, generalComments, positiveComments, negativeComments, recommendations, actor, customSections, deletedQuestions, evaluations, finalAudit }
     };
     if (index >= 0) {
       newList[index] = auditData;
@@ -1678,13 +1731,30 @@ const startInlineDictation = (section, id) => {
 
     const companyName = (currentState.introData?.nombreEmpresa || currentState.actor?.nombreEmpresa || introData?.nombreEmpresa || actor?.nombreEmpresa || '').trim();
 
+    // Resguardo de respuestas: asegurar que data.responses nunca se guarde vacío si existen respuestas en evaluations o prevList
+    const rawResponses = currentState.responses || responses || {};
+    let safeResponses = rawResponses;
+    if (Object.keys(safeResponses).length === 0) {
+      const currentEvals = currentState.evaluations || evaluations || {};
+      const evalList = Object.values(currentEvals);
+      const evalWithAns = evalList.find(e => e.answers && Object.keys(e.answers).length > 0);
+      if (evalWithAns) {
+        safeResponses = evalWithAns.answers;
+      } else {
+        const prevAudit = savedAuditsRef.current.find(a => a.id === targetId);
+        if (prevAudit?.data?.responses && Object.keys(prevAudit.data.responses).length > 0) {
+          safeResponses = prevAudit.data.responses;
+        }
+      }
+    }
+
     const auditData = {
       id: targetId,
       lastModified: new Date().toISOString(),
       nombreEmpresa: companyName || 'Empresa sin nombre',
       data: {
         introData: currentState.introData || introData,
-        responses: currentState.responses || responses,
+        responses: safeResponses,
         generalComments: currentState.generalComments || generalComments,
         positiveComments: currentState.positiveComments || positiveComments,
         negativeComments: currentState.negativeComments || negativeComments,
