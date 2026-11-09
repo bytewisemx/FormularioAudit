@@ -948,8 +948,6 @@ const AuditForm = () => {
       if (!auth) return;
       const urlParams = new URLSearchParams(window.location.search);
       const auditId = urlParams.get('id');
-      const token = urlParams.get('token');
-      const mode = urlParams.get('mode');
 
       if (!auditId) return;
 
@@ -963,11 +961,8 @@ const AuditForm = () => {
         }
       }
 
-      if (mode === 'view') {
-        setIsReadOnly(true);
-      } else if (mode === 'collab') {
-        setIsReadOnly(false);
-      }
+      // Por seguridad integral, todo acceso compartido vía enlace es SIEMPRE Solo Lectura (Observador)
+      setIsReadOnly(true);
     };
 
     handleUrlSharedAccess();
@@ -1008,32 +1003,8 @@ const AuditForm = () => {
           setIsGuestMode(true);
           const targetAudit = audits.find(a => a.id === auditId);
           if (targetAudit) {
-            const token = urlParams.get('token');
-            const mode = urlParams.get('mode') || (token ? 'view' : null);
-            const savedHash = targetAudit.data?.actor?.contrasenaHash;
-            const tokenValid = token && targetAudit.shareToken && token === targetAudit.shareToken;
-
-            if (mode === 'view') {
-              handleProceedLoad(targetAudit, true);
-            } else if (mode === 'collab') {
-              if (tokenValid || !savedHash) {
-                handleProceedLoad(targetAudit, false);
-              } else {
-                setAccessPinInput('');
-                setAccessPinError('');
-                setAccessModalAudit(targetAudit);
-              }
-            } else {
-              if (tokenValid) {
-                handleProceedLoad(targetAudit, true);
-              } else if (savedHash) {
-                setAccessPinInput('');
-                setAccessPinError('');
-                setAccessModalAudit(targetAudit);
-              } else {
-                handleProceedLoad(targetAudit, false);
-              }
-            }
+            // Por política de seguridad, todo enlace compartido se carga estrictamente en Solo Lectura
+            handleProceedLoad(targetAudit, true);
           }
         }
 
@@ -1239,6 +1210,7 @@ const AuditForm = () => {
   }, []);
 
   const rewriteReportCommentWithAI = async (fieldKey) => {
+    if (isReadOnly || activeEvaluationView !== 'my_draft') return;
     let userText = '';
     let fieldTitle = '';
     let fieldInstruction = '';
@@ -1422,6 +1394,7 @@ const generateSubquestionWithAI = async (itemQuestionText) => {
 };
 
 const investigateCompanyWithAI = async (overrideUrl = null) => {
+  if (isReadOnly || activeEvaluationView !== 'my_draft') return;
   let rawUrl = (overrideUrl !== null ? overrideUrl : (introData.sitioWeb || '')).trim();
   if (!rawUrl) {
     alert("Por favor ingresa la URL o página web de la empresa (ej: https://empresa.com)");
@@ -1513,6 +1486,7 @@ Aporta valor concreto, análisis certero y profesionalismo técnico.]`;
 };
 
 const saveSubquestion = (section, itemId) => {
+  if (isReadOnly || activeEvaluationView !== 'my_draft') return;
   if (!subpromptText.trim()) return alert("La subpregunta no puede estar vacía.");
   
   setCustomSections(prev => {
@@ -1538,6 +1512,7 @@ const saveSubquestion = (section, itemId) => {
 };
 
 const deleteSubquestion = (section, itemId, subId) => {
+  if (isReadOnly || activeEvaluationView !== 'my_draft') return;
   if (!window.confirm("¿Seguro que deseas eliminar esta pregunta sugerida?")) return;
   setCustomSections(prev => {
     const newSections = { ...prev };
@@ -1554,6 +1529,7 @@ const deleteSubquestion = (section, itemId, subId) => {
 };
 
 const updateSubquestionResponse = (section, itemId, subId, respuestaVal) => {
+  if (isReadOnly || activeEvaluationView !== 'my_draft') return;
   setCustomSections(prev => {
     const newSections = { ...prev };
     const questions = [...(newSections[section] || [])];
@@ -1576,6 +1552,7 @@ const updateSubquestionResponse = (section, itemId, subId, respuestaVal) => {
 
 const handleSaveQuickEditQuestion = (e) => {
   if (e) e.preventDefault();
+  if (isReadOnly || activeEvaluationView !== 'my_draft') return;
   if (!editingQuestionData) return;
   const { section, id, pregunta, requisito, evidencia, nota, escalaEvaluacion } = editingQuestionData;
   setCustomSections(prev => {
@@ -1862,7 +1839,7 @@ const startInlineDictation = (section, id) => {
   };
 
   const updateIntroData = (field, value) => {
-    if (isReadOnly) return;
+    if (isReadOnly || activeEvaluationView !== 'my_draft') return;
     setIntroData(prev => ({
       ...prev,
       [field]: value
@@ -2485,65 +2462,30 @@ const startInlineDictation = (section, id) => {
           </div>
 
           <div className="p-6 space-y-4">
-            <p className="text-xs text-slate-600 leading-relaxed">
-              Genera un enlace seguro para que clientes, observadores o auditores externos accedan al instante sin necesidad de registrarse previamente.
-            </p>
-
-            {/* Selector de Modo */}
-            <div className="flex p-1 bg-slate-100 rounded-xl">
-              <button
-                type="button"
-                onClick={() => { setShareLinkMode('view'); setCopiedLink(false); }}
-                className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                  shareLinkMode === 'view'
-                    ? 'bg-white text-blue-600 shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <Eye size={14} />
-                <span>Solo Lectura (Observador)</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => { setShareLinkMode('collab'); setCopiedLink(false); }}
-                className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                  shareLinkMode === 'collab'
-                    ? 'bg-white text-blue-600 shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <Edit2 size={14} />
-                <span>Colaborador (Edición)</span>
-              </button>
-            </div>
-
-            {/* Descripción del modo */}
-            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-100 text-xs text-slate-600 leading-relaxed">
-              {shareLinkMode === 'view' ? (
-                <p>
-                  <strong>Modo Observador:</strong> El destinatario podrá consultar en tiempo real las respuestas, avances y comentarios sin posibilidad de modificar ningún dato.
+            <div className="p-3.5 rounded-xl bg-blue-50/60 border border-blue-100 text-xs text-blue-900 leading-relaxed flex items-start gap-2.5">
+              <ShieldCheck size={18} className="text-blue-600 shrink-0 mt-0.5" />
+              <div>
+                <strong className="font-semibold">Enlace Seguro de Solo Lectura:</strong>
+                <p className="text-blue-800/90 mt-0.5">
+                  Permite a clientes, directivos o terceros consultar en tiempo real las respuestas, avances y calificaciones sin riesgo de que alteren la información.
                 </p>
-              ) : (
-                <p>
-                  <strong>Modo Colaborador:</strong> El invitado podrá responder preguntas, redactar observaciones y trabajar concurrentemente en la auditoría.
-                </p>
-              )}
+              </div>
             </div>
 
             {/* Campo de Enlace y Botón de Copiar */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-700">Enlace de Acceso Directo</label>
+            <div className="space-y-1.5 pt-1">
+              <label className="text-xs font-semibold text-slate-700">Enlace de Acceso (Modo Observador)</label>
               <div className="flex items-center gap-2">
                 <input
                   type="text"
                   readOnly
-                  value={`${window.location.origin}${window.location.pathname}?id=${shareModalAudit.id}&token=${shareModalAudit.shareToken || ''}&mode=${shareLinkMode}`}
+                  value={`${window.location.origin}${window.location.pathname}?id=${shareModalAudit.id}&token=${shareModalAudit.shareToken || ''}&mode=view`}
                   className="flex-1 px-3 py-2 text-xs font-mono bg-slate-50 border border-slate-200 rounded-lg text-slate-700 select-all focus:outline-none focus:border-blue-500"
                 />
                 <button
                   type="button"
                   onClick={async () => {
-                    const url = `${window.location.origin}${window.location.pathname}?id=${shareModalAudit.id}&token=${shareModalAudit.shareToken || ''}&mode=${shareLinkMode}`;
+                    const url = `${window.location.origin}${window.location.pathname}?id=${shareModalAudit.id}&token=${shareModalAudit.shareToken || ''}&mode=view`;
                     try {
                       await navigator.clipboard.writeText(url);
                       setCopiedLink(true);
@@ -2564,7 +2506,7 @@ const startInlineDictation = (section, id) => {
               </div>
               {copiedLink && (
                 <p className="text-[11px] text-emerald-600 font-medium">
-                  ✓ Enlace copiado al portapapeles. Listo para compartir.
+                  ✓ Enlace copiado al portapapeles. Listo para compartir de manera segura.
                 </p>
               )}
             </div>
@@ -3839,6 +3781,7 @@ const startInlineDictation = (section, id) => {
   };
 
   const dualMetrics = calculateDualMetrics();
+  const isFormDisabled = isReadOnly || activeEvaluationView !== 'my_draft';
 
   return (
     <div className="min-h-screen relative bg-slate-50 p-4 md:p-8 text-slate-900">
@@ -3917,8 +3860,8 @@ const startInlineDictation = (section, id) => {
                       <Home size={18} />
                     </button>
                   )}
-                  {/* Botón Consolidar y Fusionar (Merge) */}
-                  {(dualMetrics.hasColleague || Object.keys(evaluations).length > 1) && (
+                  {/* Botón Consolidar y Fusionar (Merge) - Solo para auditores autenticados en modo edición */}
+                  {!isGuestMode && !isReadOnly && (dualMetrics.hasColleague || Object.keys(evaluations).length > 1) && (
                     <button
                       onClick={() => setShowMergeModal(true)}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200/70 rounded-lg transition-colors cursor-pointer shadow-2xs"
@@ -3928,54 +3871,58 @@ const startInlineDictation = (section, id) => {
                       <span className="hidden sm:inline">Fusionar</span>
                     </button>
                   )}
-                  {/* Botón Compartir */}
-                  <button
-                    onClick={(e) => {
-                      const currentObj = savedAudits.find(a => a.id === currentAuditId) || {
-                        id: currentAuditId,
-                        nombreEmpresa: introData.nombreEmpresa,
-                        data: { actor, introData }
-                      };
-                      handleOpenShareModal(currentObj, e);
-                    }}
-                    className="p-2 text-slate-500 hover:text-blue-600 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200/80 cursor-pointer"
-                    title="Compartir enlace seguro de auditoría"
-                  >
-                    <Share2 size={18} />
-                  </button>
-                  {/* Botón Descargar Informe */}
-                  <div className="relative">
+                  {/* Botón Compartir - Oculto en enlaces compartidos y modo solo lectura */}
+                  {!isGuestMode && !isReadOnly && (
                     <button
-                      onClick={() => { setShowExportMenu(!showExportMenu); setShowSettings(false); }}
-                      className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200/80 cursor-pointer"
-                      title="Descargar informe"
+                      onClick={(e) => {
+                        const currentObj = savedAudits.find(a => a.id === currentAuditId) || {
+                          id: currentAuditId,
+                          nombreEmpresa: introData.nombreEmpresa,
+                          data: { actor, introData }
+                        };
+                        handleOpenShareModal(currentObj, e);
+                      }}
+                      className="p-2 text-slate-500 hover:text-blue-600 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200/80 cursor-pointer"
+                      title="Compartir enlace seguro de auditoría"
                     >
-                      <Download size={18} />
+                      <Share2 size={18} />
                     </button>
-                    {showExportMenu && (
-                      <>
-                        <div className="fixed inset-0 z-40" onClick={() => setShowExportMenu(false)}></div>
-                        <div className="absolute right-0 mt-2 w-52 bg-white rounded-xl shadow-lg border border-slate-100 py-1.5 z-50 text-sm animate-in fade-in zoom-in-95 duration-150">
-                          <button
-                            onClick={() => { exportToDocxPro(); setShowExportMenu(false); }}
-                            className="w-full flex items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-slate-50 transition-colors text-left cursor-pointer"
-                          >
-                            <FileText size={16} className="text-slate-400" />
-                            <span>Descargar en Word (.docx)</span>
-                          </button>
-                          <button
-                            onClick={() => { exportToExcel(); setShowExportMenu(false); }}
-                            className="w-full flex items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-slate-50 transition-colors text-left cursor-pointer"
-                          >
-                            <FileSpreadsheet size={16} className="text-slate-400" />
-                            <span>Descargar en Excel (.xlsx)</span>
-                          </button>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                  {/* Botón Ajustes de Auditoría */}
-                  {!isGuestMode && (
+                  )}
+                  {/* Botón Descargar Informe - Oculto en enlaces compartidos y modo solo lectura */}
+                  {!isGuestMode && !isReadOnly && (
+                    <div className="relative">
+                      <button
+                        onClick={() => { setShowExportMenu(!showExportMenu); setShowSettings(false); }}
+                        className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200/80 cursor-pointer"
+                        title="Descargar informe"
+                      >
+                        <Download size={18} />
+                      </button>
+                      {showExportMenu && (
+                        <>
+                          <div className="fixed inset-0 z-40" onClick={() => setShowExportMenu(false)}></div>
+                          <div className="absolute right-0 mt-2 w-52 bg-white rounded-xl shadow-lg border border-slate-100 py-1.5 z-50 text-sm animate-in fade-in zoom-in-95 duration-150">
+                            <button
+                              onClick={() => { exportToDocxPro(); setShowExportMenu(false); }}
+                              className="w-full flex items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-slate-50 transition-colors text-left cursor-pointer"
+                            >
+                              <FileText size={16} className="text-slate-400" />
+                              <span>Descargar en Word (.docx)</span>
+                            </button>
+                            <button
+                              onClick={() => { exportToExcel(); setShowExportMenu(false); }}
+                              className="w-full flex items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-slate-50 transition-colors text-left cursor-pointer"
+                            >
+                              <FileSpreadsheet size={16} className="text-slate-400" />
+                              <span>Descargar en Excel (.xlsx)</span>
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+                  {/* Botón Ajustes de Auditoría - Oculto en enlaces compartidos y modo solo lectura */}
+                  {!isGuestMode && !isReadOnly && (
                     <div className="relative inline-block text-left">
                       <button
                         onClick={() => { setShowSettings(!showSettings); setShowExportMenu(false); }}
@@ -4391,10 +4338,15 @@ const startInlineDictation = (section, id) => {
                   </label>
                   <input
                     type="text"
+                    disabled={isFormDisabled}
                     value={introData.nombreEmpresa}
                     onChange={(e) => updateIntroData('nombreEmpresa', e.target.value)}
                     placeholder="Razón social o nombre comercial"
-                    className="w-full px-4 py-2 border-2 border-cyan-300 rounded-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent font-semibold"
+                    className={`w-full px-4 py-2 border-2 rounded-none font-semibold transition ${
+                      isFormDisabled
+                        ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
+                        : 'border-cyan-300 focus:ring-2 focus:ring-cyan-500 focus:border-transparent'
+                    }`}
                   />
                 </div>
 
@@ -4414,10 +4366,15 @@ const startInlineDictation = (section, id) => {
                   <div className="relative">
                     <input
                       type="url"
+                      disabled={isFormDisabled}
                       value={introData.sitioWeb || ''}
                       onChange={(e) => updateIntroData('sitioWeb', e.target.value)}
                       placeholder="https://empresa.com"
-                      className="w-full px-4 py-2 border border-gray-300 rounded-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                      className={`w-full px-4 py-2 border rounded-none transition ${
+                        isFormDisabled
+                          ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
+                          : 'border-gray-300 focus:ring-2 focus:ring-cyan-500 focus:border-transparent'
+                      }`}
                     />
                   </div>
                 </div>
@@ -4430,10 +4387,15 @@ const startInlineDictation = (section, id) => {
                   </label>
                   <input
                     type="text"
+                    disabled={isFormDisabled}
                     value={introData.nombre}
                     onChange={(e) => updateIntroData('nombre', e.target.value)}
                     placeholder="Nombre completo"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                    className={`w-full px-4 py-2 border rounded-none transition ${
+                      isFormDisabled
+                        ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
+                        : 'border-gray-300 focus:ring-2 focus:ring-cyan-500 focus:border-transparent'
+                    }`}
                   />
                 </div>
 
@@ -4443,10 +4405,15 @@ const startInlineDictation = (section, id) => {
                   </label>
                   <input
                     type="text"
+                    disabled={isFormDisabled}
                     value={introData.puesto}
                     onChange={(e) => updateIntroData('puesto', e.target.value)}
                     placeholder="Cargo o posición"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                    className={`w-full px-4 py-2 border rounded-none transition ${
+                      isFormDisabled
+                        ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
+                        : 'border-gray-300 focus:ring-2 focus:ring-cyan-500 focus:border-transparent'
+                    }`}
                   />
                 </div>
 
@@ -4456,10 +4423,15 @@ const startInlineDictation = (section, id) => {
                   </label>
                   <input
                     type="text"
+                    disabled={isFormDisabled}
                     value={introData.contacto}
                     onChange={(e) => updateIntroData('contacto', e.target.value)}
                     placeholder="email@ejemplo.com o +52 123 456 7890"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                    className={`w-full px-4 py-2 border rounded-none transition ${
+                      isFormDisabled
+                        ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
+                        : 'border-gray-300 focus:ring-2 focus:ring-cyan-500 focus:border-transparent'
+                    }`}
                   />
                 </div>
 
@@ -4469,10 +4441,15 @@ const startInlineDictation = (section, id) => {
                   </label>
                   <input
                     type="text"
+                    disabled={isFormDisabled}
                     value={introData.giro}
                     onChange={(e) => updateIntroData('giro', e.target.value)}
                     placeholder="Sector o industria"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                    className={`w-full px-4 py-2 border rounded-none transition ${
+                      isFormDisabled
+                        ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
+                        : 'border-gray-300 focus:ring-2 focus:ring-cyan-500 focus:border-transparent'
+                    }`}
                   />
                 </div>
 
@@ -4482,10 +4459,15 @@ const startInlineDictation = (section, id) => {
                   </label>
                   <input
                     type="text"
+                    disabled={isFormDisabled}
                     value={introData.colaboradores}
                     onChange={(e) => updateIntroData('colaboradores', e.target.value)}
                     placeholder="Número aproximado"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                    className={`w-full px-4 py-2 border rounded-none transition ${
+                      isFormDisabled
+                        ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
+                        : 'border-gray-300 focus:ring-2 focus:ring-cyan-500 focus:border-transparent'
+                    }`}
                   />
                 </div>
 
@@ -4494,9 +4476,14 @@ const startInlineDictation = (section, id) => {
                     ¿Cuál es la modalidad predominante?
                   </label>
                   <select
+                    disabled={isFormDisabled}
                     value={introData.modalidad}
                     onChange={(e) => updateIntroData('modalidad', e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                    className={`w-full px-4 py-2 border rounded-none transition ${
+                      isFormDisabled
+                        ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
+                        : 'border-gray-300 focus:ring-2 focus:ring-cyan-500 focus:border-transparent'
+                    }`}
                   >
                     <option value="">Seleccionar...</option>
                     <option value="Presencial">Presencial</option>
@@ -4510,9 +4497,14 @@ const startInlineDictation = (section, id) => {
                     ¿La empresa proporciona los equipos?
                   </label>
                   <select
+                    disabled={isFormDisabled}
                     value={introData.proporcionaEquipos}
                     onChange={(e) => updateIntroData('proporcionaEquipos', e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                    className={`w-full px-4 py-2 border rounded-none transition ${
+                      isFormDisabled
+                        ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
+                        : 'border-gray-300 focus:ring-2 focus:ring-cyan-500 focus:border-transparent'
+                    }`}
                   >
                     <option value="">Seleccionar...</option>
                     <option value="Sí, todos">Sí, todos</option>
@@ -4527,10 +4519,15 @@ const startInlineDictation = (section, id) => {
                   </label>
                   <input
                     type="text"
+                    disabled={isFormDisabled}
                     value={introData.tipoEquipos}
                     onChange={(e) => updateIntroData('tipoEquipos', e.target.value)}
                     placeholder="Laptops, desktops, tablets, smartphones..."
-                    className="w-full px-4 py-2 border border-gray-300 rounded-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                    className={`w-full px-4 py-2 border rounded-none transition ${
+                      isFormDisabled
+                        ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
+                        : 'border-gray-300 focus:ring-2 focus:ring-cyan-500 focus:border-transparent'
+                    }`}
                   />
                 </div>
               </div>
@@ -4540,11 +4537,16 @@ const startInlineDictation = (section, id) => {
                   ¿Cuál es la estructura organizacional del área de TI?
                 </label>
                 <textarea
+                  disabled={isFormDisabled}
                   value={introData.estructuraTI}
                   onChange={(e) => updateIntroData('estructuraTI', e.target.value)}
                   placeholder="Ej: Gerente TI, 2 analistas de soporte, 1 administrador de redes, outsourcing para desarrollo..."
                   rows="3"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent resize-none"
+                  className={`w-full px-4 py-2 border rounded-none resize-none transition ${
+                    isFormDisabled
+                      ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
+                      : 'border-gray-300 focus:ring-2 focus:ring-cyan-500 focus:border-transparent'
+                  }`}
                 />
               </div>
 
@@ -4553,9 +4555,14 @@ const startInlineDictation = (section, id) => {
                   ¿Qué tan dependientes son de la red/internet para realizar su trabajo?
                 </label>
                 <select
+                  disabled={isFormDisabled}
                   value={introData.dependenciaRed}
                   onChange={(e) => updateIntroData('dependenciaRed', e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                  className={`w-full px-4 py-2 border rounded-none transition ${
+                    isFormDisabled
+                      ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
+                      : 'border-gray-300 focus:ring-2 focus:ring-cyan-500 focus:border-transparent'
+                  }`}
                 >
                   <option value="">Seleccionar...</option>
                   <option value="Totalmente dependiente - sin internet no hay operación">Totalmente dependiente - sin internet no hay operación</option>
@@ -4570,11 +4577,16 @@ const startInlineDictation = (section, id) => {
                   En los últimos 12 meses, ¿han ocurrido incidencias que frenaron la operación?
                 </label>
                 <textarea
+                  disabled={isFormDisabled}
                   value={introData.incidenciasRecientes}
                   onChange={(e) => updateIntroData('incidenciasRecientes', e.target.value)}
                   placeholder="Descripción de incidentes: ransomware, caídas de red, pérdida de datos, ataques phishing, fallas de hardware, etc."
                   rows="3"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent resize-none"
+                  className={`w-full px-4 py-2 border rounded-none resize-none transition ${
+                    isFormDisabled
+                      ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
+                      : 'border-gray-300 focus:ring-2 focus:ring-cyan-500 focus:border-transparent'
+                  }`}
                 />
               </div>
             </div>
@@ -4618,16 +4630,20 @@ const startInlineDictation = (section, id) => {
                         </div>
                         <input
                           type="url"
+                          disabled={isFormDisabled || isInvestigatingCompany}
                           value={introData.sitioWeb || ''}
                           onChange={(e) => updateIntroData('sitioWeb', e.target.value)}
                           onKeyDown={(e) => {
-                            if (e.key === 'Enter' && !isInvestigatingCompany) {
+                            if (e.key === 'Enter' && !isInvestigatingCompany && !isFormDisabled) {
                               investigateCompanyWithAI();
                             }
                           }}
                           placeholder="Ej: https://bytewise.mx o empresa.com"
-                          className="w-full pl-10 pr-10 py-2.5 bg-white border border-slate-300 focus:border-slate-800 focus:outline-none text-sm transition font-medium"
-                          disabled={isInvestigatingCompany}
+                          className={`w-full pl-10 pr-10 py-2.5 border text-sm transition font-medium ${
+                            isFormDisabled
+                              ? 'bg-slate-50 border-slate-200 text-slate-500 cursor-not-allowed'
+                              : 'bg-white border-slate-300 focus:border-slate-800 focus:outline-none'
+                          }`}
                         />
                         {introData.sitioWeb && (
                           <a
@@ -4645,8 +4661,12 @@ const startInlineDictation = (section, id) => {
                       <button
                         type="button"
                         onClick={() => investigateCompanyWithAI()}
-                        disabled={isInvestigatingCompany}
-                        className="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm flex items-center justify-center gap-2 transition disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer shadow-sm shrink-0"
+                        disabled={isFormDisabled || isInvestigatingCompany}
+                        className={`px-6 py-2.5 font-bold text-sm flex items-center justify-center gap-2 transition shadow-sm shrink-0 ${
+                          isFormDisabled
+                            ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                            : 'bg-slate-900 hover:bg-slate-800 text-white cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed'
+                        }`}
                       >
                         {isInvestigatingCompany ? (
                           <>
@@ -4718,11 +4738,16 @@ const startInlineDictation = (section, id) => {
                       {/* Editor / Visualizador del Preliminar */}
                       <div className="relative">
                         <textarea
+                          disabled={isFormDisabled}
                           value={introData.preliminarEmpresa}
                           onChange={(e) => updateIntroData('preliminarEmpresa', e.target.value)}
                           rows={14}
                           placeholder="Aquí aparecerá el análisis preliminar generado con IA o puedes redactarlo manualmente..."
-                          className="w-full px-4 py-3 bg-white border border-slate-300 focus:border-slate-800 focus:outline-none text-sm text-slate-800 leading-relaxed font-mono transition resize-y"
+                          className={`w-full px-4 py-3 border text-sm leading-relaxed font-mono transition resize-y ${
+                            isFormDisabled
+                              ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
+                              : 'bg-white border-slate-300 focus:border-slate-800 focus:outline-none text-slate-800'
+                          }`}
                         />
                       </div>
 
@@ -4934,9 +4959,13 @@ const startInlineDictation = (section, id) => {
                         <button
                           type="button"
                           onClick={() => rewriteReportCommentWithAI('positive')}
-                          disabled={rewritingField === 'positive'}
+                          disabled={isFormDisabled || rewritingField === 'positive'}
                           title="Optimizar redacción o generar fortalezas con IA"
-                          className="px-3 py-1.5 bg-white hover:bg-emerald-50 border border-emerald-300 text-emerald-700 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-2xs shrink-0 disabled:opacity-50"
+                          className={`px-3 py-1.5 border text-xs font-bold flex items-center gap-1.5 transition shadow-2xs shrink-0 ${
+                            isFormDisabled
+                              ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
+                              : 'bg-white hover:bg-emerald-50 border-emerald-300 text-emerald-700 cursor-pointer disabled:opacity-50'
+                          }`}
                         >
                           {rewritingField === 'positive' ? (
                             <>
@@ -4954,13 +4983,18 @@ const startInlineDictation = (section, id) => {
 
                       <div className="p-5 flex-1 flex flex-col">
                         <textarea
+                          disabled={isFormDisabled}
                           value={positiveComments}
                           onChange={(e) => setPositiveComments(e.target.value)}
                           placeholder="Describe las fortalezas técnicas, buenas prácticas, políticas aplicadas y controles que la empresa tiene bien implementados..."
                           style={{
                             height: commentHeightMode === 'compact' ? '160px' : commentHeightMode === 'tall' ? '420px' : '260px'
                           }}
-                          className="w-full p-3 text-xs md:text-sm bg-white border border-slate-300 focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 focus:outline-none rounded-none resize-y leading-relaxed text-slate-800 transition"
+                          className={`w-full p-3 text-xs md:text-sm border rounded-none resize-y leading-relaxed transition ${
+                            isFormDisabled
+                              ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
+                              : 'bg-white border-slate-300 focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 focus:outline-none text-slate-800'
+                          }`}
                         />
                         <div className="flex items-center justify-between mt-2 text-[11px] text-slate-400">
                           <span>↕ Puedes redimensionar arrastrando la esquina</span>
@@ -4992,9 +5026,13 @@ const startInlineDictation = (section, id) => {
                         <button
                           type="button"
                           onClick={() => rewriteReportCommentWithAI('negative')}
-                          disabled={rewritingField === 'negative'}
+                          disabled={isFormDisabled || rewritingField === 'negative'}
                           title="Optimizar redacción o generar hallazgos con IA"
-                          className="px-3 py-1.5 bg-white hover:bg-rose-50 border border-rose-300 text-rose-700 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-2xs shrink-0 disabled:opacity-50"
+                          className={`px-3 py-1.5 border text-xs font-bold flex items-center gap-1.5 transition shadow-2xs shrink-0 ${
+                            isFormDisabled
+                              ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
+                              : 'bg-white hover:bg-rose-50 border-rose-300 text-rose-700 cursor-pointer disabled:opacity-50'
+                          }`}
                         >
                           {rewritingField === 'negative' ? (
                             <>
@@ -5012,13 +5050,18 @@ const startInlineDictation = (section, id) => {
 
                       <div className="p-5 flex-1 flex flex-col">
                         <textarea
+                          disabled={isFormDisabled}
                           value={negativeComments}
                           onChange={(e) => setNegativeComments(e.target.value)}
                           placeholder="Describe las deficiencias encontradas, riesgos críticos de seguridad, falta de documentación, fallas de respaldo o vulnerabilidades operativas..."
                           style={{
                             height: commentHeightMode === 'compact' ? '160px' : commentHeightMode === 'tall' ? '420px' : '260px'
                           }}
-                          className="w-full p-3 text-xs md:text-sm bg-white border border-slate-300 focus:border-rose-600 focus:ring-1 focus:ring-rose-600 focus:outline-none rounded-none resize-y leading-relaxed text-slate-800 transition"
+                          className={`w-full p-3 text-xs md:text-sm border rounded-none resize-y leading-relaxed transition ${
+                            isFormDisabled
+                              ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
+                              : 'bg-white border-slate-300 focus:border-rose-600 focus:ring-1 focus:ring-rose-600 focus:outline-none text-slate-800'
+                          }`}
                         />
                         <div className="flex items-center justify-between mt-2 text-[11px] text-slate-400">
                           <span>↕ Puedes redimensionar arrastrando la esquina</span>
@@ -5050,9 +5093,13 @@ const startInlineDictation = (section, id) => {
                         <button
                           type="button"
                           onClick={() => rewriteReportCommentWithAI('recommendations')}
-                          disabled={rewritingField === 'recommendations'}
+                          disabled={isFormDisabled || rewritingField === 'recommendations'}
                           title="Optimizar redacción o generar recomendaciones con IA"
-                          className="px-3 py-1.5 bg-white hover:bg-cyan-50 border border-cyan-300 text-cyan-800 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-2xs shrink-0 disabled:opacity-50"
+                          className={`px-3 py-1.5 border text-xs font-bold flex items-center gap-1.5 transition shadow-2xs shrink-0 ${
+                            isFormDisabled
+                              ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
+                              : 'bg-white hover:bg-cyan-50 border-cyan-300 text-cyan-800 cursor-pointer disabled:opacity-50'
+                          }`}
                         >
                           {rewritingField === 'recommendations' ? (
                             <>
@@ -5070,13 +5117,18 @@ const startInlineDictation = (section, id) => {
 
                       <div className="p-5 flex-1 flex flex-col">
                         <textarea
+                          disabled={isFormDisabled}
                           value={recommendations}
                           onChange={(e) => setRecommendations(e.target.value)}
                           placeholder="Propón las acciones correctivas sugeridas, medidas de mitigación a corto y mediano plazo, tecnologías recomendadas y mejores prácticas a adoptar..."
                           style={{
                             height: commentHeightMode === 'compact' ? '160px' : commentHeightMode === 'tall' ? '420px' : '260px'
                           }}
-                          className="w-full p-3 text-xs md:text-sm bg-white border border-slate-300 focus:border-[#00d4ff] focus:ring-1 focus:ring-[#00d4ff] focus:outline-none rounded-none resize-y leading-relaxed text-slate-800 transition"
+                          className={`w-full p-3 text-xs md:text-sm border rounded-none resize-y leading-relaxed transition ${
+                            isFormDisabled
+                              ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
+                              : 'bg-white border-slate-300 focus:border-[#00d4ff] focus:ring-1 focus:ring-[#00d4ff] focus:outline-none text-slate-800'
+                          }`}
                         />
                         <div className="flex items-center justify-between mt-2 text-[11px] text-slate-400">
                           <span>↕ Puedes redimensionar arrastrando la esquina</span>
@@ -5102,18 +5154,27 @@ const startInlineDictation = (section, id) => {
 
                   <div className="mt-4 pt-3 border-t border-slate-100 relative">
                     <textarea
+                      disabled={isFormDisabled}
                       value={generalComments}
                       onChange={(e) => setGeneralComments(e.target.value)}
                       rows={4}
                       placeholder="Espacio adicional para observaciones de cierre, firmas, alcance específico o notas que desees incluir en el dictamen final..."
-                      className="w-full p-3 text-xs bg-slate-50 border border-slate-300 focus:bg-white focus:border-slate-800 focus:outline-none resize-y"
+                      className={`w-full p-3 text-xs border resize-y transition ${
+                        isFormDisabled
+                          ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
+                          : 'bg-slate-50 border-slate-300 focus:bg-white focus:border-slate-800 focus:outline-none'
+                      }`}
                     />
                     <div className="flex justify-end mt-2">
                       <button
                         type="button"
                         onClick={() => rewriteReportCommentWithAI('general')}
-                        disabled={rewritingField === 'general'}
-                        className="px-3 py-1 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+                        disabled={isFormDisabled || rewritingField === 'general'}
+                        className={`px-3 py-1 border text-xs font-bold flex items-center gap-1.5 transition ${
+                          isFormDisabled
+                            ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
+                            : 'bg-white hover:bg-slate-100 border-slate-300 text-slate-700 cursor-pointer'
+                        }`}
                       >
                         {rewritingField === 'general' ? (
                           <>
@@ -5156,15 +5217,19 @@ const startInlineDictation = (section, id) => {
                         </div>
                         <h4 className="font-bold text-slate-800 text-base">Esta área no tiene preguntas aún</h4>
                         <p className="text-xs text-slate-500 max-w-md mt-1 mb-5">
-                          Iniciaste este cuestionario en blanco o esta área es nueva. Haz clic en el botón inferior para abrir el editor y redactar preguntas personalizadas.
+                          {isFormDisabled 
+                            ? "No hay preguntas configuradas en esta área para esta auditoría."
+                            : "Iniciaste este cuestionario en blanco o esta área es nueva. Haz clic en el botón inferior para abrir el editor y redactar preguntas personalizadas."}
                         </p>
-                        <button
-                          type="button"
-                          onClick={() => setShowEditModal(true)}
-                          className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-lg flex items-center gap-2 cursor-pointer transition shadow-xs"
-                        >
-                          <Edit2 size={15} className="text-blue-400" /> Abrir Editor de Preguntas
-                        </button>
+                        {!isFormDisabled && (
+                          <button
+                            type="button"
+                            onClick={() => setShowEditModal(true)}
+                            className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-lg flex items-center gap-2 cursor-pointer transition shadow-xs"
+                          >
+                            <Edit2 size={15} className="text-blue-400" /> Abrir Editor de Preguntas
+                          </button>
+                        )}
                       </div>
                     ) : (
                       customSections[section].map(item => {
@@ -5188,7 +5253,7 @@ const startInlineDictation = (section, id) => {
                         </div>
 
                         {/* Botón de acción rápida: Editar Pregunta */}
-                        {!isGuestMode && (
+                        {!isGuestMode && !isFormDisabled && (
                           <button
                             type="button"
                             onClick={() => {
@@ -5355,7 +5420,7 @@ const startInlineDictation = (section, id) => {
                                 <span className="italic font-medium flex-1">
                                   • {sub.texto}
                                 </span>
-                                {!isGuestMode && (
+                                {!isGuestMode && !isFormDisabled && (
                                   <button
                                     type="button"
                                     onClick={() => deleteSubquestion(section, item.id, sub.id)}
@@ -5368,10 +5433,15 @@ const startInlineDictation = (section, id) => {
                               </div>
                               <input
                                 type="text"
+                                disabled={isFormDisabled}
                                 value={sub.respuesta || ''}
                                 onChange={(e) => updateSubquestionResponse(section, item.id, sub.id, e.target.value)}
                                 placeholder="Escribe aquí la respuesta a esta pregunta sugerida..."
-                                className="w-full px-2.5 py-1 bg-white border border-slate-200 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 rounded-md font-normal transition"
+                                className={`w-full px-2.5 py-1 text-xs border rounded-md font-normal transition ${
+                                  isFormDisabled
+                                    ? 'bg-slate-50 border-slate-200 text-slate-500 cursor-not-allowed'
+                                    : 'bg-white border-slate-200 focus:ring-1 focus:ring-blue-500 focus:border-blue-500'
+                                }`}
                               />
                             </div>
                           ))}
@@ -5379,7 +5449,7 @@ const startInlineDictation = (section, id) => {
                       )}
 
                       {/* Botón para Añadir Pregunta Guía al final del bloque de observaciones */}
-                      {!isGuestMode && addingSubFor !== key && (
+                      {!isGuestMode && !isFormDisabled && addingSubFor !== key && (
                         <button
                           type="button"
                           onClick={() => {
@@ -5394,7 +5464,7 @@ const startInlineDictation = (section, id) => {
                       )}
 
                       {/* Formulario Inline para Añadir Subpregunta */}
-                      {addingSubFor === key && (
+                      {!isFormDisabled && addingSubFor === key && (
                         <div className="mt-3 mb-2 bg-slate-50 border border-slate-200 rounded-xl p-4 animate-in fade-in duration-200">
                           <label className="block text-xs font-semibold text-slate-700 mb-1.5 uppercase">
                             ¿De qué se trata la pregunta guía sugerida?
@@ -5445,7 +5515,7 @@ const startInlineDictation = (section, id) => {
       </div>
       </div>
       
-      {step === 'form' && (
+      {step === 'form' && !isGuestMode && !isFormDisabled && (
         <AudioAssistant 
           pendingQuestions={pendingQuestions} 
           onSuggestionClick={handleSuggestionClick} 
