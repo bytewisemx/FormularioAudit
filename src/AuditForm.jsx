@@ -163,6 +163,7 @@ const AuditForm = () => {
 
 
   const [customSections, setCustomSections] = useState(() => getDefaultSections());
+  const [deletedQuestions, setDeletedQuestions] = useState([]);
   const [blockedBy, setBlockedBy] = useState(null);
   const [blockedAuditToLoad, setBlockedAuditToLoad] = useState(null);
   const [expandedSections, setExpandedSections] = useState({ 'Información General': true });
@@ -307,7 +308,8 @@ const AuditForm = () => {
     negativeComments,
     recommendations,
     actor,
-    customSections
+    customSections,
+    deletedQuestions
   });
 
   useEffect(() => {
@@ -320,9 +322,10 @@ const AuditForm = () => {
       negativeComments,
       recommendations,
       actor,
-      customSections
+      customSections,
+      deletedQuestions
     };
-  }, [currentAuditId, introData, responses, generalComments, positiveComments, negativeComments, recommendations, actor, customSections]);
+  }, [currentAuditId, introData, responses, generalComments, positiveComments, negativeComments, recommendations, actor, customSections, deletedQuestions]);
 
   // Sistema de Diálogos Modales Personalizados (ByteWise Modal Dialogs)
   const [modalConfig, setModalConfig] = useState(null);
@@ -422,6 +425,7 @@ const AuditForm = () => {
     setNegativeComments('');
     setRecommendations('');
     setCustomSections(getDefaultSections());
+    setDeletedQuestions([]);
     setExpandedSections({ 'Información General': true });
     setActiveSection('Información General');
     setShowSettings(false);
@@ -443,6 +447,7 @@ const AuditForm = () => {
     setIntroData(data.introData || audit.introData || INITIAL_INTRO_DATA);
     setResponses(data.responses || audit.responses || {});
     setCustomSections(sortSections(data.customSections || audit.customSections || getDefaultSections()));
+    setDeletedQuestions(data.deletedQuestions || audit.deletedQuestions || []);
     setGeneralComments(data.generalComments || audit.generalComments || '');
     setPositiveComments(data.positiveComments || audit.positiveComments || '');
     setNegativeComments(data.negativeComments || audit.negativeComments || '');
@@ -913,7 +918,7 @@ const AuditForm = () => {
       id: currentAuditId,
       lastModified: new Date().toISOString(),
       nombreEmpresa: companyName || 'Empresa sin nombre',
-      data: { introData, responses, generalComments, positiveComments, negativeComments, recommendations, actor, customSections }
+      data: { introData, responses, generalComments, positiveComments, negativeComments, recommendations, actor, customSections, deletedQuestions }
     };
     if (index >= 0) {
       newList[index] = auditData;
@@ -939,7 +944,7 @@ const AuditForm = () => {
       if (timer) clearTimeout(timer);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [introData, responses, generalComments, positiveComments, negativeComments, recommendations, actor, customSections, currentAuditId, step, isReadOnly]);
+  }, [introData, responses, generalComments, positiveComments, negativeComments, recommendations, actor, customSections, deletedQuestions, currentAuditId, step, isReadOnly]);
 
   // Sincronización en tiempo real con onSnapshot y presencia activa
   useEffect(() => {
@@ -970,6 +975,7 @@ const AuditForm = () => {
           if (freshData.negativeComments !== undefined) setNegativeComments(freshData.negativeComments);
           if (freshData.recommendations !== undefined) setRecommendations(freshData.recommendations);
           if (freshData.customSections) setCustomSections(sortSections(freshData.customSections));
+          if (freshData.deletedQuestions !== undefined) setDeletedQuestions(freshData.deletedQuestions);
         }
       }
     }, (error) => {
@@ -1551,7 +1557,8 @@ const startInlineDictation = (section, id) => {
         negativeComments: currentState.negativeComments || negativeComments,
         recommendations: currentState.recommendations || recommendations,
         actor: currentState.actor || actor,
-        customSections: currentState.customSections || customSections
+        customSections: currentState.customSections || customSections,
+        deletedQuestions: currentState.deletedQuestions || deletedQuestions || []
       }
     };
 
@@ -1621,6 +1628,7 @@ const startInlineDictation = (section, id) => {
       setNegativeComments('');
       setRecommendations('');
       setCustomSections(getDefaultSections());
+      setDeletedQuestions([]);
       setActor({ nombreEmpresa: '', nombreAuditor: '', rol: '', contrasena: '', contrasenaHash: '' });
       setExpandedSections({ 'Información General': true });
       setActiveSection('Información General');
@@ -1668,6 +1676,7 @@ const startInlineDictation = (section, id) => {
       setGeneralComments('');
       setIntroData(INITIAL_INTRO_DATA);
       setCustomSections(getDefaultSections());
+      setDeletedQuestions([]);
       setExpandedSections({ 'Información General': true });
       setActiveSection('Información General');
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -2341,6 +2350,7 @@ const startInlineDictation = (section, id) => {
               setIntroData(audit.data.introData || {});
               setResponses(audit.data.responses || {});
               setCustomSections(sortSections(audit.data.customSections || getDefaultSections()));
+              setDeletedQuestions(audit.data.deletedQuestions || []);
               setGeneralComments(audit.data.generalComments || '');
               setPositiveComments(audit.data.positiveComments || '');
               setNegativeComments(audit.data.negativeComments || '');
@@ -2385,6 +2395,7 @@ const startInlineDictation = (section, id) => {
                        setIntroData(freshAudit.data.introData || {});
                        setResponses(freshAudit.data.responses || {});
                        setCustomSections(sortSections(freshAudit.data.customSections || getDefaultSections()));
+                       setDeletedQuestions(freshAudit.data?.deletedQuestions || []);
                        setGeneralComments(freshAudit.data.generalComments || '');
                        setPositiveComments(freshAudit.data.positiveComments || '');
                        setNegativeComments(freshAudit.data.negativeComments || '');
@@ -5194,8 +5205,10 @@ const startInlineDictation = (section, id) => {
         isOpen={showEditModal}
         onClose={() => setShowEditModal(false)}
         initialSections={customSections}
-        onSave={(newSections) => {
+        initialDeletedQuestions={deletedQuestions}
+        onSave={(newSections, newDeletedQuestions) => {
           setCustomSections(newSections);
+          setDeletedQuestions(newDeletedQuestions || []);
         }}
       />
 
