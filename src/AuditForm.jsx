@@ -2,13 +2,16 @@ import { DEFAULT_SECTIONS } from "./defaultSections";
 
 import React, { useEffect, useState } from 'react';
 import { ChevronDown, ChevronUp, ChevronRight, Download, FileText, FileSpreadsheet, RefreshCw, Mic, Sparkles, Building2, Shield, Brain, Hash, CheckCircle, Search, Settings, Share2, KeyRound, Trash2, Home, Plus, X, Globe, Copy, Check, ExternalLink, Loader2, Upload, FileCode, Layers, ArrowLeft, Calendar, User, Users, BarChart2, ThumbsUp, ThumbsDown, AlertTriangle, Lightbulb, LayoutGrid, List, CheckCircle2, Maximize2, Minimize2, LogOut, Pin, Lock, Unlock, Archive, History, RotateCcw, Eye, EyeOff } from 'lucide-react';
-import { downloadExcelTemplate, parseQuestionsFile } from './excelTemplateHelper';
+import { downloadExcelTemplate, parseQuestionsFile, exportAuditToProfessionalExcel } from './excelTemplateHelper';
 import { db, auth } from "./firebase";
 import { collection, doc, setDoc, getDoc, updateDoc, getDocs, deleteDoc, onSnapshot } from "firebase/firestore";
 import { onAuthStateChanged, signOut, signInAnonymously } from "firebase/auth";
 import LoginScreen from "./components/LoginScreen";
 import AccessManagement from "./components/AccessManagement";
 import GuestPinScreen from "./components/GuestPinScreen";
+import AuditEvaluationManager from "./components/AuditEvaluationManager";
+import AuditMergeModal from "./components/AuditMergeModal";
+import { generateExecutiveDocx } from "./utils/docxReportGenerator";
 
 import { saveAs } from "file-saver";
 import ExcelJS from "exceljs";
@@ -164,6 +167,11 @@ const AuditForm = () => {
 
   const [customSections, setCustomSections] = useState(() => getDefaultSections());
   const [deletedQuestions, setDeletedQuestions] = useState([]);
+  // Sistema de Evaluaciones Paralelas y Fusión (Fork & Merge)
+  const [evaluations, setEvaluations] = useState({});
+  const [finalAudit, setFinalAudit] = useState({ status: 'draft', answers: {} });
+  const [activeEvaluationView, setActiveEvaluationView] = useState('my_draft'); // 'my_draft' | 'official' | other_uid
+  const [showMergeModal, setShowMergeModal] = useState(false);
   const [blockedBy, setBlockedBy] = useState(null);
   const [blockedAuditToLoad, setBlockedAuditToLoad] = useState(null);
   const [expandedSections, setExpandedSections] = useState({ 'Información General': true });
@@ -272,6 +280,20 @@ const AuditForm = () => {
   const [currentUserRole, setCurrentUserRole] = useState(null); // 'admin' | 'auditor' | 'viewer' | 'guest'
   const [currentUserBypassPin, setCurrentUserBypassPin] = useState(false);
   const [globalPinBypass, setGlobalPinBypass] = useState(false);
+
+  // Identificador único y metadatos del auditor para el modelo Fork & Merge
+  const currentAuditorUid = React.useMemo(() => {
+    if (user?.uid) return user.uid;
+    let localId = sessionStorage.getItem('bytewise_auditor_uid');
+    if (!localId) {
+      localId = `auditor_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      sessionStorage.setItem('bytewise_auditor_uid', localId);
+    }
+    return localId;
+  }, [user]);
+
+  const currentAuditorName = (actor?.nombreAuditor || user?.displayName || user?.email?.split('@')[0] || 'Auditor').trim();
+  const currentAuditorRole = actor?.rol || (currentUserRole === 'admin' ? 'Auditor Principal' : 'Auditor');
   const [isReadOnly, setIsReadOnly] = useState(false);
   const [activeCollaborators, setActiveCollaborators] = useState([]);
   const [accessModalAudit, setAccessModalAudit] = useState(null);
@@ -309,7 +331,9 @@ const AuditForm = () => {
     recommendations,
     actor,
     customSections,
-    deletedQuestions
+    deletedQuestions,
+    evaluations,
+    finalAudit
   });
 
   useEffect(() => {
@@ -323,9 +347,11 @@ const AuditForm = () => {
       recommendations,
       actor,
       customSections,
-      deletedQuestions
+      deletedQuestions,
+      evaluations,
+      finalAudit
     };
-  }, [currentAuditId, introData, responses, generalComments, positiveComments, negativeComments, recommendations, actor, customSections, deletedQuestions]);
+  }, [currentAuditId, introData, responses, generalComments, positiveComments, negativeComments, recommendations, actor, customSections, deletedQuestions, evaluations, finalAudit]);
 
   // Sistema de Diálogos Modales Personalizados (ByteWise Modal Dialogs)
   const [modalConfig, setModalConfig] = useState(null);
@@ -426,6 +452,9 @@ const AuditForm = () => {
     setRecommendations('');
     setCustomSections(getDefaultSections());
     setDeletedQuestions([]);
+    setEvaluations({});
+    setFinalAudit({ status: 'draft', answers: {} });
+    setActiveEvaluationView('my_draft');
     setExpandedSections({ 'Información General': true });
     setActiveSection('Información General');
     setShowSettings(false);
@@ -445,7 +474,30 @@ const AuditForm = () => {
     setCurrentAuditId(audit.id);
     const data = audit.data || audit;
     setIntroData(data.introData || audit.introData || INITIAL_INTRO_DATA);
-    setResponses(data.responses || audit.responses || {});
+    
+    // Cargar Evaluaciones Paralelas (Fork & Merge) y Respuestas
+    const evals = data.evaluations || audit.evaluations || {};
+    const finalA = data.finalAudit || audit.finalAudit || { status: 'draft', answers: {} };
+    const initialResponses = data.responses || audit.responses || {};
+
+    setEvaluations(evals);
+    setFinalAudit(finalA);
+    setActiveEvaluationView('my_draft');
+    setResponses(initialResponses);
+
+    // Compatibilidad retroactiva: si la auditoría no tenía evaluations pero ya tenía responses
+    if (Object.keys(evals).length === 0 && Object.keys(initialResponses).length > 0) {
+      const fallbackUid = (data.actor?.nombreAuditor || 'auditor_base').replace(/\s+/g, '_');
+      setEvaluations({
+        [fallbackUid]: {
+          auditorName: data.actor?.nombreAuditor || 'Auditor Inicial',
+          role: data.actor?.rol || 'Auditor',
+          updatedAt: audit.lastModified || new Date().toISOString(),
+          answers: initialResponses
+        }
+      });
+    }
+
     setCustomSections(sortSections(data.customSections || audit.customSections || getDefaultSections()));
     setDeletedQuestions(data.deletedQuestions || audit.deletedQuestions || []);
     setGeneralComments(data.generalComments || audit.generalComments || '');
@@ -918,7 +970,7 @@ const AuditForm = () => {
       id: currentAuditId,
       lastModified: new Date().toISOString(),
       nombreEmpresa: companyName || 'Empresa sin nombre',
-      data: { introData, responses, generalComments, positiveComments, negativeComments, recommendations, actor, customSections, deletedQuestions }
+      data: { introData, responses, generalComments, positiveComments, negativeComments, recommendations, actor, customSections, deletedQuestions, evaluations, finalAudit }
     };
     if (index >= 0) {
       newList[index] = auditData;
@@ -944,7 +996,7 @@ const AuditForm = () => {
       if (timer) clearTimeout(timer);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [introData, responses, generalComments, positiveComments, negativeComments, recommendations, actor, customSections, deletedQuestions, currentAuditId, step, isReadOnly]);
+  }, [introData, responses, generalComments, positiveComments, negativeComments, recommendations, actor, customSections, deletedQuestions, evaluations, finalAudit, currentAuditId, step, isReadOnly]);
 
   // Sincronización en tiempo real con onSnapshot y presencia activa
   useEffect(() => {
@@ -964,10 +1016,14 @@ const AuditForm = () => {
       });
       setActiveCollaborators(activeList);
 
-      // Si el usuario actual está en modo solo lectura, sincronizar datos en vivo desde el auditor editor
-      if (isReadOnly) {
-        const freshData = remoteData.data;
-        if (freshData) {
+      const freshData = remoteData.data;
+      if (freshData) {
+        // Sincronizar evaluaciones paralelas y finalAudit de forma continua
+        if (freshData.evaluations) setEvaluations(freshData.evaluations);
+        if (freshData.finalAudit) setFinalAudit(freshData.finalAudit);
+
+        // Si el usuario actual está en modo solo lectura, sincronizar datos en vivo desde el auditor editor
+        if (isReadOnly) {
           if (freshData.responses) setResponses(freshData.responses);
           if (freshData.introData) setIntroData(freshData.introData);
           if (freshData.generalComments !== undefined) setGeneralComments(freshData.generalComments);
@@ -1558,7 +1614,9 @@ const startInlineDictation = (section, id) => {
         recommendations: currentState.recommendations || recommendations,
         actor: currentState.actor || actor,
         customSections: currentState.customSections || customSections,
-        deletedQuestions: currentState.deletedQuestions || deletedQuestions || []
+        deletedQuestions: currentState.deletedQuestions || deletedQuestions || [],
+        evaluations: currentState.evaluations || evaluations || {},
+        finalAudit: currentState.finalAudit || finalAudit || { status: 'draft', answers: {} }
       }
     };
 
@@ -1629,6 +1687,9 @@ const startInlineDictation = (section, id) => {
       setRecommendations('');
       setCustomSections(getDefaultSections());
       setDeletedQuestions([]);
+      setEvaluations({});
+      setFinalAudit({ status: 'draft', answers: {} });
+      setActiveEvaluationView('my_draft');
       setActor({ nombreEmpresa: '', nombreAuditor: '', rol: '', contrasena: '', contrasenaHash: '' });
       setExpandedSections({ 'Información General': true });
       setActiveSection('Información General');
@@ -1717,8 +1778,10 @@ const startInlineDictation = (section, id) => {
   };
 
   const updateResponse = (section, id, field, value) => {
-    if (isReadOnly) return;
+    if (isReadOnly || activeEvaluationView !== 'my_draft') return;
     const key = `${section}-${id}`;
+
+    // 1. Actualizar estado local inmediato de respuestas para cálculos y UI
     setResponses(prev => ({
       ...prev,
       [key]: {
@@ -1726,6 +1789,88 @@ const startInlineDictation = (section, id) => {
         [field]: value
       }
     }));
+
+    // 2. Almacenar por separado en el borrador personal del auditor actual (Fork & Merge)
+    setEvaluations(prev => {
+      const myEval = prev[currentAuditorUid] || {
+        auditorName: currentAuditorName,
+        role: currentAuditorRole,
+        updatedAt: new Date().toISOString(),
+        answers: {}
+      };
+      const currentAns = myEval.answers?.[key] || {};
+      const scoreVal = field === 'evaluacion' ? value : (currentAns.score ?? currentAns.evaluacion);
+      const commentVal = field === 'observaciones' ? value : (currentAns.comment ?? currentAns.observaciones);
+      const evidenceVal = field === 'evidencia' ? value : (currentAns.evidence ?? currentAns.evidencia);
+
+      const updatedAns = {
+        ...currentAns,
+        [field]: value,
+        score: scoreVal,
+        evaluacion: scoreVal,
+        comment: commentVal,
+        observaciones: commentVal,
+        evidence: evidenceVal,
+        evidencia: evidenceVal,
+      };
+
+      return {
+        ...prev,
+        [currentAuditorUid]: {
+          ...myEval,
+          auditorName: currentAuditorName,
+          role: currentAuditorRole,
+          updatedAt: new Date().toISOString(),
+          answers: {
+            ...myEval.answers,
+            [key]: updatedAns
+          }
+        }
+      };
+    });
+  };
+
+  // Alternar vista de evaluación entre Mi Borrador, Borrador de colega o Versión Oficial
+  const handleChangeEvaluationView = (viewKey) => {
+    setActiveEvaluationView(viewKey);
+    if (viewKey === 'my_draft') {
+      const myAnswers = evaluations[currentAuditorUid]?.answers;
+      if (myAnswers && Object.keys(myAnswers).length > 0) {
+        setResponses(myAnswers);
+      }
+    } else if (viewKey === 'official') {
+      setResponses(finalAudit.answers || {});
+    } else {
+      // Borrador de un colega
+      const otherAnswers = evaluations[viewKey]?.answers || {};
+      setResponses(otherAnswers);
+    }
+  };
+
+  // Consolidar respuestas y generar Versión Oficial de Auditoría
+  const handleConsolidate = (consolidatedAnswers, auditorAId, auditorBId) => {
+    const updatedFinalAudit = {
+      status: 'consolidated',
+      consolidatedAt: new Date().toISOString(),
+      consolidatedBy: currentAuditorName,
+      auditorAId,
+      auditorBId,
+      answers: consolidatedAnswers
+    };
+
+    setFinalAudit(updatedFinalAudit);
+    setResponses(consolidatedAnswers);
+    setActiveEvaluationView('official');
+    setShowMergeModal(false);
+
+    // Guardar inmediatamente en Firestore
+    saveCurrentAuditImmediate();
+
+    showAlert({
+      type: 'success',
+      title: 'Auditoría Oficial Consolidada',
+      message: 'Se ha generado exitosamente la Versión Oficial de la auditoría. Todos los reportes ejecutivos (Word y Excel) utilizarán ahora estas respuestas consolidadas.'
+    });
   };
 
   const calculateSectionScore = (section) => {
@@ -1853,315 +1998,42 @@ const startInlineDictation = (section, id) => {
 
 
 
- const exportToDocxPro = async () => {
-  try {
-    // ✅ Cambia aquí la tipografía del DOCX
-    const DOC_FONT = "Calibri"; // o "Aptos", "Arial", "Times New Roman"
-
-    // ✅ Helpers
-    const today = new Date();
-    const fecha = today.toLocaleDateString("es-MX", {
-      year: "numeric",
-      month: "long",
-      day: "2-digit",
-    });
-
-    const clean = (s) => String(s ?? "").replace(/\r/g, "");
-
-    const H2 = (text) =>
-      new Paragraph({
-        heading: HeadingLevel.HEADING_2,
-        children: [new TextRun({ text, bold: true, size: 28, font: DOC_FONT })],
-        spacing: { before: 260, after: 140 },
-      });
-
-    const P = (text, opts = {}) =>
-      new Paragraph({
-        children: [
-          new TextRun({
-            text: clean(text),
-            size: 22,
-            font: DOC_FONT,
-            ...opts,
-          }),
-        ],
-        spacing: { after: 100 },
-      });
-
-    const KV = (label, value) =>
-      new Paragraph({
-        children: [
-          new TextRun({ text: `${label}: `, bold: true, size: 22, font: DOC_FONT }),
-          new TextRun({ text: clean(value || "N/A"), size: 22, font: DOC_FONT }),
-        ],
-        spacing: { after: 80 },
-      });
-
-    // ✅ Cargar logo SIN estirarlo (respeta proporción)
-    const loadImageBytesAndSize = (src) =>
-      new Promise(async (resolve, reject) => {
-        try {
-          // 1) bytes correctos (Uint8Array evita "docx dañado" en varios casos)
-          const res = await fetch(src);
-          if (!res.ok) throw new Error("No se pudo cargar el logo (fetch)");
-          const ab = await res.arrayBuffer();
-          const bytes = new Uint8Array(ab);
-
-          // 2) obtener dimensiones reales
-          const img = new Image();
-          img.onload = () => resolve({ bytes, w: img.naturalWidth, h: img.naturalHeight });
-          img.onerror = () => reject(new Error("No se pudo leer el logo (Image)"));
-          img.src = src;
-        } catch (e) {
-          reject(e);
-        }
-      });
-
-    let logoRun = null;
+  const exportToDocxPro = async () => {
     try {
-      const { bytes, w, h } = await loadImageBytesAndSize(logoPng);
+      setGlobalLoadingMessage('Generando reporte Word ejecutivo y detallado...');
+      const avgScore = calculateTotalScore();
+      const totalScore = calculateTotalRealScore();
+      const totalQuestions = getTotalQuestions();
+      const answeredCount = getAnsweredQuestions();
+      const scoreLevel = getScoreLevel(avgScore);
+      const areaScores = calculateAreaScores();
+      const evaluatorsList = Object.values(evaluations);
 
-      // Ajusta ancho máximo del logo (rectangular). Word usa "px aprox" aquí.
-      const targetWidth = 320; // 🔧 prueba 280-360 según te guste
-      const targetHeight = Math.round((h / w) * targetWidth);
-
-      logoRun = new ImageRun({
-        data: bytes,
-        transformation: { width: targetWidth, height: targetHeight },
+      await generateExecutiveDocx({
+        introData,
+        actor,
+        customSections,
+        responses,
+        areaScores,
+        avgScore,
+        totalScore,
+        totalQuestions,
+        answeredCount,
+        scoreLevel,
+        positiveComments,
+        negativeComments,
+        recommendations,
+        generalComments,
+        evaluatorsList,
+        logoUrl: logoPng,
       });
-    } catch (e) {
-      console.warn("Logo omitido:", e);
-      logoRun = null; // no revienta el doc
+    } catch (err) {
+      console.error("Error al exportar reporte Word:", err);
+      alert("Error al exportar Word. Revisa la consola para más detalles.");
+    } finally {
+      setGlobalLoadingMessage(null);
     }
-
-    // ✅ Data
-    const avgScore = calculateTotalScore();
-    const totalQuestions = getTotalQuestions();
-    const answeredCount = getAnsweredQuestions();
-
-    const realPoints = calculateTotalRealScore();
-    const level = getScoreLevel(avgScore);
-    const areaScores = calculateAreaScores();
-
-    // ✅ Semáforo helper
-    const traffic = (percentage) => {
-      const p = Number(percentage);
-      if (p >= 75) return { label: "Optimo", fill: "22C55E" };
-      if (p >= 50) return { label: "Intermedio", fill: "F59E0B" };
-      return { label: "Critico/Bajo", fill: "EF4444" };
-    };
-
-    const tableBorders = {
-      top: { style: BorderStyle.SINGLE, size: 1, color: "DDDDDD" },
-      bottom: { style: BorderStyle.SINGLE, size: 1, color: "DDDDDD" },
-      left: { style: BorderStyle.SINGLE, size: 1, color: "DDDDDD" },
-      right: { style: BorderStyle.SINGLE, size: 1, color: "DDDDDD" },
-      insideHorizontal: { style: BorderStyle.SINGLE, size: 1, color: "EEEEEE" },
-      insideVertical: { style: BorderStyle.SINGLE, size: 1, color: "EEEEEE" },
-    };
-
-    const areaTable = new Table({
-      width: { size: 100, type: WidthType.PERCENTAGE },
-      borders: tableBorders,
-      rows: [
-        new TableRow({
-          children: ["Área", "Semáforo", "Porcentaje", "Promedio", "Respondidas/Total"].map(
-            (h, i) =>
-              new TableCell({
-                width: { size: i === 0 ? 40 : 15, type: WidthType.PERCENTAGE },
-                shading: { type: ShadingType.CLEAR, fill: "F3F4F6" },
-                children: [
-                  new Paragraph({
-                    children: [new TextRun({ text: h, bold: true, size: 22, font: DOC_FONT })],
-                  }),
-                ],
-              })
-          ),
-        }),
-        ...Object.entries(areaScores).map(([area, d]) => {
-          const t = traffic(d.percentage);
-          return new TableRow({
-            children: [
-              new TableCell({
-                width: { size: 40, type: WidthType.PERCENTAGE },
-                children: [P(area)],
-              }),
-              new TableCell({
-                width: { size: 15, type: WidthType.PERCENTAGE },
-                shading: { type: ShadingType.CLEAR, fill: t.fill },
-                children: [
-                  new Paragraph({
-                    alignment: AlignmentType.CENTER,
-                    children: [
-                      new TextRun({
-                        text: t.label,
-                        bold: true,
-                        size: 22,
-                        color: "FFFFFF",
-                        font: DOC_FONT,
-                      }),
-                    ],
-                  }),
-                ],
-              }),
-              new TableCell({
-                width: { size: 15, type: WidthType.PERCENTAGE },
-                children: [
-                  new Paragraph({
-                    alignment: AlignmentType.CENTER,
-                    children: [new TextRun({ text: `${d.percentage}%`, size: 22, font: DOC_FONT })],
-                  }),
-                ],
-              }),
-              new TableCell({
-                width: { size: 15, type: WidthType.PERCENTAGE },
-                children: [
-                  new Paragraph({
-                    alignment: AlignmentType.CENTER,
-                    children: [new TextRun({ text: `${d.score}/4`, size: 22, font: DOC_FONT })],
-                  }),
-                ],
-              }),
-              new TableCell({
-                width: { size: 15, type: WidthType.PERCENTAGE },
-                children: [
-                  new Paragraph({
-                    alignment: AlignmentType.CENTER,
-                    children: [
-                      new TextRun({ text: `${d.answered}/${d.total}`, size: 22, font: DOC_FONT }),
-                    ],
-                  }),
-                ],
-              }),
-            ],
-          });
-        }),
-      ],
-    });
-
-    // ✅ Build doc
-    const empresaTitle = introData.nombreEmpresa ? ` — ${introData.nombreEmpresa}` : "";
-    const children = [];
-
-    if (logoRun) {
-      children.push(
-        new Paragraph({
-          alignment: AlignmentType.CENTER,
-          children: [logoRun],
-          spacing: { after: 160 },
-        })
-      );
-    }
-
-    children.push(
-      new Paragraph({
-        alignment: AlignmentType.CENTER,
-        children: [
-          new TextRun({
-            text: `REPORTE DE AUDITORÍA DE TI${empresaTitle}`,
-            bold: true,
-            size: 34,
-            font: DOC_FONT,
-          }),
-        ],
-        spacing: { after: 120 },
-      })
-    );
-
-    children.push(
-      new Paragraph({
-        alignment: AlignmentType.CENTER,
-        children: [new TextRun({ text: `Fecha: ${fecha}`, size: 22, font: DOC_FONT })],
-        spacing: { after: 260 },
-      })
-    );
-
-    children.push(H2("Información general de la empresa"));
-    children.push(KV("Empresa", introData.nombreEmpresa));
-    children.push(KV("Giro", introData.giro));
-    children.push(KV("Contacto", introData.contacto));
-    if (introData.sitioWeb) {
-      children.push(KV("Página web oficial", introData.sitioWeb));
-    }
-
-    if ((introData.preliminarEmpresa || "").trim()) {
-      children.push(H2("Investigación preliminar de la empresa"));
-      clean(introData.preliminarEmpresa)
-        .split("\n")
-        .filter((l) => l.trim())
-        .forEach((line) => children.push(P(line)));
-    }
-
-    children.push(H2("Persona que auditó"));
-    children.push(KV("Auditor", actor?.nombreAuditor));
-    children.push(KV("Rol", actor?.rol));
-
-    children.push(H2("Resumen general de la encuesta"));
-    children.push(KV("Preguntas respondidas", `${answeredCount}/${totalQuestions}`));
-    children.push(KV("Promedio (respondidas)", `${avgScore.toFixed(2)}/4`));
-    children.push(KV("Puntuación real obtenida", `${realPoints.toFixed(0)} pts`));
-    children.push(KV("Nivel", level.nivel));
-    children.push(P(level.descripcion));
-
-    children.push(H2("Semáforo por área"));
-    children.push(areaTable);
-
-    if ((positiveComments || "").trim()) {
-      children.push(H2("Comentarios Positivos y Fortalezas"));
-      clean(positiveComments)
-        .split("\n")
-        .filter((l) => l.trim())
-        .forEach((line) => children.push(P(line)));
-    }
-
-    if ((negativeComments || "").trim()) {
-      children.push(H2("Comentarios Negativos y Hallazgos"));
-      clean(negativeComments)
-        .split("\n")
-        .filter((l) => l.trim())
-        .forEach((line) => children.push(P(line)));
-    }
-
-    if ((recommendations || "").trim()) {
-      children.push(H2("Recomendaciones Estratégicas y Plan de Acción"));
-      clean(recommendations)
-        .split("\n")
-        .filter((l) => l.trim())
-        .forEach((line) => children.push(P(line)));
-    }
-
-    if ((generalComments || "").trim()) {
-      children.push(H2("Comentarios Generales Adicionales"));
-      clean(generalComments)
-        .split("\n")
-        .filter((l) => l.trim())
-        .forEach((line) => children.push(P(line)));
-    }
-
-    // ✅ Documento con estilo default (tipografía global)
-    const doc = new Document({
-      styles: {
-        default: {
-          document: {
-            run: { font: DOC_FONT },
-            paragraph: { spacing: { line: 276 } }, // interlineado aprox 1.15
-          },
-        },
-      },
-      sections: [{ children }],
-    });
-
-    const blob = await Packer.toBlob(doc);
-    const fileName = `Reporte_Auditoria_TI_${(introData.nombreEmpresa || "Empresa")
-      .replace(/\s+/g, "_")
-      .replace(/[^\w\-]/g, "")}.docx`;
-
-    saveAs(blob, fileName);
-  } catch (err) {
-    console.error(err);
-    alert("Error al exportar Word. Revisa la consola (F12).");
-  }
-};
+  };
 
 
 
@@ -2173,153 +2045,31 @@ const startInlineDictation = (section, id) => {
 
   const exportToExcel = async () => {
     try {
+      setGlobalLoadingMessage('Generando reporte Excel profesional multi-pestaña...');
       const avgScore = calculateTotalScore();
       const totalScore = calculateTotalRealScore();
       const scoreLevel = getScoreLevel(avgScore);
       const areaScores = calculateAreaScores();
 
-      const workbook = new ExcelJS.Workbook();
-      workbook.creator = 'Auditoría de TI';
-      workbook.created = new Date();
-
-      const sheet = workbook.addWorksheet('Reporte de Auditoría');
-
-      // Helper to add a styled title
-      const addHeader = (title) => {
-        const row = sheet.addRow([title]);
-        row.getCell(1).font = { size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
-        row.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0070C0' } };
-        sheet.mergeCells(row.number, 1, row.number, 6);
-        return row;
-      };
-
-      // 1. Información General
-      addHeader('INFORMACIÓN GENERAL');
-      sheet.addRow(['Empresa', introData.nombreEmpresa || 'N/A']);
-      sheet.addRow(['Nombre', introData.nombre || 'N/A']);
-      sheet.addRow(['Puesto', introData.puesto || 'N/A']);
-      sheet.addRow(['Contacto', introData.contacto || 'N/A']);
-      sheet.addRow(['Giro de la empresa', introData.giro || 'N/A']);
-      sheet.addRow(['Sitio web', introData.sitioWeb || 'N/A']);
-      if ((introData.preliminarEmpresa || '').trim()) {
-        sheet.addRow(['Investigación preliminar (IA)', introData.preliminarEmpresa]);
-      }
-      sheet.addRow(['Colaboradores', introData.colaboradores || 'N/A']);
-      sheet.addRow(['Modalidad', introData.modalidad || 'N/A']);
-      sheet.addRow(['Proporciona equipos', introData.proporcionaEquipos || 'N/A']);
-      sheet.addRow(['Tipo de equipos', introData.tipoEquipos || 'N/A']);
-      sheet.addRow(['Estructura TI', introData.estructuraTI || 'N/A']);
-      sheet.addRow(['Dependencia de red', introData.dependenciaRed || 'N/A']);
-      sheet.addRow(['Incidencias recientes', introData.incidenciasRecientes || 'N/A']);
-      sheet.addRow([]);
-
-      // 2. Puntuación General
-      addHeader('PUNTUACIÓN GENERAL');
-      sheet.addRow(['Puntuación Real Obtenida', totalScore.toFixed(0)]);
-      sheet.addRow(['Promedio', avgScore.toFixed(2)]);
-      sheet.addRow(['Nivel', scoreLevel.nivel]);
-      sheet.addRow(['Descripción', scoreLevel.descripcion]);
-      sheet.addRow([]);
-
-      // 3. Puntuación por Áreas
-      addHeader('PUNTUACIÓN POR ÁREAS');
-      const areaHeader = sheet.addRow(['Área', 'Porcentaje', 'Promedio', 'Respondidas', 'Total']);
-      areaHeader.eachCell(c => { 
-        c.font = { bold: true }; 
-        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E0E0' } }; 
+      await exportAuditToProfessionalExcel({
+        introData,
+        actor,
+        customSections,
+        responses,
+        areaScores,
+        avgScore,
+        totalScore,
+        scoreLevel,
+        positiveComments,
+        negativeComments,
+        recommendations,
+        generalComments,
       });
-      Object.entries(areaScores).forEach(([area, data]) => {
-        sheet.addRow([area, `${data.percentage}%`, data.score, data.answered, data.total]);
-      });
-      sheet.addRow([]);
-
-      // 4. Detalle
-      addHeader('DETALLE DE EVALUACIÓN');
-      const detailHeader = sheet.addRow(['Sección', 'ID', 'Pregunta', 'Evaluación', 'Evidencia', 'Observaciones']);
-      detailHeader.eachCell(c => { 
-        c.font = { bold: true }; 
-        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E0E0' } }; 
-      });
-
-      Object.keys(customSections).forEach(section => {
-        customSections[section].forEach(q => {
-          const key = `${section}-${q.id}`;
-          const r = responses[key] || {};
-          const row = sheet.addRow([
-            section,
-            q.id,
-            q.pregunta,
-            r.evaluacion || 'Sin evaluar',
-            r.evidencia || '',
-            r.observaciones || ''
-          ]);
-          // Wrap text
-          row.eachCell(c => { c.alignment = { wrapText: true, vertical: 'top' }; });
-        });
-      });
-
-      // 5. Conclusiones y Reporte Final
-      if (positiveComments || negativeComments || recommendations || generalComments) {
-        sheet.addRow([]);
-        addHeader('CONCLUSIONES Y REPORTE FINAL');
-
-        if (positiveComments) {
-          const titleRow = sheet.addRow(['FORTALEZAS Y ASPECTOS POSITIVOS']);
-          titleRow.font = { bold: true, color: { argb: 'FF059669' } };
-          const posRow = sheet.addRow([positiveComments]);
-          sheet.mergeCells(posRow.number, 1, posRow.number, 6);
-          posRow.height = 70;
-          posRow.getCell(1).alignment = { wrapText: true, vertical: 'top' };
-          sheet.addRow([]);
-        }
-
-        if (negativeComments) {
-          const titleRow = sheet.addRow(['HALLAZGOS Y VULNERABILIDADES']);
-          titleRow.font = { bold: true, color: { argb: 'FFE11D48' } };
-          const negRow = sheet.addRow([negativeComments]);
-          sheet.mergeCells(negRow.number, 1, negRow.number, 6);
-          negRow.height = 70;
-          negRow.getCell(1).alignment = { wrapText: true, vertical: 'top' };
-          sheet.addRow([]);
-        }
-
-        if (recommendations) {
-          const titleRow = sheet.addRow(['RECOMENDACIONES Y PLAN DE ACCIÓN']);
-          titleRow.font = { bold: true, color: { argb: 'FF0891B2' } };
-          const recRow = sheet.addRow([recommendations]);
-          sheet.mergeCells(recRow.number, 1, recRow.number, 6);
-          recRow.height = 70;
-          recRow.getCell(1).alignment = { wrapText: true, vertical: 'top' };
-          sheet.addRow([]);
-        }
-
-        if (generalComments) {
-          const titleRow = sheet.addRow(['COMENTARIOS GENERALES ADICIONALES']);
-          titleRow.font = { bold: true };
-          const genRow = sheet.addRow([generalComments]);
-          sheet.mergeCells(genRow.number, 1, genRow.number, 6);
-          genRow.height = 60;
-          genRow.getCell(1).alignment = { wrapText: true, vertical: 'top' };
-        }
-      }
-
-      // Format Columns
-      sheet.getColumn(1).width = 25; // Sección / Área
-      sheet.getColumn(2).width = 10; // ID / Porcentaje
-      sheet.getColumn(3).width = 50; // Pregunta
-      sheet.getColumn(4).width = 20; // Evaluación
-      sheet.getColumn(5).width = 30; // Evidencia
-      sheet.getColumn(6).width = 40; // Observaciones
-
-      // Save file
-      const buffer = await workbook.xlsx.writeBuffer();
-      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      const nombreEmpresa = introData.nombreEmpresa ? introData.nombreEmpresa.replace(/[^a-z0-9]/gi, '_').toLowerCase() : 'empresa';
-      saveAs(blob, `Auditoria_TI_${nombreEmpresa}.xlsx`);
-
     } catch (error) {
       console.error("Error al exportar Excel:", error);
-      alert("Hubo un error al generar el archivo Excel.");
+      alert("Hubo un error al generar el archivo Excel profesional.");
+    } finally {
+      setGlobalLoadingMessage(null);
     }
   };
 
@@ -2351,6 +2101,9 @@ const startInlineDictation = (section, id) => {
               setResponses(audit.data.responses || {});
               setCustomSections(sortSections(audit.data.customSections || getDefaultSections()));
               setDeletedQuestions(audit.data.deletedQuestions || []);
+              setEvaluations(audit.data.evaluations || {});
+              setFinalAudit(audit.data.finalAudit || { status: 'draft', answers: {} });
+              setActiveEvaluationView('my_draft');
               setGeneralComments(audit.data.generalComments || '');
               setPositiveComments(audit.data.positiveComments || '');
               setNegativeComments(audit.data.negativeComments || '');
@@ -2396,6 +2149,9 @@ const startInlineDictation = (section, id) => {
                        setResponses(freshAudit.data.responses || {});
                        setCustomSections(sortSections(freshAudit.data.customSections || getDefaultSections()));
                        setDeletedQuestions(freshAudit.data?.deletedQuestions || []);
+                       setEvaluations(freshAudit.data?.evaluations || {});
+                       setFinalAudit(freshAudit.data?.finalAudit || { status: 'draft', answers: {} });
+                       setActiveEvaluationView('my_draft');
                        setGeneralComments(freshAudit.data.generalComments || '');
                        setPositiveComments(freshAudit.data.positiveComments || '');
                        setNegativeComments(freshAudit.data.negativeComments || '');
@@ -3959,6 +3715,21 @@ const startInlineDictation = (section, id) => {
           </div>
         </div>
 
+        {/* Gestor y Selector de Evaluaciones Paralelas (Fork & Merge) */}
+        {step === 'form' && (
+          <AuditEvaluationManager
+            evaluations={evaluations}
+            currentAuditorUid={currentAuditorUid}
+            currentAuditorName={currentAuditorName}
+            activeView={activeEvaluationView}
+            onChangeView={handleChangeEvaluationView}
+            onOpenMergeModal={() => setShowMergeModal(true)}
+            finalAudit={finalAudit}
+            isAdminOrEditor={currentUserRole === 'admin' || currentUserRole === 'auditor'}
+            isReadOnlyGlobal={isReadOnly}
+          />
+        )}
+
         {/* Dashboard de Métricas Limpio */}
         <div className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-5">
           {/* Métrica 1: Puntuación Real Obtenida */}
@@ -5018,8 +4789,13 @@ const startInlineDictation = (section, id) => {
                               <button
                                 key={score}
                                 type="button"
+                                disabled={isReadOnly || activeEvaluationView !== 'my_draft'}
                                 onClick={() => updateResponse(section, item.id, 'evaluacion', score)}
-                                className={`w-11 h-11 rounded-lg font-bold text-sm transition-all cursor-pointer flex items-center justify-center ${
+                                className={`w-11 h-11 rounded-lg font-bold text-sm transition-all flex items-center justify-center ${
+                                  isReadOnly || activeEvaluationView !== 'my_draft'
+                                    ? 'opacity-80 cursor-not-allowed'
+                                    : 'cursor-pointer'
+                                } ${
                                   response.evaluacion === score
                                     ? 'bg-blue-600 text-white shadow-xs ring-2 ring-blue-600 ring-offset-2'
                                     : 'bg-slate-100 text-slate-700 hover:bg-slate-200/80'
@@ -5038,10 +4814,11 @@ const startInlineDictation = (section, id) => {
                           </label>
                           <input
                             type="text"
+                            disabled={isReadOnly || activeEvaluationView !== 'my_draft'}
                             value={response.evidencia || ''}
                             onChange={(e) => updateResponse(section, item.id, 'evidencia', e.target.value)}
                             placeholder="Documentos, capturas, políticas, tickets..."
-                            className="w-full px-3.5 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-blue-600 transition"
+                            className="w-full px-3.5 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-blue-600 transition disabled:bg-slate-50 disabled:text-slate-500 disabled:cursor-not-allowed"
                           />
                         </div>
                       </div>
@@ -5054,8 +4831,11 @@ const startInlineDictation = (section, id) => {
                           <div className="flex gap-2">
                             <button
                               type="button"
+                              disabled={isReadOnly || activeEvaluationView !== 'my_draft'}
                               onClick={() => startInlineDictation(section, item.id)}
-                              className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1.5 text-xs font-medium cursor-pointer ${
+                              className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1.5 text-xs font-medium ${
+                                isReadOnly || activeEvaluationView !== 'my_draft' ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'
+                              } ${
                                 dictatingKey === key 
                                   ? 'bg-red-500 text-white animate-pulse' 
                                   : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
@@ -5067,13 +4847,13 @@ const startInlineDictation = (section, id) => {
                             <button
                               type="button"
                               onClick={() => rewriteObservationWithAI(section, item)}
-                              disabled={rewritingKey === key || !response.observaciones}
-                              className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1.5 text-xs font-medium cursor-pointer ${
-                                rewritingKey === key 
-                                  ? 'bg-blue-100 text-blue-700 animate-pulse' 
-                                  : !response.observaciones 
-                                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed' 
-                                    : 'bg-slate-900 text-white hover:bg-slate-800'
+                              disabled={isReadOnly || activeEvaluationView !== 'my_draft' || rewritingKey === key || !response.observaciones}
+                              className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1.5 text-xs font-medium ${
+                                isReadOnly || activeEvaluationView !== 'my_draft' || !response.observaciones
+                                  ? 'bg-slate-100 text-slate-400 cursor-not-allowed' 
+                                  : rewritingKey === key 
+                                    ? 'bg-blue-100 text-blue-700 animate-pulse' 
+                                    : 'bg-slate-900 text-white hover:bg-slate-800 cursor-pointer'
                               }`}
                               title="Mejorar redacción con IA"
                             >
@@ -5082,11 +4862,12 @@ const startInlineDictation = (section, id) => {
                           </div>
                         </div>
                         <textarea
+                          disabled={isReadOnly || activeEvaluationView !== 'my_draft'}
                           value={response.observaciones || ''}
                           onChange={(e) => updateResponse(section, item.id, 'observaciones', e.target.value)}
                           placeholder="Escribe o dicta los hallazgos observados..."
                           rows="3"
-                          className={`w-full px-3.5 py-2.5 text-sm bg-white border border-slate-200 rounded-lg resize-y transition-colors focus:ring-2 focus:ring-blue-600 focus:border-blue-600 ${
+                          className={`w-full px-3.5 py-2.5 text-sm bg-white border border-slate-200 rounded-lg resize-y transition-colors focus:ring-2 focus:ring-blue-600 focus:border-blue-600 disabled:bg-slate-50 disabled:text-slate-500 disabled:cursor-not-allowed ${
                             dictatingKey === key ? 'border-red-400 bg-red-50/20' : ''
                           }`}
                         />
@@ -5210,6 +4991,17 @@ const startInlineDictation = (section, id) => {
           setCustomSections(newSections);
           setDeletedQuestions(newDeletedQuestions || []);
         }}
+      />
+
+      {/* Modal de Fusión y Consolidación (Fork & Merge) */}
+      <AuditMergeModal
+        isOpen={showMergeModal}
+        onClose={() => setShowMergeModal(false)}
+        evaluations={evaluations}
+        currentAuditorUid={currentAuditorUid}
+        customSections={customSections}
+        initialFinalAnswers={finalAudit.answers || responses}
+        onConsolidate={handleConsolidate}
       />
 
       {renderAccessModal()}
