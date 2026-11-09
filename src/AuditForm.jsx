@@ -316,6 +316,7 @@ const AuditForm = () => {
   const [accessPinInput, setAccessPinInput] = useState('');
   const [accessPinError, setAccessPinError] = useState('');
   const [openDropdownAuditId, setOpenDropdownAuditId] = useState(null);
+  const [openDropdownCoords, setOpenDropdownCoords] = useState({ top: 0, right: 0 });
   const [pendingAccessTargetView, setPendingAccessTargetView] = useState('my_draft');
   const [shareModalAudit, setShareModalAudit] = useState(null);
   const [shareLinkMode, setShareLinkMode] = useState('view'); // 'view' | 'collab'
@@ -2956,13 +2957,22 @@ const startInlineDictation = (section, id) => {
                                 <Trash2 size={16} />
                               </button>
 
-                              {/* Botón Abrir con Dropdown contextual */}
-                              <div className="relative inline-block text-left ml-2">
+                              {/* Botón Abrir con Dropdown contextual ultra minimalista */}
+                              <div className="relative inline-block text-right ml-2">
                                 <button
                                   type="button"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    setOpenDropdownAuditId(openDropdownAuditId === audit.id ? null : audit.id);
+                                    if (openDropdownAuditId === audit.id) {
+                                      setOpenDropdownAuditId(null);
+                                    } else {
+                                      const rect = e.currentTarget.getBoundingClientRect();
+                                      setOpenDropdownCoords({
+                                        top: rect.bottom + 6,
+                                        right: Math.max(12, window.innerWidth - rect.right)
+                                      });
+                                      setOpenDropdownAuditId(audit.id);
+                                    }
                                   }}
                                   className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm transition-colors cursor-pointer"
                                 >
@@ -2973,11 +2983,12 @@ const startInlineDictation = (section, id) => {
                                 {openDropdownAuditId === audit.id && (
                                   <>
                                     <div 
-                                      className="fixed inset-0 z-30" 
+                                      className="fixed inset-0 z-40 bg-transparent" 
                                       onClick={(e) => { e.stopPropagation(); setOpenDropdownAuditId(null); }}
                                     />
                                     <div 
-                                      className="absolute right-0 mt-2 w-72 sm:w-80 bg-white rounded-xl shadow-xl border border-slate-100 p-1.5 z-40 text-left animate-in fade-in zoom-in-95 duration-150"
+                                      style={{ top: `${openDropdownCoords.top}px`, right: `${openDropdownCoords.right}px` }}
+                                      className="fixed w-52 sm:w-56 bg-white rounded-xl shadow-xl border border-slate-100 py-1.5 z-50 text-left animate-in fade-in zoom-in-95 duration-100"
                                       onClick={(e) => e.stopPropagation()}
                                     >
                                       {/* Opción 1: Mi Borrador */}
@@ -2987,20 +2998,13 @@ const startInlineDictation = (section, id) => {
                                           setOpenDropdownAuditId(null);
                                           handleOpenAuditWithOptions(audit, 'my_draft');
                                         }}
-                                        className="w-full p-2.5 rounded-lg hover:bg-slate-50 transition-colors flex items-start gap-3 cursor-pointer text-left"
+                                        className="w-full flex items-center justify-between px-3.5 py-2 text-xs text-slate-700 hover:bg-slate-50 hover:text-blue-600 transition-colors cursor-pointer group"
                                       >
-                                        <div className="w-7 h-7 rounded-md bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 mt-0.5">
-                                          <Edit3 size={15} />
+                                        <div className="flex items-center gap-2.5">
+                                          <Edit3 size={15} className="text-slate-400 group-hover:text-blue-600 transition-colors" />
+                                          <span className="font-medium">Mi Borrador</span>
                                         </div>
-                                        <div className="flex-1 min-w-0">
-                                          <div className="flex items-center justify-between">
-                                            <span className="text-xs font-semibold text-slate-800">Mi Borrador</span>
-                                            <span className="text-[10px] font-medium bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded">Editable</span>
-                                          </div>
-                                          <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">
-                                            Tu espacio de evaluación personal (requiere PIN).
-                                          </p>
-                                        </div>
+                                        <span className="text-[10px] font-semibold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">Editar</span>
                                       </button>
 
                                       {/* Opción 2: Borrador Colega */}
@@ -3019,29 +3023,24 @@ const startInlineDictation = (section, id) => {
                                               setOpenDropdownAuditId(null);
                                               handleOpenAuditWithOptions(audit, 'colleague', colUid);
                                             }}
-                                            className={`w-full p-2.5 rounded-lg transition-colors flex items-start gap-3 text-left ${
-                                              hasColleague ? 'hover:bg-slate-50 cursor-pointer' : 'opacity-40 cursor-not-allowed'
+                                            className={`w-full flex items-center justify-between px-3.5 py-2 text-xs text-slate-700 transition-colors ${
+                                              hasColleague ? 'hover:bg-slate-50 hover:text-blue-600 cursor-pointer group' : 'opacity-40 cursor-not-allowed'
                                             }`}
                                           >
-                                            <div className="w-7 h-7 rounded-md bg-slate-100 text-slate-600 flex items-center justify-center shrink-0 mt-0.5">
-                                              <Eye size={15} />
+                                            <div className="flex items-center gap-2.5 min-w-0">
+                                              <Eye size={15} className="text-slate-400 group-hover:text-blue-600 transition-colors shrink-0" />
+                                              <span className="truncate" title={hasColleague ? `Borrador de ${colName}` : 'Borrador Colega'}>
+                                                {hasColleague ? `Borrador ${colName.split(' ')[0]}` : 'Borrador Colega'}
+                                              </span>
                                             </div>
-                                            <div className="flex-1 min-w-0">
-                                              <div className="flex items-center justify-between">
-                                                <span className="text-xs font-semibold text-slate-800 truncate max-w-[150px]">
-                                                  {hasColleague ? `Borrador de ${colName}` : 'Borrador de Colega'}
-                                                </span>
-                                                <span className="text-[10px] font-medium bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">Solo lectura</span>
-                                              </div>
-                                              <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">
-                                                {hasColleague ? `Visualiza las respuestas de ${colName}.` : 'Sin evaluación de colega registrada.'}
-                                              </p>
-                                            </div>
+                                            <span className="text-[10px] text-slate-400 shrink-0">Lectura</span>
                                           </button>
                                         );
                                       })()}
 
-                                      {/* Opción 3: Versión Consolidada Oficial */}
+                                      <div className="border-t border-slate-100 my-1"></div>
+
+                                      {/* Opción 3: Versión Oficial */}
                                       {(() => {
                                         const isConsolidated = audit.data?.finalAudit?.status === 'consolidated' || audit.finalAudit?.status === 'consolidated';
 
@@ -3054,28 +3053,19 @@ const startInlineDictation = (section, id) => {
                                               setOpenDropdownAuditId(null);
                                               handleOpenAuditWithOptions(audit, 'official');
                                             }}
-                                            className={`w-full p-2.5 rounded-lg transition-colors flex items-start gap-3 border-t border-slate-100 text-left ${
-                                              isConsolidated ? 'hover:bg-slate-50 cursor-pointer' : 'opacity-50 cursor-not-allowed'
+                                            className={`w-full flex items-center justify-between px-3.5 py-2 text-xs text-slate-700 transition-colors ${
+                                              isConsolidated ? 'hover:bg-slate-50 hover:text-emerald-700 cursor-pointer group' : 'opacity-40 cursor-not-allowed'
                                             }`}
                                           >
-                                            <div className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 mt-0.5 ${
-                                              isConsolidated ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'
+                                            <div className="flex items-center gap-2.5">
+                                              <ShieldCheck size={15} className={`transition-colors ${isConsolidated ? 'text-slate-400 group-hover:text-emerald-600' : 'text-slate-300'}`} />
+                                              <span>Versión Oficial</span>
+                                            </div>
+                                            <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                                              isConsolidated ? 'text-emerald-700 bg-emerald-50' : 'text-slate-400'
                                             }`}>
-                                              <ShieldCheck size={15} />
-                                            </div>
-                                            <div className="flex-1 min-w-0">
-                                              <div className="flex items-center justify-between">
-                                                <span className="text-xs font-semibold text-slate-800">Versión Oficial</span>
-                                                <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
-                                                  isConsolidated ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
-                                                }`}>
-                                                  {isConsolidated ? 'Oficial' : 'Pendiente'}
-                                                </span>
-                                              </div>
-                                              <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">
-                                                {isConsolidated ? 'Resultado final fusionado de la auditoría.' : 'Pendiente de consolidar por el equipo.'}
-                                              </p>
-                                            </div>
+                                              {isConsolidated ? 'Oficial' : 'Pendiente'}
+                                            </span>
                                           </button>
                                         );
                                       })()}
@@ -3088,19 +3078,11 @@ const startInlineDictation = (section, id) => {
                                             setOpenDropdownAuditId(null);
                                             handleOpenAuditWithOptions(audit, 'merge');
                                           }}
-                                          className="w-full p-2.5 rounded-lg hover:bg-indigo-50/70 transition-colors flex items-start gap-3 border-t border-slate-100 text-left cursor-pointer"
+                                          className="w-full flex items-center justify-between px-3.5 py-2 text-xs text-slate-700 hover:bg-slate-50 hover:text-indigo-600 transition-colors cursor-pointer group"
                                         >
-                                          <div className="w-7 h-7 rounded-md bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 mt-0.5">
-                                            <GitMerge size={15} />
-                                          </div>
-                                          <div className="flex-1 min-w-0">
-                                            <div className="flex items-center justify-between">
-                                              <span className="text-xs font-semibold text-indigo-950">Comparar y Fusionar</span>
-                                              <span className="text-[10px] font-medium bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded">Merge</span>
-                                            </div>
-                                            <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">
-                                              Herramienta de consolidación lado a lado.
-                                            </p>
+                                          <div className="flex items-center gap-2.5">
+                                            <GitMerge size={15} className="text-slate-400 group-hover:text-indigo-600 transition-colors" />
+                                            <span>Fusionar (Merge)</span>
                                           </div>
                                         </button>
                                       )}
