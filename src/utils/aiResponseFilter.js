@@ -7,6 +7,30 @@
  * en texto natural para los campos de auditoría.
  */
 
+function cleanStringEscapes(str) {
+  if (typeof str !== 'string') return '';
+  return str
+    .replace(/\\n/g, '\n')
+    .replace(/\\r/g, '')
+    .replace(/\\"/g, '"')
+    .replace(/^"|"$/g, '')
+    .trim();
+}
+
+function extractRegexField(str, fieldNames) {
+  if (typeof str !== 'string') return null;
+  const names = Array.isArray(fieldNames) ? fieldNames : [fieldNames];
+  for (const name of names) {
+    const re = new RegExp(`"${name}"\\s*:\\s*"([\\s\\S]*?)(?:"\\s*,|\\n\\s*"[a-zA-Z0-9_]+"|"$|\\n\\s*\\})`, 'i');
+    const match = str.match(re);
+    if (match && match[1]) {
+      const val = cleanStringEscapes(match[1]);
+      if (val.length > 0) return val;
+    }
+  }
+  return null;
+}
+
 export function filterAiResponse(data) {
   if (data === null || data === undefined) return "";
 
@@ -15,10 +39,14 @@ export function filterAiResponse(data) {
   // 1. Desempaquetar si viene en array (habitual en respuestas de workflows de n8n)
   if (Array.isArray(target)) {
     if (target.length === 0) return "";
+    // Si es array de strings, unirlos
+    if (target.every(item => typeof item === "string")) {
+      return target.map(s => filterAiResponse(s)).join("\n\n");
+    }
     target = target[0]?.json || target[0];
   }
 
-  // 2. Si viene como string, limpiar bloques markdown y parsear si contiene JSON
+  // 2. Si viene como string
   if (typeof target === "string") {
     let rawStr = target.trim();
 
@@ -27,29 +55,67 @@ export function filterAiResponse(data) {
       rawStr = rawStr.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
     }
 
-    // Si tiene estructura de objeto o array JSON, intentar parsear
-    if ((rawStr.startsWith("{") && rawStr.endsWith("}")) || (rawStr.startsWith("[") && rawStr.endsWith("]"))) {
+    // Intentar extraer bloque JSON si contiene llaves aunque tenga texto alrededor
+    const firstBrace = rawStr.indexOf("{");
+    const lastBrace = rawStr.lastIndexOf("}");
+    const firstBracket = rawStr.indexOf("[");
+    const lastBracket = rawStr.lastIndexOf("]");
+
+    let parsedCandidate = null;
+
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      const jsonCandidate = rawStr.slice(firstBrace, lastBrace + 1);
       try {
-        const parsed = JSON.parse(rawStr);
-        target = Array.isArray(parsed) ? (parsed[0]?.json || parsed[0]) : parsed;
+        parsedCandidate = JSON.parse(jsonCandidate);
       } catch (e) {
-        target = rawStr;
+        // Si JSON.parse falla por saltos de línea reales dentro de cadenas, intentar reemplazar saltos no escapados
+        try {
+          const sanitized = jsonCandidate.replace(/(?<=:\s*"[^"]*)\n(?=[^"]*")/g, "\\n");
+          parsedCandidate = JSON.parse(sanitized);
+        } catch (e2) {
+          // Si aún falla, intentamos extraer campos específicos mediante regex
+          const analisisFallback = extractRegexField(jsonCandidate, [
+            "analisis_financiero", "analisis_tecnico", "analisis", "observacion", "observaciones", "hallazgo", "hallazgos"
+          ]);
+          const recomendacionFallback = extractRegexField(jsonCandidate, [
+            "accion_recomendada", "recomendacion", "recomendaciones", "accion_sugerida", "accion"
+          ]);
+
+          if (analisisFallback && recomendacionFallback) {
+            return `${analisisFallback}\n\nAcción recomendada:\n${recomendacionFallback}`.trim();
+          }
+          if (analisisFallback) return analisisFallback;
+          if (recomendacionFallback) return `Acción recomendada:\n${recomendacionFallback}`.trim();
+        }
       }
+    } else if (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket) {
+      try {
+        parsedCandidate = JSON.parse(rawStr.slice(firstBracket, lastBracket + 1));
+      } catch (e) {}
+    }
+
+    if (parsedCandidate) {
+      target = Array.isArray(parsedCandidate) ? (parsedCandidate[0]?.json || parsedCandidate[0]) : parsedCandidate;
     } else {
-      target = rawStr;
+      // Si no es JSON y no se pudo parsear, comprobar si tiene claves de análisis estructurado con regex
+      if (rawStr.includes('"analisis_financiero"') || rawStr.includes('"accion_recomendada"') || rawStr.includes('"observacion"')) {
+        const af = extractRegexField(rawStr, ["analisis_financiero", "analisis_tecnico", "analisis", "observacion"]);
+        const ar = extractRegexField(rawStr, ["accion_recomendada", "recomendacion", "accion"]);
+        if (af && ar) return `${af}\n\nAcción recomendada:\n${ar}`.trim();
+        if (af) return af;
+        if (ar) return `Acción recomendada:\n${ar}`.trim();
+      }
+
+      return cleanStringEscapes(rawStr);
     }
   }
 
-  // Si después del proceso es un string de texto plano
+  // 3. Si después de procesar es un string plano
   if (typeof target === "string") {
-    return target
-      .replace(/\\n/g, "\n")
-      .replace(/\\r/g, "")
-      .replace(/^"|"$/g, "")
-      .trim();
+    return cleanStringEscapes(target);
   }
 
-  // 3. Si es un objeto, extraer los campos relevantes según su estructura
+  // 4. Si es un objeto, extraer los campos relevantes según su estructura
   if (typeof target === "object" && target !== null) {
     // Si viene anidado en propiedades comunes de n8n
     if (target.json && typeof target.json === "object") {
@@ -58,7 +124,7 @@ export function filterAiResponse(data) {
       target = target.data;
     }
 
-    // Claves directas estándar de salida
+    // Claves directas estándar de salida de agentes y LLMs
     const directKeys = [
       "rewritten", 
       "output", 
@@ -67,24 +133,31 @@ export function filterAiResponse(data) {
       "result", 
       "respuesta", 
       "content", 
-      "message"
+      "message",
+      "generated_text"
     ];
 
     for (const key of directKeys) {
       if (typeof target[key] === "string" && target[key].trim()) {
         return filterAiResponse(target[key]);
       }
+      if (typeof target[key] === "object" && target[key] !== null) {
+        return filterAiResponse(target[key]);
+      }
     }
 
-    // Casos específicos estructurados de análisis (gastos, TI, seguridad y auditoría)
+    // Casos específicos estructurados de auditoría, TI y análisis
     const analisis = 
       target.analisis_financiero || 
       target.analisis_tecnico || 
+      target.analisis_gasto || 
       target.analisis || 
       target.observacion || 
       target.observaciones || 
       target.hallazgo || 
       target.hallazgos || 
+      target.diagnostico || 
+      target.descripcion || 
       "";
 
     const recomendacion = 
@@ -93,6 +166,8 @@ export function filterAiResponse(data) {
       target.recomendaciones || 
       target.accion_sugerida || 
       target.accion || 
+      target.propuesta || 
+      target.solucion || 
       "";
 
     if (analisis && recomendacion) {
@@ -109,12 +184,11 @@ export function filterAiResponse(data) {
       return `Acción recomendada:\n${filterAiResponse(recomendacion)}`.trim();
     }
 
-    if (target.veredicto_consejero && typeof target.veredicto_consejero === "string") {
-      return String(target.veredicto_consejero).trim();
+    if (target.veredicto_consejero && typeof target.veredicto_consejero === "string" && target.veredicto_consejero.length > 20) {
+      return cleanStringEscapes(target.veredicto_consejero);
     }
 
-    // Fallback heurístico para objetos con múltiples claves:
-    // Extraer campos de texto descriptivo y omitir metadatos técnicos de n8n
+    // Filtrar metadatos técnicos y extraer textos narrativos
     const ignoredKeys = new Set([
       "tipo_solicitud", 
       "categoria", 
@@ -124,29 +198,40 @@ export function filterAiResponse(data) {
       "veredicto_consejero", 
       "datos_sanitizados", 
       "id", 
+      "_id",
       "status", 
       "success", 
       "ok", 
-      "timestamp"
+      "timestamp",
+      "created_at",
+      "version",
+      "model"
     ]);
 
     const meaningfulTexts = [];
     for (const [k, v] of Object.entries(target)) {
-      if (!ignoredKeys.has(k) && typeof v === "string" && v.trim().length > 15) {
+      if (!ignoredKeys.has(k) && typeof v === "string" && v.trim().length > 10) {
         meaningfulTexts.push(v.trim());
       }
     }
 
     if (meaningfulTexts.length > 0) {
-      return meaningfulTexts.join("\n\n");
+      return meaningfulTexts.map(t => cleanStringEscapes(t)).join("\n\n");
     }
 
-    // Último recurso
-    return JSON.stringify(target, null, 2);
+    // Fallback seguro: En lugar de JSON.stringify, tomar cualquier texto legible
+    const anyTexts = Object.entries(target)
+      .filter(([k, v]) => !ignoredKeys.has(k) && typeof v === "string" && v.trim())
+      .map(([k, v]) => `${k}: ${v.trim()}`);
+
+    if (anyTexts.length > 0) {
+      return anyTexts.join("\n");
+    }
+
+    return "";
   }
 
-  return String(target || "").trim();
+  return cleanStringEscapes(String(target || ""));
 }
 
 export default filterAiResponse;
-

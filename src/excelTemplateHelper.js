@@ -116,7 +116,7 @@ const addInstructionsSheet = (workbook, empresa = '') => {
   sub3.getCell(1).font = { name: 'Calibri', size: 12, bold: true, color: { argb: COLOR_PRIMARY_NAVY } };
 
   const tips = [
-    '• Pestaña "Cuestionario / Preguntas": No modifiques los nombres de los encabezados de las columnas para evitar errores de sintaxis al importar.',
+    '• Pestaña "Cuestionario - Preguntas": No modifiques los nombres de los encabezados de las columnas para evitar errores de sintaxis al importar.',
     '• Identificadores: En la columna "ID Pregunta" puedes utilizar números (1, 2) o códigos normativos (4.1, A.5.1).',
     '• Nuevas Áreas: Para agregar una nueva área o dominio, escribe su nombre en la columna "Área / Dominio" en las filas deseadas.',
     '• Niveles 0 a 4: Puedes enriquecer o personalizar el criterio específico de cada nivel para cada pregunta o control.'
@@ -140,7 +140,7 @@ const addInstructionsSheet = (workbook, empresa = '') => {
 
 /**
  * Genera y descarga la plantilla oficial de preguntas en formato Excel (.xlsx)
- * con las 2 pestañas estructuradas: "Instrucciones" y "Cuestionario / Preguntas".
+ * con las 2 pestañas estructuradas: "Instrucciones" y "Cuestionario - Preguntas".
  */
 export const downloadExcelTemplate = async (sourceSections = DEFAULT_SECTIONS) => {
   try {
@@ -151,8 +151,8 @@ export const downloadExcelTemplate = async (sourceSections = DEFAULT_SECTIONS) =
     // Pestaña 1: Instrucciones
     addInstructionsSheet(workbook);
 
-    // Pestaña 2: Cuestionario / Preguntas
-    const wsQuestions = workbook.addWorksheet('Cuestionario / Preguntas');
+    // Pestaña 2: Cuestionario - Preguntas (sin barra diagonal para evitar error de Excel)
+    const wsQuestions = workbook.addWorksheet('Cuestionario - Preguntas');
     wsQuestions.views = [{ showGridLines: true }];
 
     wsQuestions.columns = [
@@ -222,7 +222,7 @@ export const downloadExcelTemplate = async (sourceSections = DEFAULT_SECTIONS) =
 
 /**
  * Genera y descarga el Libro Excel de Exportación Completo de Resultados de Auditoría
- * Pestañas: "Instrucciones", "Resultados y Respuestas", "Cuestionario / Preguntas", "Resumen Ejecutivo"
+ * Pestañas: "Instrucciones", "Resultados y Respuestas", "Cuestionario - Preguntas", "Resumen y Dominios"
  */
 export const exportAuditToProfessionalExcel = async ({
   introData = {},
@@ -330,8 +330,8 @@ export const exportAuditToProfessionalExcel = async ({
       });
     });
 
-    // 3. Pestaña: Cuestionario / Preguntas Completo
-    const wsQuestions = workbook.addWorksheet('Cuestionario / Preguntas');
+    // 3. Pestaña: Cuestionario - Preguntas Completo
+    const wsQuestions = workbook.addWorksheet('Cuestionario - Preguntas');
     wsQuestions.views = [{ showGridLines: true }];
 
     wsQuestions.columns = [
@@ -394,24 +394,32 @@ export const exportAuditToProfessionalExcel = async ({
     wsSummary.mergeCells(1, 1, 1, 6);
 
     wsSummary.addRow([]);
-    wsSummary.addRow(['Empresa:', introData.nombreEmpresa || 'N/A', 'Auditor:', actor.nombreAuditor || 'N/A']);
-    wsSummary.addRow(['Puntaje Promedio:', `${avgScore.toFixed(2)} / 4.0`, 'Puntaje Real:', `${totalScore.toFixed(0)} pts`]);
-    wsSummary.addRow(['Madurez TI:', scoreLevel.nivel || 'N/A', 'Descripción:', scoreLevel.descripcion || 'N/A']);
+    const empName = introData?.nombreEmpresa || 'N/A';
+    const audName = actor?.nombreAuditor || 'N/A';
+    const numAvg = Number(avgScore || 0);
+    const numTot = Number(totalScore || 0);
+    const matNivel = scoreLevel?.nivel || 'N/A';
+    const matDesc = scoreLevel?.descripcion || 'N/A';
+
+    wsSummary.addRow(['Empresa:', empName, 'Auditor:', audName]);
+    wsSummary.addRow(['Puntaje Promedio:', `${numAvg.toFixed(2)} / 4.0`, 'Puntaje Real:', `${numTot.toFixed(0)} pts`]);
+    wsSummary.addRow(['Madurez TI:', matNivel, 'Descripción:', matDesc]);
     wsSummary.addRow([]);
 
     const domainHead = wsSummary.addRow(['Área / Dominio', 'Cumplimiento (%)', 'Promedio (/4)', 'Respondidas', 'Total Controles', 'Semáforo']);
     applyHeaderStyle(domainHead, COLOR_SECONDARY_BLUE);
 
-    Object.entries(areaScores).forEach(([area, data]) => {
+    Object.entries(areaScores || {}).forEach(([area, data]) => {
       let trafficLabel = 'Crítico';
       let trafficBg = COLOR_DANGER_BG;
       let trafficText = COLOR_DANGER_TEXT;
+      const pct = Number(data?.percentage || 0);
 
-      if (data.percentage >= 75) {
+      if (pct >= 75) {
         trafficLabel = 'Óptimo';
         trafficBg = COLOR_SUCCESS_BG;
         trafficText = COLOR_SUCCESS_TEXT;
-      } else if (data.percentage >= 50) {
+      } else if (pct >= 50) {
         trafficLabel = 'Intermedio';
         trafficBg = COLOR_WARNING_BG;
         trafficText = COLOR_WARNING_TEXT;
@@ -419,10 +427,10 @@ export const exportAuditToProfessionalExcel = async ({
 
       const row = wsSummary.addRow([
         area,
-        `${data.percentage}%`,
-        data.score,
-        data.answered,
-        data.total,
+        `${pct}%`,
+        data?.score ?? '0',
+        data?.answered ?? 0,
+        data?.total ?? 0,
         trafficLabel
       ]);
 

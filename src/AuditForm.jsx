@@ -1,7 +1,7 @@
 import { DEFAULT_SECTIONS } from "./defaultSections";
 
-import React, { useEffect, useState } from 'react';
-import { ChevronDown, ChevronUp, ChevronRight, Download, FileText, FileSpreadsheet, RefreshCw, Mic, Sparkles, Building2, Shield, Brain, Hash, CheckCircle, Search, Settings, Share2, KeyRound, Trash2, Home, Plus, X, Globe, Copy, Check, ExternalLink, Loader2, Upload, FileCode, Layers, ArrowLeft, Calendar, User, Users, BarChart2, ThumbsUp, ThumbsDown, AlertTriangle, Lightbulb, LayoutGrid, List, CheckCircle2, Maximize2, Minimize2, LogOut, Pin, Lock, Unlock, Archive, History, RotateCcw, Eye, EyeOff } from 'lucide-react';
+import React, { useEffect, useState, useMemo } from 'react';
+import { ChevronDown, ChevronUp, ChevronRight, Download, FileText, FileSpreadsheet, RefreshCw, Mic, Sparkles, Building2, Shield, Brain, Hash, CheckCircle, Search, Settings, Share2, KeyRound, Trash2, Home, Plus, X, Globe, Copy, Check, ExternalLink, Loader2, Upload, FileCode, Layers, ArrowLeft, Calendar, User, Users, BarChart2, ThumbsUp, ThumbsDown, AlertTriangle, Lightbulb, LayoutGrid, List, CheckCircle2, Maximize2, Minimize2, LogOut, Pin, Lock, Unlock, Archive, History, RotateCcw, Eye, EyeOff, GitMerge } from 'lucide-react';
 import { downloadExcelTemplate, parseQuestionsFile, exportAuditToProfessionalExcel } from './excelTemplateHelper';
 import { db, auth } from "./firebase";
 import { collection, doc, setDoc, getDoc, updateDoc, getDocs, deleteDoc, onSnapshot } from "firebase/firestore";
@@ -299,6 +299,8 @@ const AuditForm = () => {
   const [accessModalAudit, setAccessModalAudit] = useState(null);
   const [accessPinInput, setAccessPinInput] = useState('');
   const [accessPinError, setAccessPinError] = useState('');
+  const [openDropdownAuditId, setOpenDropdownAuditId] = useState(null);
+  const [pendingAccessTargetView, setPendingAccessTargetView] = useState('my_draft');
   const [shareModalAudit, setShareModalAudit] = useState(null);
   const [shareLinkMode, setShareLinkMode] = useState('view'); // 'view' | 'collab'
   const [copiedLink, setCopiedLink] = useState(false);
@@ -468,7 +470,7 @@ const AuditForm = () => {
     setImportError('');
   };
 
-  const handleProceedLoad = (audit, readOnlyMode = false) => {
+  const handleProceedLoad = (audit, readOnlyMode = false, targetView = 'my_draft', autoOpenMerge = false) => {
     setGlobalLoadingMessage('Cargando auditoría...');
     setIsReadOnly(readOnlyMode);
     setCurrentAuditId(audit.id);
@@ -482,8 +484,18 @@ const AuditForm = () => {
 
     setEvaluations(evals);
     setFinalAudit(finalA);
-    setActiveEvaluationView('my_draft');
-    setResponses(initialResponses);
+
+    // Ajustar vista activa y respuestas correspondientes
+    setActiveEvaluationView(targetView);
+    if (targetView === 'official') {
+      setResponses(finalA.answers && Object.keys(finalA.answers).length > 0 ? finalA.answers : initialResponses);
+    } else if (targetView !== 'my_draft' && evals[targetView]?.answers) {
+      setResponses(evals[targetView].answers);
+    } else {
+      // my_draft
+      const myAnswers = evals[currentAuditorUid]?.answers;
+      setResponses(myAnswers && Object.keys(myAnswers).length > 0 ? myAnswers : initialResponses);
+    }
 
     // Compatibilidad retroactiva: si la auditoría no tenía evaluations pero ya tenía responses
     if (Object.keys(evals).length === 0 && Object.keys(initialResponses).length > 0) {
@@ -517,26 +529,86 @@ const AuditForm = () => {
     setShowExportMenu(false);
     setAddingSubFor(null);
     setStep('form');
+    if (autoOpenMerge) {
+      setTimeout(() => setShowMergeModal(true), 400);
+    }
     setTimeout(() => {
       setGlobalLoadingMessage(null);
     }, 350);
   };
 
-  const handleLoadAudit = async (audit) => {
+  // Identificar colega registrado en la auditoría
+  const getColleagueFromAudit = (audit) => {
+    const evals = audit.data?.evaluations || audit.evaluations || {};
+    const entries = Object.entries(evals);
+    
+    // Buscar un auditor con UID distinto al actual o nombre diferente
+    const other = entries.find(([uid, ev]) => {
+      if (uid !== currentAuditorUid) return true;
+      const name = ev.auditorName || '';
+      return name && currentAuditorName && name.toLowerCase() !== currentAuditorName.toLowerCase();
+    });
+
+    if (other) {
+      return {
+        uid: other[0],
+        auditorName: other[1]?.auditorName || 'Auditor Colega',
+        role: other[1]?.role || 'Auditor',
+        answers: other[1]?.answers || {}
+      };
+    }
+
+    // Si no está en evaluations pero la auditoría tiene un actor diferente registrado
+    const ownerName = audit.data?.actor?.nombreAuditor || audit.actor?.nombreAuditor || '';
+    if (ownerName && currentAuditorName && ownerName.toLowerCase() !== currentAuditorName.toLowerCase()) {
+      return {
+        uid: 'owner_' + ownerName.replace(/\s+/g, '_'),
+        auditorName: ownerName,
+        role: audit.data?.actor?.rol || audit.actor?.rol || 'Auditor',
+        answers: audit.data?.responses || audit.responses || {}
+      };
+    }
+
+    return null;
+  };
+
+  // Apertura contextual desde el menú del botón "Abrir"
+  const handleOpenAuditWithOptions = async (audit, mode, colleagueUid = null) => {
     const isAdmin = currentUserRole === 'admin' || user?.email?.toLowerCase() === 'thomason.mx@gmail.com';
     const canBypassPin = isAdmin || globalPinBypass || currentUserBypassPin;
     const savedHash = audit.data?.actor?.contrasenaHash || audit.actor?.contrasenaHash || audit.contrasenaHash;
 
-    // Si tiene permiso de bypass de PIN, es Administrador o la auditoría no cuenta con PIN protector, acceder directo en Modo Edición
-    if (canBypassPin || !savedHash) {
-      handleProceedLoad(audit, false);
-      return;
+    if (mode === 'my_draft') {
+      // "Mi Borrador": requiere validar PIN si está configurado y el usuario no tiene bypass
+      if (canBypassPin || !savedHash) {
+        handleProceedLoad(audit, false, 'my_draft');
+      } else {
+        setAccessPinInput('');
+        setAccessPinError('');
+        setPendingAccessTargetView('my_draft');
+        setAccessModalAudit(audit);
+      }
+    } else if (mode === 'colleague') {
+      // "Borrador de Colega": modo solo lectura. No requiere PIN si está autenticado en la plataforma
+      handleProceedLoad(audit, true, colleagueUid || 'colleague');
+    } else if (mode === 'official') {
+      // "Versión Oficial": modo solo lectura para consulta general
+      handleProceedLoad(audit, true, 'official');
+    } else if (mode === 'merge') {
+      // "Comparar y Fusionar (Merge)": enlace directo a herramienta de consolidación
+      if (canBypassPin || !savedHash) {
+        handleProceedLoad(audit, false, 'official', true);
+      } else {
+        setAccessPinInput('');
+        setAccessPinError('');
+        setPendingAccessTargetView('merge');
+        setAccessModalAudit(audit);
+      }
     }
+  };
 
-    // Si tiene PIN y el usuario requiere validación: abrir modal con opciones de Edición (con PIN) o Modo Solo Lectura
-    setAccessPinInput('');
-    setAccessPinError('');
-    setAccessModalAudit(audit);
+  const handleLoadAudit = async (audit) => {
+    handleOpenAuditWithOptions(audit, 'my_draft');
   };
 
   const handleConfirmAccessPin = async (e) => {
@@ -549,8 +621,13 @@ const AuditForm = () => {
       return;
     }
     const auditToLoad = accessModalAudit;
+    const targetMode = pendingAccessTargetView || 'my_draft';
     setAccessModalAudit(null);
-    handleProceedLoad(auditToLoad, false);
+    if (targetMode === 'merge') {
+      handleProceedLoad(auditToLoad, false, 'official', true);
+    } else {
+      handleProceedLoad(auditToLoad, false, targetMode);
+    }
   };
 
   const handleEnterReadOnly = () => {
@@ -2809,14 +2886,158 @@ const startInlineDictation = (section, id) => {
                                 <Trash2 size={16} />
                               </button>
 
-                              {/* Botón Abrir Auditoría */}
-                              <button
-                                onClick={() => handleLoadAudit(audit)}
-                                className="ml-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-sm cursor-pointer group/btn"
-                              >
-                                <span>Abrir</span>
-                                <ChevronRight size={14} className="transition-transform duration-200 group-hover/btn:translate-x-0.5" />
-                              </button>
+                              {/* Botón Abrir con Dropdown contextual */}
+                              <div className="relative inline-block text-left ml-2">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setOpenDropdownAuditId(openDropdownAuditId === audit.id ? null : audit.id);
+                                  }}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm transition-colors cursor-pointer"
+                                >
+                                  <span>Abrir</span>
+                                  <ChevronDown size={13} className={`transition-transform duration-200 ${openDropdownAuditId === audit.id ? 'rotate-180' : ''}`} />
+                                </button>
+
+                                {openDropdownAuditId === audit.id && (
+                                  <>
+                                    <div 
+                                      className="fixed inset-0 z-30" 
+                                      onClick={(e) => { e.stopPropagation(); setOpenDropdownAuditId(null); }}
+                                    />
+                                    <div 
+                                      className="absolute right-0 mt-2 w-72 sm:w-80 bg-white rounded-xl shadow-xl border border-slate-100 p-1.5 z-40 text-left animate-in fade-in zoom-in-95 duration-150"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      {/* Opción 1: Mi Borrador */}
+                                      <button 
+                                        type="button"
+                                        onClick={() => {
+                                          setOpenDropdownAuditId(null);
+                                          handleOpenAuditWithOptions(audit, 'my_draft');
+                                        }}
+                                        className="w-full p-2.5 rounded-lg hover:bg-slate-50 transition-colors flex items-start gap-3 cursor-pointer text-left"
+                                      >
+                                        <div className="w-7 h-7 rounded-md bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 mt-0.5">
+                                          <Edit3 size={15} />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                          <div className="flex items-center justify-between">
+                                            <span className="text-xs font-semibold text-slate-800">Mi Borrador</span>
+                                            <span className="text-[10px] font-medium bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded">Editable</span>
+                                          </div>
+                                          <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">
+                                            Tu espacio de evaluación personal (requiere PIN).
+                                          </p>
+                                        </div>
+                                      </button>
+
+                                      {/* Opción 2: Borrador Colega */}
+                                      {(() => {
+                                        const colleagueEntry = getColleagueFromAudit(audit);
+                                        const hasColleague = !!colleagueEntry;
+                                        const colName = colleagueEntry ? colleagueEntry.auditorName : 'Colega';
+                                        const colUid = colleagueEntry ? colleagueEntry.uid : null;
+
+                                        return (
+                                          <button 
+                                            type="button"
+                                            disabled={!hasColleague}
+                                            onClick={() => {
+                                              if (!hasColleague) return;
+                                              setOpenDropdownAuditId(null);
+                                              handleOpenAuditWithOptions(audit, 'colleague', colUid);
+                                            }}
+                                            className={`w-full p-2.5 rounded-lg transition-colors flex items-start gap-3 text-left ${
+                                              hasColleague ? 'hover:bg-slate-50 cursor-pointer' : 'opacity-40 cursor-not-allowed'
+                                            }`}
+                                          >
+                                            <div className="w-7 h-7 rounded-md bg-slate-100 text-slate-600 flex items-center justify-center shrink-0 mt-0.5">
+                                              <Eye size={15} />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                              <div className="flex items-center justify-between">
+                                                <span className="text-xs font-semibold text-slate-800 truncate max-w-[150px]">
+                                                  {hasColleague ? `Borrador de ${colName}` : 'Borrador de Colega'}
+                                                </span>
+                                                <span className="text-[10px] font-medium bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">Solo lectura</span>
+                                              </div>
+                                              <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">
+                                                {hasColleague ? `Visualiza las respuestas de ${colName}.` : 'Sin evaluación de colega registrada.'}
+                                              </p>
+                                            </div>
+                                          </button>
+                                        );
+                                      })()}
+
+                                      {/* Opción 3: Versión Consolidada Oficial */}
+                                      {(() => {
+                                        const isConsolidated = audit.data?.finalAudit?.status === 'consolidated' || audit.finalAudit?.status === 'consolidated';
+
+                                        return (
+                                          <button 
+                                            type="button"
+                                            disabled={!isConsolidated}
+                                            onClick={() => {
+                                              if (!isConsolidated) return;
+                                              setOpenDropdownAuditId(null);
+                                              handleOpenAuditWithOptions(audit, 'official');
+                                            }}
+                                            className={`w-full p-2.5 rounded-lg transition-colors flex items-start gap-3 border-t border-slate-100 text-left ${
+                                              isConsolidated ? 'hover:bg-slate-50 cursor-pointer' : 'opacity-50 cursor-not-allowed'
+                                            }`}
+                                          >
+                                            <div className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 mt-0.5 ${
+                                              isConsolidated ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'
+                                            }`}>
+                                              <ShieldCheck size={15} />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                              <div className="flex items-center justify-between">
+                                                <span className="text-xs font-semibold text-slate-800">Versión Oficial</span>
+                                                <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
+                                                  isConsolidated ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+                                                }`}>
+                                                  {isConsolidated ? 'Oficial' : 'Pendiente'}
+                                                </span>
+                                              </div>
+                                              <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">
+                                                {isConsolidated ? 'Resultado final fusionado de la auditoría.' : 'Pendiente de consolidar por el equipo.'}
+                                              </p>
+                                            </div>
+                                          </button>
+                                        );
+                                      })()}
+
+                                      {/* Opción 4: Comparar y Fusionar (Merge) */}
+                                      {(currentUserRole === 'admin' || currentUserRole === 'auditor') && (
+                                        <button 
+                                          type="button"
+                                          onClick={() => {
+                                            setOpenDropdownAuditId(null);
+                                            handleOpenAuditWithOptions(audit, 'merge');
+                                          }}
+                                          className="w-full p-2.5 rounded-lg hover:bg-indigo-50/70 transition-colors flex items-start gap-3 border-t border-slate-100 text-left cursor-pointer"
+                                        >
+                                          <div className="w-7 h-7 rounded-md bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 mt-0.5">
+                                            <GitMerge size={15} />
+                                          </div>
+                                          <div className="flex-1 min-w-0">
+                                            <div className="flex items-center justify-between">
+                                              <span className="text-xs font-semibold text-indigo-950">Comparar y Fusionar</span>
+                                              <span className="text-[10px] font-medium bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded">Merge</span>
+                                            </div>
+                                            <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">
+                                              Herramienta de consolidación lado a lado.
+                                            </p>
+                                          </div>
+                                        </button>
+                                      )}
+                                    </div>
+                                  </>
+                                )}
+                              </div>
                             </div>
                           </td>
                         </tr>
@@ -3488,6 +3709,83 @@ const startInlineDictation = (section, id) => {
     );
   }
 
+  // Métricas duales para visualización en paralelo entre evaluadores
+  const dualMetrics = useMemo(() => {
+    const totalQ = getTotalQuestions();
+    const myAnswersMap = evaluations[currentAuditorUid]?.answers || responses || {};
+    let myScoreSum = 0;
+    let myAnsweredCount = 0;
+
+    Object.keys(customSections).forEach(sec => {
+      (customSections[sec] || []).forEach(q => {
+        const k = `${sec}-${q.id}`;
+        const val = myAnswersMap[k]?.evaluacion ?? myAnswersMap[k]?.score;
+        if (val !== null && val !== undefined && val !== '') {
+          myScoreSum += Number(val);
+          myAnsweredCount++;
+        }
+      });
+    });
+
+    const myAvg = myAnsweredCount > 0 ? (myScoreSum / myAnsweredCount) : 0;
+    const myProgress = totalQ > 0 ? Math.round((myAnsweredCount / totalQ) * 100) : 0;
+
+    // Identificar colega evaluador secundario
+    const otherEntries = Object.entries(evaluations).filter(([uid, ev]) => {
+      if (uid !== currentAuditorUid) return true;
+      const name = ev.auditorName || '';
+      return name && currentAuditorName && name.toLowerCase() !== currentAuditorName.toLowerCase();
+    });
+
+    const hasColleague = otherEntries.length > 0;
+    const colleagueEntry = hasColleague ? otherEntries[0] : null;
+    const colleagueUid = colleagueEntry ? colleagueEntry[0] : null;
+    const colleagueData = colleagueEntry ? colleagueEntry[1] : null;
+    const colleagueName = colleagueData?.auditorName || (actor.nombreAuditor && actor.nombreAuditor !== currentAuditorName ? actor.nombreAuditor : null);
+    const colleagueAnswersMap = colleagueData?.answers || {};
+
+    let colleagueScoreSum = 0;
+    let colleagueAnsweredCount = 0;
+    if (colleagueName) {
+      Object.keys(customSections).forEach(sec => {
+        (customSections[sec] || []).forEach(q => {
+          const k = `${sec}-${q.id}`;
+          const val = colleagueAnswersMap[k]?.evaluacion ?? colleagueAnswersMap[k]?.score;
+          if (val !== null && val !== undefined && val !== '') {
+            colleagueScoreSum += Number(val);
+            colleagueAnsweredCount++;
+          }
+        });
+      });
+    }
+
+    const colleagueAvg = colleagueAnsweredCount > 0 ? (colleagueScoreSum / colleagueAnsweredCount) : 0;
+    const colleagueProgress = totalQ > 0 ? Math.round((colleagueAnsweredCount / totalQ) * 100) : 0;
+    const hasBothEvaluated = myAnsweredCount > 0 && colleagueAnsweredCount > 0;
+    const delta = hasBothEvaluated ? Math.abs(myAvg - colleagueAvg).toFixed(1) : null;
+
+    return {
+      totalQ,
+      hasColleague: !!colleagueName,
+      colleagueUid,
+      colleagueName: colleagueName || 'Auditor 2',
+      my: {
+        name: currentAuditorName || 'Mi Evaluación',
+        avg: myAvg,
+        answered: myAnsweredCount,
+        progress: myProgress
+      },
+      colleague: {
+        name: colleagueName || 'Auditor 2',
+        avg: colleagueAvg,
+        answered: colleagueAnsweredCount,
+        progress: colleagueProgress
+      },
+      hasBothEvaluated,
+      delta
+    };
+  }, [customSections, evaluations, responses, currentAuditorUid, currentAuditorName, actor]);
+
   return (
     <div className="min-h-screen relative bg-slate-50 p-4 md:p-8 text-slate-900">
       
@@ -3563,6 +3861,17 @@ const startInlineDictation = (section, id) => {
                       title="Guardar y volver al panel"
                     >
                       <Home size={18} />
+                    </button>
+                  )}
+                  {/* Botón Consolidar y Fusionar (Merge) */}
+                  {(dualMetrics.hasColleague || Object.keys(evaluations).length > 1) && (
+                    <button
+                      onClick={() => setShowMergeModal(true)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200/70 rounded-lg transition-colors cursor-pointer shadow-2xs"
+                      title="Comparar respuestas de evaluadores y generar versión oficial"
+                    >
+                      <GitMerge size={14} className="text-indigo-600" />
+                      <span className="hidden sm:inline">Fusionar</span>
                     </button>
                   )}
                   {/* Botón Compartir */}
@@ -3715,74 +4024,181 @@ const startInlineDictation = (section, id) => {
           </div>
         </div>
 
-        {/* Gestor y Selector de Evaluaciones Paralelas (Fork & Merge) */}
-        {step === 'form' && (
-          <AuditEvaluationManager
-            evaluations={evaluations}
-            currentAuditorUid={currentAuditorUid}
-            currentAuditorName={currentAuditorName}
-            activeView={activeEvaluationView}
-            onChangeView={handleChangeEvaluationView}
-            onOpenMergeModal={() => setShowMergeModal(true)}
-            finalAudit={finalAudit}
-            isAdminOrEditor={currentUserRole === 'admin' || currentUserRole === 'auditor'}
-            isReadOnlyGlobal={isReadOnly}
-          />
-        )}
-
-        {/* Dashboard de Métricas Limpio */}
-        <div className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-5">
-          {/* Métrica 1: Puntuación Real Obtenida */}
-          <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 flex flex-col justify-between">
-            <div className="text-xs text-slate-400 font-semibold uppercase tracking-wider">
-              Puntuación Real Obtenida
-            </div>
-            <div className="my-2">
-              <div className="text-3xl font-bold text-slate-900 tracking-tight">
-                {calculateTotalRealScore()} <span className="text-sm font-normal text-slate-400">pts</span>
-              </div>
-              <div className="mt-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-100">
-                {getScoreLevel(calculateTotalScore()).nivel}
-              </div>
-            </div>
-            <div className="text-[11px] text-slate-400 font-medium">
-              Escala global ponderada de 0 a 4 puntos
-            </div>
-          </div>
-
-          {/* Métrica 2: Avance */}
-          <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 flex flex-col justify-between">
-            <div className="flex justify-between items-center">
-              <div className="text-xs text-slate-400 font-semibold uppercase tracking-wider">
-                Avance General
-              </div>
-              <div className="text-2xl font-bold text-slate-900 tracking-tight">
-                {((getAnsweredQuestions() / getTotalQuestions()) * 100).toFixed(0)}%
-              </div>
-            </div>
-            <div className="my-3">
-              <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-blue-600 rounded-full transition-all duration-500"
-                  style={{ width: `${(getAnsweredQuestions() / getTotalQuestions()) * 100}%` }}
-                />
-              </div>
-            </div>
-            <div className="text-xs text-slate-500 font-medium">
-              {getAnsweredQuestions()} de {getTotalQuestions()} preguntas respondidas
-            </div>
-          </div>
-
-          {/* Métrica 3: Desglose por Áreas */}
-          <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 flex flex-col justify-between">
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-xs text-slate-400 font-semibold uppercase tracking-wider">
-                Desglose por Áreas
-              </div>
-              <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-medium">
-                En tiempo real
+        {/* Banner contextual de versión activa */}
+        {step === 'form' && activeEvaluationView !== 'my_draft' && (
+          <div className="mb-5 bg-slate-900 text-white rounded-xl px-4 py-3 flex flex-wrap items-center justify-between gap-3 shadow-sm animate-in fade-in">
+            <div className="flex items-center gap-2.5 text-xs md:text-sm">
+              <Eye size={18} className="text-blue-400 shrink-0" />
+              <span>
+                Estás visualizando {activeEvaluationView === 'official' ? (
+                  <strong className="text-emerald-400">la Versión Oficial Consolidada</strong>
+                ) : (
+                  <>el <strong className="text-blue-300">Borrador de {dualMetrics.colleagueName}</strong></>
+                )} en modo solo lectura. Tus respuestas no se verán alteradas.
               </span>
             </div>
+            <button
+              onClick={() => handleChangeEvaluationView('my_draft')}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg text-xs transition-colors shadow-2xs cursor-pointer"
+            >
+              <RotateCcw size={13} />
+              <span>Volver a Mi Borrador</span>
+            </button>
+          </div>
+        )}
+
+        {/* Barra de Calificación Dual en Paralelo (Dashboard de Métricas) */}
+        <div className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-5">
+          {/* Tarjeta 1: Calificación en Paralelo */}
+          <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">
+                Calificación en Paralelo
+              </span>
+              {dualMetrics.hasBothEvaluated && dualMetrics.delta !== null && (
+                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+                  Number(dualMetrics.delta) >= 0.5 
+                    ? 'bg-amber-50 text-amber-700 border-amber-200' 
+                    : 'bg-blue-50 text-blue-700 border-blue-100'
+                }`} title={`Diferencia de criterio de ${dualMetrics.delta} pts entre ambos evaluadores`}>
+                  Δ {dualMetrics.delta} pts diff
+                </span>
+              )}
+            </div>
+
+            <div className="my-3 space-y-2.5">
+              {/* Mi Puntuación */}
+              <div className="flex items-center justify-between p-2.5 rounded-lg bg-blue-50/60 border border-blue-100/70">
+                <div className="flex items-center gap-2">
+                  <div className="w-2.5 h-2.5 rounded-full bg-blue-600 shrink-0"></div>
+                  <div>
+                    <div className="text-xs font-semibold text-slate-800 truncate max-w-[120px]" title={dualMetrics.my.name}>
+                      {dualMetrics.my.name} (Tú)
+                    </div>
+                    <div className="text-[11px] text-slate-500 font-medium">
+                      {dualMetrics.my.answered}/{dualMetrics.totalQ} respondidas
+                    </div>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-base font-bold text-blue-900 tracking-tight">
+                    {dualMetrics.my.avg.toFixed(1)} <span className="text-xs font-normal text-slate-500">/ 4.0</span>
+                  </div>
+                  <div className="text-[10px] font-semibold text-blue-700">
+                    {dualMetrics.my.progress}% completado
+                  </div>
+                </div>
+              </div>
+
+              {/* Puntuación de Auditor 2 / Colega */}
+              {dualMetrics.hasColleague ? (
+                <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50 border border-slate-200/70">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2.5 h-2.5 rounded-full bg-slate-400 shrink-0"></div>
+                    <div>
+                      <div className="text-xs font-semibold text-slate-700 truncate max-w-[120px]" title={dualMetrics.colleague.name}>
+                        {dualMetrics.colleague.name}
+                      </div>
+                      <div className="text-[11px] text-slate-500 font-medium">
+                        {dualMetrics.colleague.answered}/{dualMetrics.totalQ} respondidas
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-base font-bold text-slate-800 tracking-tight">
+                      {dualMetrics.colleague.avg.toFixed(1)} <span className="text-xs font-normal text-slate-500">/ 4.0</span>
+                    </div>
+                    <div className="text-[10px] font-semibold text-slate-600">
+                      {dualMetrics.colleague.progress}% completado
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-2.5 rounded-lg bg-slate-50 border border-dashed border-slate-200 text-center">
+                  <span className="text-[11px] text-slate-400 font-medium">
+                    Sin segundo evaluador en paralelo
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <div className="text-[11px] text-slate-400 font-medium">
+              Escala de madurez tecnológica de 0 a 4 puntos
+            </div>
+          </div>
+
+          {/* Tarjeta 2: Avance y Barras Gemelas */}
+          <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 flex flex-col justify-between">
+            <div className="flex justify-between items-center">
+              <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">
+                Avance de Evaluación
+              </span>
+              <span className="text-xs font-bold text-slate-700">
+                {dualMetrics.my.progress}% mi avance
+              </span>
+            </div>
+
+            <div className="my-3 space-y-3.5">
+              {/* Barra 1: Usuario Activo */}
+              <div>
+                <div className="flex justify-between text-xs font-medium text-slate-700 mb-1">
+                  <span className="truncate max-w-[140px] text-blue-800 font-semibold flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-blue-600"></span>
+                    {dualMetrics.my.name}
+                  </span>
+                  <span className="text-slate-500">{dualMetrics.my.progress}%</span>
+                </div>
+                <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-blue-600 rounded-full transition-all duration-500"
+                    style={{ width: `${dualMetrics.my.progress}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Barra 2: Colega Evaluador */}
+              {dualMetrics.hasColleague && (
+                <div>
+                  <div className="flex justify-between text-xs font-medium text-slate-700 mb-1">
+                    <span className="truncate max-w-[140px] text-slate-600 flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-slate-400"></span>
+                      {dualMetrics.colleague.name}
+                    </span>
+                    <span className="text-slate-500">{dualMetrics.colleague.progress}%</span>
+                  </div>
+                  <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-slate-400 rounded-full transition-all duration-500"
+                      style={{ width: `${dualMetrics.colleague.progress}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="text-xs text-slate-500 font-medium">
+              {dualMetrics.my.answered} de {dualMetrics.totalQ} preguntas respondidas por ti
+            </div>
+          </div>
+
+          {/* Tarjeta 3: Desglose por Áreas y Consolidación */}
+          <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 flex flex-col justify-between">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">
+                Desglose por Áreas
+              </span>
+              {(dualMetrics.hasColleague || Object.keys(evaluations).length > 1) && (
+                <button
+                  type="button"
+                  onClick={() => setShowMergeModal(true)}
+                  className="text-[11px] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold px-2.5 py-0.5 rounded-lg border border-indigo-200 transition-colors inline-flex items-center gap-1 cursor-pointer"
+                >
+                  <GitMerge size={12} />
+                  <span>Consolidar</span>
+                </button>
+              )}
+            </div>
+
             <div className="space-y-2 overflow-y-auto max-h-[95px] pr-1 custom-scrollbar">
               {(() => {
                 const rows = Object.entries(calculateAreaScores());
