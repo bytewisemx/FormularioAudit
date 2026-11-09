@@ -1,7 +1,7 @@
 import { DEFAULT_SECTIONS } from "./defaultSections";
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { ChevronDown, ChevronUp, ChevronRight, Download, FileText, FileSpreadsheet, RefreshCw, Mic, Sparkles, Building2, Shield, Brain, Hash, CheckCircle, Search, Settings, Share2, KeyRound, Trash2, Home, Plus, X, Globe, Copy, Check, ExternalLink, Loader2, Upload, FileCode, Layers, ArrowLeft, Calendar, User, Users, BarChart2, ThumbsUp, ThumbsDown, AlertTriangle, Lightbulb, LayoutGrid, List, CheckCircle2, Maximize2, Minimize2, LogOut, Pin, Lock, Unlock, Archive, History, RotateCcw, Eye, EyeOff, GitMerge } from 'lucide-react';
+import { ChevronDown, ChevronUp, ChevronRight, Download, FileText, FileSpreadsheet, RefreshCw, Mic, Sparkles, Building2, Shield, Brain, Hash, CheckCircle, Search, Settings, Share2, KeyRound, Trash2, Home, Plus, X, Globe, Copy, Check, ExternalLink, Loader2, Upload, FileCode, Layers, ArrowLeft, Calendar, User, Users, BarChart2, ThumbsUp, ThumbsDown, AlertTriangle, Lightbulb, LayoutGrid, List, CheckCircle2, Maximize2, Minimize2, LogOut, Pin, Lock, Unlock, Archive, History, RotateCcw, Eye, EyeOff, GitMerge, Edit3, ShieldCheck } from 'lucide-react';
 import { downloadExcelTemplate, parseQuestionsFile, exportAuditToProfessionalExcel } from './excelTemplateHelper';
 import { db, auth } from "./firebase";
 import { collection, doc, setDoc, getDoc, updateDoc, getDocs, deleteDoc, onSnapshot } from "firebase/firestore";
