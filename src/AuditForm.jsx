@@ -3709,8 +3709,8 @@ const startInlineDictation = (section, id) => {
     );
   }
 
-  // Métricas duales para visualización en paralelo entre evaluadores
-  const dualMetrics = useMemo(() => {
+  // Métricas duales para visualización en paralelo entre evaluadores (cálculo directo sin hooks condicionales)
+  const calculateDualMetrics = () => {
     const totalQ = getTotalQuestions();
     const myAnswersMap = evaluations[currentAuditorUid]?.answers || responses || {};
     let myScoreSum = 0;
@@ -3784,7 +3784,9 @@ const startInlineDictation = (section, id) => {
       hasBothEvaluated,
       delta
     };
-  }, [customSections, evaluations, responses, currentAuditorUid, currentAuditorName, actor]);
+  };
+
+  const dualMetrics = calculateDualMetrics();
 
   return (
     <div className="min-h-screen relative bg-slate-50 p-4 md:p-8 text-slate-900">
