@@ -129,8 +129,23 @@ export const normalizeAudit = (rawAudit, _currentUser = null) => {
     auditors = auditors.slice(0, 2);
   }
 
-  // 3. Borradores independientes por UID
+  // 3. Borradores y resumen por UID
   let drafts = rawAudit.drafts || data.drafts || {};
+  const draftsSummary = rawAudit.draftsSummary || data.draftsSummary || {};
+
+  // Si existen entradas en draftsSummary, incorporarlas
+  Object.entries(draftsSummary).forEach(([uid, summ]) => {
+    if (!drafts[uid]) {
+      drafts[uid] = {
+        answers: {},
+        progress: summ.progress || 0,
+        answeredCount: summ.answeredCount || 0,
+        totalQuestions: summ.totalQuestions || 0,
+        updatedAt: summ.updatedAt || rawAudit.lastModified || new Date().toISOString()
+      };
+    }
+  });
+
   if (Object.keys(drafts).length === 0) {
     drafts = {};
     const evals = data.evaluations || rawAudit.evaluations || {};
@@ -205,24 +220,55 @@ export const normalizeAudit = (rawAudit, _currentUser = null) => {
 export const getColleagueFromAudit = (audit, currentUid, currentEmail, currentName) => {
   if (!audit) return null;
   const norm = normalizeAudit(audit);
-  if (!norm || norm.mode === 'single') return null;
+  if (!norm) return null;
 
   const auditors = norm.auditors || [];
-  // Buscar un auditor que NO sea el usuario actual
-  const colleague = auditors.find(aud => !isSameAuditor(aud, currentUid, currentEmail, currentName));
+  // 1. Buscar en lista de auditores normalizada
+  let colleague = auditors.find(aud => !isSameAuditor(aud, currentUid, currentEmail, currentName));
+
+  // 2. Si no se encontró, buscar en draftsSummary
+  if (!colleague && audit.draftsSummary) {
+    const summaryEntries = Object.entries(audit.draftsSummary);
+    for (const [sUid, summ] of summaryEntries) {
+      if (!isSameAuditor({ uid: sUid, email: summ.ownerEmail, name: summ.ownerName }, currentUid, currentEmail, currentName)) {
+        colleague = {
+          uid: sUid,
+          name: summ.ownerName || 'Co-Auditor',
+          email: summ.ownerEmail || '',
+          role: 'Co-Auditor'
+        };
+        break;
+      }
+    }
+  }
+
+  // 3. Si sigue sin encontrarse, buscar en drafts
+  if (!colleague && norm.drafts) {
+    const draftKeys = Object.keys(norm.drafts);
+    for (const dUid of draftKeys) {
+      if (!isSameAuditor({ uid: dUid }, currentUid, currentEmail, currentName)) {
+        colleague = { uid: dUid, name: 'Co-Auditor', email: '', role: 'Co-Auditor' };
+        break;
+      }
+    }
+  }
 
   if (!colleague) return null;
 
   const colleagueDraft = norm.drafts?.[colleague.uid] || {};
+  const summ = audit.draftsSummary?.[colleague.uid];
+
   return {
     uid: colleague.uid,
     auditorName: colleague.name || 'Co-Auditor',
     name: colleague.name || 'Co-Auditor',
-    email: colleague.email || '',
+    email: colleague.email || summ?.ownerEmail || '',
     role: colleague.role || 'Co-Auditor',
     answers: colleagueDraft.answers || {},
-    progress: colleagueDraft.progress || 0,
-    updatedAt: colleagueDraft.updatedAt || null
+    answeredCount: summ?.answeredCount || colleagueDraft.answeredCount || 0,
+    totalQuestions: summ?.totalQuestions || colleagueDraft.totalQuestions || 0,
+    progress: summ?.progress !== undefined ? summ.progress : (colleagueDraft.progress || 0),
+    updatedAt: summ?.updatedAt || colleagueDraft.updatedAt || null
   };
 };
 

@@ -21,6 +21,12 @@ import {
   autoMergeDraftAnswers,
   getTotalQuestionsCount
 } from "./utils/auditCollaborativeUtils";
+import {
+  saveUserDraftToFirestore,
+  fetchAuditDraftsFromFirestore,
+  buildDraftDoc,
+  findColleagueInAudit
+} from "./utils/auditDraftsService";
 
 import { saveAs } from "file-saver";
 import ExcelJS from "exceljs";
@@ -349,6 +355,8 @@ const AuditForm = () => {
   const [accessModalAudit, setAccessModalAudit] = useState(null);
   const [accessPinInput, setAccessPinInput] = useState('');
   const [accessPinError, setAccessPinError] = useState('');
+  const [auditDraftsCache, setAuditDraftsCache] = useState({});
+  const [mergeEvaluationsMap, setMergeEvaluationsMap] = useState({});
   const [openDropdownAuditId, setOpenDropdownAuditId] = useState(null);
   const [openDropdownCoords, setOpenDropdownCoords] = useState({ top: 0, right: 0 });
   const [pendingAccessTargetView, setPendingAccessTargetView] = useState('my_draft');
@@ -537,7 +545,7 @@ const AuditForm = () => {
     setImportError('');
   };
 
-  const handleProceedLoad = (audit, readOnlyMode = false, targetView = 'my_draft', autoOpenMerge = false) => {
+  const handleProceedLoad = async (audit, readOnlyMode = false, targetView = 'my_draft', autoOpenMerge = false) => {
     setGlobalLoadingMessage('Cargando auditoría...');
     setIsReadOnly(readOnlyMode);
     setCurrentAuditId(audit.id);
@@ -560,6 +568,19 @@ const AuditForm = () => {
     setEvaluations(norm.drafts ? { ...norm.drafts } : evals);
     setFinalAudit(finalA);
 
+    // Cargar borradores frescos desde la subcolección de Firestore de forma aislada
+    let fetchedDrafts = {};
+    if (db && audit.id) {
+      try {
+        fetchedDrafts = await fetchAuditDraftsFromFirestore(db, audit.id, audit, currentAuditorUid);
+        if (fetchedDrafts && Object.keys(fetchedDrafts).length > 0) {
+          setAuditDraftsCache(prev => ({ ...prev, [audit.id]: fetchedDrafts }));
+        }
+      } catch (err) {
+        console.warn("No se pudieron cargar borradores desde subcolección:", err);
+      }
+    }
+
     // Ajustar vista activa y respuestas correspondientes según la versión seleccionada
     setActiveEvaluationView(targetView);
     if (targetView === 'official') {
@@ -568,21 +589,31 @@ const AuditForm = () => {
         : (finalA.answers && Object.keys(finalA.answers).length > 0 ? finalA.answers : initialResponses);
       setResponses(offAns);
     } else if (targetView !== 'my_draft') {
-      // Vista borrador de colega
-      const colDraft = norm.drafts?.[targetView]?.answers || evals[targetView]?.answers;
-      if (colDraft && Object.keys(colDraft).length > 0) {
-        setResponses(colDraft);
+      // Vista borrador de colega desde la subcolección aislada
+      const colDraftFromSub = fetchedDrafts[targetView]?.answers || auditDraftsCache[audit.id]?.[targetView]?.answers;
+      if (colDraftFromSub && Object.keys(colDraftFromSub).length > 0) {
+        setResponses(colDraftFromSub);
       } else {
-        const col = getColleagueFromAuditUtil(norm, currentAuditorUid, user?.email, currentAuditorName);
-        setResponses(col?.answers || {});
+        const colDraft = norm.drafts?.[targetView]?.answers || evals[targetView]?.answers;
+        if (colDraft && Object.keys(colDraft).length > 0) {
+          setResponses(colDraft);
+        } else {
+          const col = getColleagueFromAuditUtil(norm, currentAuditorUid, user?.email, currentAuditorName);
+          setResponses(col?.answers || {});
+        }
       }
     } else {
-      // "my_draft": buscar el borrador propio estrictamente aislado
-      const myDraftInfo = getMyDraftFromAudit(norm, currentAuditorUid, user?.email, currentAuditorName);
-      if (myDraftInfo.answers && Object.keys(myDraftInfo.answers).length > 0) {
-        setResponses(myDraftInfo.answers);
+      // "my_draft": buscar el borrador propio estrictamente aislado en la subcolección
+      const myDraftFromSub = fetchedDrafts[currentAuditorUid]?.answers || auditDraftsCache[audit.id]?.[currentAuditorUid]?.answers;
+      if (myDraftFromSub && Object.keys(myDraftFromSub).length > 0) {
+        setResponses(myDraftFromSub);
       } else {
-        setResponses(initialResponses);
+        const myDraftInfo = getMyDraftFromAudit(norm, currentAuditorUid, user?.email, currentAuditorName);
+        if (myDraftInfo.answers && Object.keys(myDraftInfo.answers).length > 0) {
+          setResponses(myDraftInfo.answers);
+        } else {
+          setResponses(initialResponses);
+        }
       }
     }
 
@@ -1045,10 +1076,10 @@ const AuditForm = () => {
   const savedAuditsRef = React.useRef(savedAudits);
   useEffect(() => { savedAuditsRef.current = savedAudits; }, [savedAudits]);
 
-  // Guardado debounced en Firestore (protegido si isReadOnly === true)
+  // Guardado debounced en Subcolección Aislada audits/{auditId}/drafts/{userId} (Cero Colisiones)
   useEffect(() => {
-    // Si estamos navegando hacia el panel o no estamos en form o no hay ID o estamos en MODO SOLO LECTURA, no guardar en Firestore
-    if (isNavigatingToHomeRef.current || step !== 'form' || !currentAuditId || isReadOnly) {
+    // Si estamos navegando hacia el panel o no estamos en form o no hay ID o estamos en MODO SOLO LECTURA o viendo otra versión que no sea my_draft, no guardar
+    if (isNavigatingToHomeRef.current || step !== 'form' || !currentAuditId || isReadOnly || activeEvaluationView !== 'my_draft') {
       return;
     }
 
@@ -1060,64 +1091,64 @@ const AuditForm = () => {
       return;
     }
 
-    const prevList = savedAuditsRef.current;
-    const index = prevList.findIndex(a => a.id === currentAuditId);
-    let newList = [...prevList];
-
-    // Resguardo de respuestas: asegurar que data.responses nunca se guarde vacío si existen respuestas en evaluations o prevList
-    let safeResponses = responses || {};
-    if (Object.keys(safeResponses).length === 0) {
-      const evalList = Object.values(evaluations || {});
-      const evalWithAns = evalList.find(e => e.answers && Object.keys(e.answers).length > 0);
-      if (evalWithAns) {
-        safeResponses = evalWithAns.answers;
-      } else if (index >= 0 && prevList[index]?.data?.responses && Object.keys(prevList[index].data.responses).length > 0) {
-        safeResponses = prevList[index].data.responses;
-      }
-    }
-
-    const auditData = {
-      id: currentAuditId,
-      lastModified: new Date().toISOString(),
-      nombreEmpresa: companyName || 'Empresa sin nombre',
-      data: { introData, responses: safeResponses, generalComments, positiveComments, negativeComments, recommendations, actor, customSections, deletedQuestions, evaluations, finalAudit, evaluationCriteria, auditConfig }
-    };
-    if (index >= 0) {
-      newList[index] = auditData;
-    } else {
-      newList.push(auditData);
-    }
-    setSavedAudits(newList);
+    const totalQ = getTotalQuestions();
 
     let timer;
     if (db) {
-      timer = setTimeout(() => {
-        if (isNavigatingToHomeRef.current || isReadOnly) return;
+      timer = setTimeout(async () => {
+        if (isNavigatingToHomeRef.current || isReadOnly || activeEvaluationView !== 'my_draft') return;
         try {
-          const docRef = doc(db, "auditorias", currentAuditId);
-          setDoc(docRef, auditData, { merge: true })
-            .then(() => console.log("Auditoría guardada exitosamente en Firebase (debounced)."))
-            .catch(e => console.error("Error al guardar en Firebase:", e));
-        } catch (e) { }
-      }, 1500);
+          // 1. Guardar exclusivamente en la subcolección aislada del auditor actual
+          await saveUserDraftToFirestore(
+            db,
+            currentAuditId,
+            currentAuditorUid,
+            currentAuditorName,
+            user?.email,
+            responses,
+            totalQ
+          );
+          console.log("Borrador guardado exitosamente en subcolección drafts/{userId}.");
+
+          // 2. Actualizar metadatos globales en documento padre (PROHIBIDO guardar responses aquí)
+          const parentDocRef = doc(db, "auditorias", currentAuditId);
+          await updateDoc(parentDocRef, {
+            nombreEmpresa: companyName || 'Empresa sin nombre',
+            lastModified: new Date().toISOString(),
+            "data.introData": introData,
+            "data.actor": actor,
+            "data.customSections": customSections,
+            "data.deletedQuestions": deletedQuestions || [],
+            "data.generalComments": generalComments || '',
+            "data.positiveComments": positiveComments || '',
+            "data.negativeComments": negativeComments || '',
+            "data.recommendations": recommendations || '',
+            "data.evaluationCriteria": evaluationCriteria,
+            "data.auditConfig": auditConfig
+          });
+        } catch (e) {
+          console.error("Error al guardar borrador en subcolección:", e);
+        }
+      }, 1200);
     }
 
     return () => {
       if (timer) clearTimeout(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [introData, responses, generalComments, positiveComments, negativeComments, recommendations, actor, customSections, deletedQuestions, evaluations, finalAudit, currentAuditId, step, isReadOnly]);
+  }, [responses, introData, generalComments, positiveComments, negativeComments, recommendations, actor, customSections, deletedQuestions, currentAuditId, step, isReadOnly, activeEvaluationView, currentAuditorUid, currentAuditorName]);
 
-  // Sincronización en tiempo real con onSnapshot y presencia activa
+  // Sincronización en tiempo real con onSnapshot: Metadatos en Padre y Borrador de Colega en Subcolección
   useEffect(() => {
     if (step !== 'form' || !currentAuditId || !db) return;
 
+    // 1. Suscripción al documento padre (presencia, estructura, versión oficial)
     const docRef = doc(db, "auditorias", currentAuditId);
-    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+    const unsubscribeParent = onSnapshot(docRef, (docSnap) => {
       if (!docSnap.exists()) return;
       const remoteData = docSnap.data();
 
-      // Sincronizar sesiones activas para presencia en vivo
+      // Sincronizar presencia activa
       const sessions = remoteData.activeSessions || {};
       const now = Date.now();
       const activeList = Object.values(sessions).filter(s => {
@@ -1126,30 +1157,52 @@ const AuditForm = () => {
       });
       setActiveCollaborators(activeList);
 
+      // Sincronizar versión oficial si ya fue publicada
+      if (remoteData.officialVersion?.isPublished) {
+        setOfficialVersion(remoteData.officialVersion);
+        if (activeEvaluationView === 'official') {
+          setResponses(remoteData.officialVersion.answers || {});
+        }
+      }
+
+      // Sincronizar metadatos generales
       const freshData = remoteData.data;
       if (freshData) {
-        // Sincronizar evaluaciones paralelas y finalAudit de forma continua
-        if (freshData.evaluations) setEvaluations(freshData.evaluations);
         if (freshData.finalAudit) setFinalAudit(freshData.finalAudit);
-
-        // Si el usuario actual está en modo solo lectura, sincronizar datos en vivo desde el auditor editor
-        if (isReadOnly) {
-          if (freshData.responses) setResponses(freshData.responses);
+        if (isReadOnly && activeEvaluationView === 'official') {
           if (freshData.introData) setIntroData(freshData.introData);
           if (freshData.generalComments !== undefined) setGeneralComments(freshData.generalComments);
           if (freshData.positiveComments !== undefined) setPositiveComments(freshData.positiveComments);
           if (freshData.negativeComments !== undefined) setNegativeComments(freshData.negativeComments);
           if (freshData.recommendations !== undefined) setRecommendations(freshData.recommendations);
           if (freshData.customSections) setCustomSections(sortSections(freshData.customSections));
-          if (freshData.deletedQuestions !== undefined) setDeletedQuestions(freshData.deletedQuestions);
         }
       }
     }, (error) => {
-      console.warn("Error en suscripción en vivo onSnapshot:", error);
+      console.warn("Error en suscripción en vivo del documento padre:", error);
     });
 
-    return () => unsubscribe();
-  }, [step, currentAuditId, isReadOnly]);
+    // 2. Suscripción en vivo al borrador del colega si estamos en Modo Lectura de ese colega
+    let unsubscribeColleague = null;
+    if (isReadOnly && activeEvaluationView && activeEvaluationView !== 'my_draft' && activeEvaluationView !== 'official') {
+      const colDraftRef = doc(db, "auditorias", currentAuditId, "drafts", activeEvaluationView);
+      unsubscribeColleague = onSnapshot(colDraftRef, (draftSnap) => {
+        if (draftSnap.exists()) {
+          const colData = draftSnap.data();
+          if (colData.answers) {
+            setResponses(colData.answers);
+          }
+        }
+      }, (err) => {
+        console.warn("Error en suscripción en vivo a borrador de colega:", err);
+      });
+    }
+
+    return () => {
+      unsubscribeParent();
+      if (unsubscribeColleague) unsubscribeColleague();
+    };
+  }, [step, currentAuditId, isReadOnly, activeEvaluationView]);
 
   // Heartbeat de presencia activa en Firestore
   useEffect(() => {
@@ -1674,7 +1727,7 @@ Aporta valor concreto, análisis certero y profesionalismo técnico.]`;
         }
       }
 
-      if (audit && audit.editingStatus) {
+      if (audit && audit.editingStatus && audit.mode !== 'collaborative') {
         const status = audit.editingStatus;
         const now = Date.now();
         const lastActiveTime = status.lastActive ? new Date(status.lastActive).getTime() : 0;
@@ -1729,31 +1782,34 @@ Aporta valor concreto, análisis certero y profesionalismo técnico.]`;
     if (!targetId) return;
 
     const companyName = (currentState.introData?.nombreEmpresa || currentState.actor?.nombreEmpresa || introData?.nombreEmpresa || actor?.nombreEmpresa || '').trim();
-
-    // Resguardo de respuestas: asegurar que data.responses nunca se guarde vacío si existen respuestas en evaluations o prevList
     const rawResponses = currentState.responses || responses || {};
-    let safeResponses = rawResponses;
-    if (Object.keys(safeResponses).length === 0) {
-      const currentEvals = currentState.evaluations || evaluations || {};
-      const evalList = Object.values(currentEvals);
-      const evalWithAns = evalList.find(e => e.answers && Object.keys(e.answers).length > 0);
-      if (evalWithAns) {
-        safeResponses = evalWithAns.answers;
-      } else {
-        const prevAudit = savedAuditsRef.current.find(a => a.id === targetId);
-        if (prevAudit?.data?.responses && Object.keys(prevAudit.data.responses).length > 0) {
-          safeResponses = prevAudit.data.responses;
-        }
+    const totalQ = getTotalQuestions();
+
+    // 1. Si estamos en modo edición de nuestro propio borrador, guardar en la subcolección aislada
+    if (!isReadOnly && activeEvaluationView === 'my_draft' && db) {
+      try {
+        await saveUserDraftToFirestore(
+          db,
+          targetId,
+          currentAuditorUid,
+          currentAuditorName,
+          user?.email,
+          rawResponses,
+          totalQ
+        );
+        console.log("Borrador guardado inmediatamente en subcolección al salir.");
+      } catch (err) {
+        console.error("Error guardando borrador inmediato en subcolección:", err);
       }
     }
 
+    // 2. Guardar metadatos en documento padre (NUNCA responses de auditor individual)
     const auditData = {
       id: targetId,
       lastModified: new Date().toISOString(),
       nombreEmpresa: companyName || 'Empresa sin nombre',
       data: {
         introData: currentState.introData || introData,
-        responses: safeResponses,
         generalComments: currentState.generalComments || generalComments,
         positiveComments: currentState.positiveComments || positiveComments,
         negativeComments: currentState.negativeComments || negativeComments,
@@ -1780,12 +1836,12 @@ Aporta valor concreto, análisis certero y profesionalismo técnico.]`;
       return newList.sort((a, b) => new Date(b.lastModified) - new Date(a.lastModified));
     });
 
-    // Guardar inmediatamente en Firebase Firestore
+    // Guardar metadatos generales en Firebase Firestore
     if (db) {
       try {
         const docRef = doc(db, "auditorias", targetId);
         await setDoc(docRef, auditData, { merge: true });
-        console.log("Auditoría guardada exitosamente de forma inmediata al volver al panel.");
+        console.log("Metadatos de auditoría guardados de forma inmediata al volver al panel.");
       } catch (e) {
         console.error("Error al guardar de forma inmediata en Firebase:", e);
       }
@@ -1995,8 +2051,32 @@ Aporta valor concreto, análisis certero y profesionalismo técnico.]`;
     }
   };
 
+  // Efecto para cargar los borradores de la subcolección al abrir el modal de Merge
+  useEffect(() => {
+    if (showMergeModal && db && currentAuditId) {
+      fetchAuditDraftsFromFirestore(db, currentAuditId, savedAudits.find(a => a.id === currentAuditId), currentAuditorUid)
+        .then(drafts => {
+          if (drafts && Object.keys(drafts).length > 0) {
+            const evals = {};
+            Object.entries(drafts).forEach(([uid, d]) => {
+              evals[uid] = {
+                auditorName: d.ownerName || 'Auditor',
+                name: d.ownerName || 'Auditor',
+                email: d.ownerEmail || '',
+                answers: d.answers || {},
+                progress: d.progress || 0,
+                updatedAt: d.updatedAt
+              };
+            });
+            setMergeEvaluationsMap(evals);
+          }
+        })
+        .catch(err => console.warn("Error cargando drafts para modal merge:", err));
+    }
+  }, [showMergeModal, currentAuditId, db, currentAuditorUid, savedAudits]);
+
   // Consolidar respuestas y generar Versión Oficial de Auditoría
-  const handleConsolidate = (consolidatedAnswers, auditorAId, auditorBId) => {
+  const handleConsolidate = async (consolidatedAnswers, auditorAId, auditorBId) => {
     const updatedFinalAudit = {
       status: 'consolidated',
       consolidatedAt: new Date().toISOString(),
@@ -2006,13 +2086,36 @@ Aporta valor concreto, análisis certero y profesionalismo técnico.]`;
       answers: consolidatedAnswers
     };
 
+    const updatedOfficial = {
+      isPublished: true,
+      mergedAt: new Date().toISOString(),
+      mergedBy: currentAuditorName,
+      auditorAId,
+      auditorBId,
+      answers: consolidatedAnswers
+    };
+
     setFinalAudit(updatedFinalAudit);
+    setOfficialVersion(updatedOfficial);
     setResponses(consolidatedAnswers);
     setActiveEvaluationView('official');
+    setIsReadOnly(true);
     setShowMergeModal(false);
 
-    // Guardar inmediatamente en Firestore
-    saveCurrentAuditImmediate();
+    // Guardar Versión Oficial en el documento padre
+    if (db && currentAuditId) {
+      try {
+        const parentRef = doc(db, "auditorias", currentAuditId);
+        await updateDoc(parentRef, {
+          lastModified: new Date().toISOString(),
+          officialVersion: updatedOfficial,
+          "data.finalAudit": updatedFinalAudit
+        });
+        console.log("Versión Oficial guardada exitosamente en documento padre.");
+      } catch (e) {
+        console.error("Error al guardar Versión Oficial en Firestore:", e);
+      }
+    }
 
     showAlert({
       type: 'success',
@@ -2922,6 +3025,15 @@ Aporta valor concreto, análisis certero y profesionalismo técnico.]`;
                                         right: Math.max(12, window.innerWidth - rect.right)
                                       });
                                       setOpenDropdownAuditId(audit.id);
+
+                                      // Precargar borradores frescos de la subcolección para esta auditoría
+                                      if (db) {
+                                        fetchAuditDraftsFromFirestore(db, audit.id, audit, currentAuditorUid).then(drafts => {
+                                          if (drafts) {
+                                            setAuditDraftsCache(prev => ({ ...prev, [audit.id]: drafts }));
+                                          }
+                                        }).catch(() => { });
+                                      }
                                     }
                                   }}
                                   className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm transition-colors cursor-pointer"
@@ -2957,12 +3069,14 @@ Aporta valor concreto, análisis certero y profesionalismo técnico.]`;
                                         <span className="text-[10px] font-semibold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">Editar</span>
                                       </button>
 
-                                      {/* Opción 2: Borrador Colega */}
+                                      {/* Opción 2: Borrador Colega (Cargado desde Subcolección Aislada o Participantes) */}
                                       {(() => {
-                                        const colleagueEntry = getColleagueFromAudit(audit);
+                                        const cachedDrafts = auditDraftsCache[audit.id] || {};
+                                        const colleagueEntry = findColleagueInAudit(audit, cachedDrafts, currentAuditorUid, user?.email, currentAuditorName) || getColleagueFromAudit(audit);
                                         const hasColleague = !!colleagueEntry;
-                                        const colName = colleagueEntry ? colleagueEntry.auditorName : 'Colega';
+                                        const colName = colleagueEntry ? (colleagueEntry.name || colleagueEntry.auditorName || 'Colega') : 'Colega';
                                         const colUid = colleagueEntry ? colleagueEntry.uid : null;
+                                        const hasDraft = colleagueEntry ? (colleagueEntry.hasDraft || (colleagueEntry.answeredCount > 0)) : false;
 
                                         return (
                                           <button
@@ -2982,7 +3096,9 @@ Aporta valor concreto, análisis certero y profesionalismo técnico.]`;
                                                 {hasColleague ? `Borrador ${colName.split(' ')[0]}` : 'Borrador Colega'}
                                               </span>
                                             </div>
-                                            <span className="text-[10px] text-slate-400 shrink-0">Lectura</span>
+                                            <span className="text-[10px] text-slate-400 shrink-0">
+                                              {hasColleague ? (hasDraft ? `${colleagueEntry.progress || 0}%` : 'Lectura') : 'N/A'}
+                                            </span>
                                           </button>
                                         );
                                       })()}
@@ -2991,7 +3107,7 @@ Aporta valor concreto, análisis certero y profesionalismo técnico.]`;
 
                                       {/* Opción 3: Versión Oficial */}
                                       {(() => {
-                                        const isConsolidated = audit.data?.finalAudit?.status === 'consolidated' || audit.finalAudit?.status === 'consolidated';
+                                        const isConsolidated = audit.officialVersion?.isPublished || audit.data?.finalAudit?.status === 'consolidated' || audit.finalAudit?.status === 'consolidated';
 
                                         return (
                                           <button
@@ -3488,6 +3604,84 @@ Aporta valor concreto, análisis certero y profesionalismo técnico.]`;
               </div>
             </div>
 
+            {/* Modalidad de Trabajo: Individual o Colaborativa (Máx 2 Auditores) */}
+            <div className="mb-8 p-4 bg-slate-50 border border-slate-200/80 rounded-xl">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-2.5">
+                Modalidad de Participantes
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+                <div
+                  onClick={() => setCreationAuditMode('single')}
+                  className={`p-3.5 rounded-xl border cursor-pointer transition-all flex items-start gap-3 ${creationAuditMode === 'single'
+                    ? 'bg-white border-blue-600 ring-2 ring-blue-100 shadow-xs'
+                    : 'bg-white border-slate-200 hover:border-slate-300'
+                    }`}
+                >
+                  <div className={`p-2 rounded-lg shrink-0 ${creationAuditMode === 'single' ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-500'}`}>
+                    <User size={18} />
+                  </div>
+                  <div>
+                    <span className="text-xs font-bold text-slate-900 block">Individual (1 Auditor)</span>
+                    <span className="text-[11px] text-slate-500 leading-snug block mt-0.5">Un solo auditor gestiona y califica la evaluación completa.</span>
+                  </div>
+                </div>
+
+                <div
+                  onClick={() => setCreationAuditMode('collaborative')}
+                  className={`p-3.5 rounded-xl border cursor-pointer transition-all flex items-start gap-3 ${creationAuditMode === 'collaborative'
+                    ? 'bg-white border-indigo-600 ring-2 ring-indigo-100 shadow-xs'
+                    : 'bg-white border-slate-200 hover:border-slate-300'
+                    }`}
+                >
+                  <div className={`p-2 rounded-lg shrink-0 ${creationAuditMode === 'collaborative' ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-slate-500'}`}>
+                    <Users size={18} />
+                  </div>
+                  <div>
+                    <span className="text-xs font-bold text-slate-900 block">Colaborativa (Máx. 2 Auditores)</span>
+                    <span className="text-[11px] text-slate-500 leading-snug block mt-0.5">Dos auditores con borradores independientes en subcolección y Fusión (Merge).</span>
+                  </div>
+                </div>
+              </div>
+
+              {creationAuditMode === 'collaborative' && (
+                <div className="pt-3.5 border-t border-slate-200/70 animate-in fade-in duration-150">
+                  <span className="text-xs font-semibold text-indigo-900 block mb-2">Datos del Segundo Evaluador (Co-Auditor)</span>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-medium text-slate-600 mb-1">Nombre Completo *</label>
+                      <input
+                        type="text"
+                        value={colleagueNameInput}
+                        onChange={(e) => setColleagueNameInput(e.target.value)}
+                        placeholder="Ej. Flavio Covarrubias"
+                        className="w-full text-xs rounded-lg border border-slate-200 px-3 py-2 focus:border-indigo-600 focus:ring-1 focus:ring-indigo-100 outline-none bg-white text-slate-800"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-slate-600 mb-1">Correo Electrónico (opcional)</label>
+                      <input
+                        type="email"
+                        value={colleagueEmailInput}
+                        onChange={(e) => setColleagueEmailInput(e.target.value)}
+                        placeholder="f.covarrubias@empresa.com"
+                        className="w-full text-xs rounded-lg border border-slate-200 px-3 py-2 focus:border-indigo-600 focus:ring-1 focus:ring-indigo-100 outline-none bg-white text-slate-800"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-slate-600 mb-1">Rol Asignado</label>
+                      <input
+                        type="text"
+                        value={colleagueRoleInput}
+                        onChange={(e) => setColleagueRoleInput(e.target.value)}
+                        placeholder="Co-Auditor / Auditor Técnico"
+                        className="w-full text-xs rounded-lg border border-slate-200 px-3 py-2 focus:border-indigo-600 focus:ring-1 focus:ring-indigo-100 outline-none bg-white text-slate-800"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* Selector de Metodología / Estructura del Cuestionario */}
             <div className="mb-6">
               <div className="flex items-center justify-between mb-3">
@@ -3693,17 +3887,130 @@ Aporta valor concreto, análisis certero y profesionalismo técnico.]`;
                     setGlobalLoadingMessage('Configurando e inicializando auditoría...');
                     const hashed = await hashPassword(actor.contrasena);
                     const newId = Date.now().toString();
+
+                    const isCollab = creationAuditMode === 'collaborative';
+                    const myAuditorObj = {
+                      uid: currentAuditorUid,
+                      name: actor.nombreAuditor.trim(),
+                      email: user?.email || '',
+                      role: actor.rol || 'Auditor Líder'
+                    };
+                    const auditors = [myAuditorObj];
+                    const colleagueUid = isCollab ? `auditor_co_${Date.now()}` : null;
+                    if (isCollab) {
+                      auditors.push({
+                        uid: colleagueUid,
+                        name: colleagueNameInput.trim() || 'Co-Auditor',
+                        email: colleagueEmailInput.trim() || '',
+                        role: colleagueRoleInput || 'Co-Auditor'
+                      });
+                    }
+
+                    const initialResponsesMap = (creationMode === 'import' && importedInitialResponses && Object.keys(importedInitialResponses).length > 0)
+                      ? importedInitialResponses
+                      : {};
+
+                    const totalQ = Object.values(initialSecs).reduce((acc, s) => acc + (Array.isArray(s) ? s.length : 0), 0);
+
+                    // Inicializar documento padre en Firestore sin responses individuales
+                    if (db) {
+                      const parentDocData = {
+                        id: newId,
+                        companyName: actor.nombreEmpresa.trim(),
+                        nombreEmpresa: actor.nombreEmpresa.trim(),
+                        mode: creationAuditMode,
+                        maxAuditors: isCollab ? 2 : 1,
+                        auditors,
+                        officialVersion: {
+                          isPublished: false,
+                          mergedAt: null,
+                          mergedBy: null,
+                          answers: {}
+                        },
+                        draftsSummary: {
+                          [currentAuditorUid]: {
+                            ownerUid: currentAuditorUid,
+                            ownerName: actor.nombreAuditor.trim(),
+                            ownerEmail: user?.email || '',
+                            answeredCount: Object.keys(initialResponsesMap).length,
+                            totalQuestions: totalQ,
+                            progress: totalQ > 0 ? Math.round((Object.keys(initialResponsesMap).length / totalQ) * 100) : 0,
+                            updatedAt: new Date().toISOString()
+                          }
+                        },
+                        lastModified: new Date().toISOString(),
+                        data: {
+                          introData: {
+                            ...INITIAL_INTRO_DATA,
+                            nombreEmpresa: actor.nombreEmpresa.trim(),
+                            nombre: actor.nombreAuditor.trim()
+                          },
+                          actor: {
+                            nombreEmpresa: actor.nombreEmpresa.trim(),
+                            nombreAuditor: actor.nombreAuditor.trim(),
+                            rol: actor.rol,
+                            contrasenaHash: hashed
+                          },
+                          customSections: initialSecs,
+                          deletedQuestions: [],
+                          evaluationCriteria: (creationMode === 'import' && importedCriteria) ? importedCriteria : evaluationCriteria,
+                          auditConfig: (creationMode === 'import' && importedConfig) ? importedConfig : auditConfig,
+                          finalAudit: { status: 'draft', answers: {} }
+                        }
+                      };
+
+                      if (isCollab) {
+                        parentDocData.draftsSummary[colleagueUid] = {
+                          ownerUid: colleagueUid,
+                          ownerName: colleagueNameInput.trim() || 'Co-Auditor',
+                          ownerEmail: colleagueEmailInput.trim() || '',
+                          answeredCount: 0,
+                          totalQuestions: totalQ,
+                          progress: 0,
+                          updatedAt: new Date().toISOString()
+                        };
+                      }
+
+                      await setDoc(doc(db, "auditorias", newId), parentDocData, { merge: true });
+
+                      // Crear borrador inicial en la subcolección aislada del auditor principal
+                      await saveUserDraftToFirestore(
+                        db,
+                        newId,
+                        currentAuditorUid,
+                        actor.nombreAuditor.trim(),
+                        user?.email,
+                        initialResponsesMap,
+                        totalQ
+                      );
+
+                      // Si es colaborativa, crear también el borrador inicial del co-auditor en la subcolección
+                      if (isCollab) {
+                        await saveUserDraftToFirestore(
+                          db,
+                          newId,
+                          colleagueUid,
+                          colleagueNameInput.trim() || 'Co-Auditor',
+                          colleagueEmailInput.trim() || '',
+                          {},
+                          totalQ
+                        );
+                      }
+                    }
+
                     const lockAcquired = await acquireLock(newId);
                     if (lockAcquired) {
                       setCurrentAuditId(newId);
+                      setAuditMode(creationAuditMode);
+                      setMaxAuditors(isCollab ? 2 : 1);
+                      setAuditorsList(auditors);
+                      setActiveEvaluationView('my_draft');
+                      setIsReadOnly(false);
                       setIntroData({
                         ...INITIAL_INTRO_DATA,
                         nombreEmpresa: actor.nombreEmpresa.trim(),
                         nombre: actor.nombreAuditor.trim()
                       });
-                      const initialResponsesMap = (creationMode === 'import' && importedInitialResponses && Object.keys(importedInitialResponses).length > 0)
-                        ? importedInitialResponses
-                        : {};
                       setResponses(initialResponsesMap);
                       setGeneralComments('');
                       setCustomSections(initialSecs);
@@ -3839,7 +4146,12 @@ Aporta valor concreto, análisis certero y profesionalismo técnico.]`;
             <div className="flex items-center gap-2.5">
               <Eye size={20} className="text-amber-600 shrink-0" />
               <span>
-                <strong>Modo Solo Lectura (Observador):</strong> Estás viendo los avances de la auditoría en tiempo real. Los cambios no se guardarán en la base de datos.
+                <strong>Modo Solo Lectura (Observador):</strong>{' '}
+                {activeEvaluationView === 'official'
+                  ? 'Estás visualizando la Versión Oficial consolidada de la auditoría. Modo consulta activado.'
+                  : (activeEvaluationView && activeEvaluationView !== 'my_draft'
+                    ? 'Estás visualizando el borrador independiente del compañero en tiempo real. Los cambios no se guardarán.'
+                    : 'Estás viendo los avances de la auditoría en tiempo real. Los cambios no se guardarán en la base de datos.')}
               </span>
             </div>
             <button
@@ -5605,7 +5917,7 @@ Aporta valor concreto, análisis certero y profesionalismo técnico.]`;
       <AuditMergeModal
         isOpen={showMergeModal}
         onClose={() => setShowMergeModal(false)}
-        evaluations={evaluations}
+        evaluations={Object.keys(mergeEvaluationsMap).length > 0 ? mergeEvaluationsMap : evaluations}
         currentAuditorUid={currentAuditorUid}
         customSections={customSections}
         initialFinalAnswers={finalAudit.answers || responses}
