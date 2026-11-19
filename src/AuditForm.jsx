@@ -485,26 +485,18 @@ const AuditForm = () => {
       const result = await parseQuestionsFile(file);
       setImportedSections(result.parsed);
       setImportedFileName(file.name);
-      setImportedConfig(result.config || DEFAULT_TEMPLATE_CONFIG);
-      setImportedCriteria(result.criteria || DEFAULT_EVALUATION_CRITERIA);
       setImportedInitialResponses(result.initialResponses || {});
       setImportSummary({
-        templateType: result.templateType,
-        templateName: result.config?.nombre_plantilla || 'Plantilla de Auditoría',
-        framework: result.config?.marco_referencia || 'Cuestionario de Evaluación',
-        version: result.config?.version || '2.0',
         areasCount: result.areasCount,
         questionsCount: result.questionsCount,
-        criteriaCount: result.criteriaCount || (result.criteria ? result.criteria.length : 5),
+        hasCriteriaByLevel: result.hasCriteriaByLevel,
         initialResponsesCount: Object.keys(result.initialResponses || {}).length
       });
     } catch (err) {
       console.error(err);
-      setImportError(err.message || "Error al leer el archivo. Asegúrate de que sea un archivo de Excel (.xlsx) o .json válido.");
+      setImportError(err.message || "Error al leer el archivo. Asegúrate de que sea un archivo de Excel (.xlsx) o .json válido con las columnas correspondientes.");
       setImportedSections(null);
       setImportedFileName('');
-      setImportedConfig(null);
-      setImportedCriteria(null);
       setImportedInitialResponses({});
       setImportSummary(null);
     } finally {
@@ -1576,15 +1568,28 @@ Aporta valor concreto, análisis certero y profesionalismo técnico.]`;
       const list = [...(updated[section] || [])];
       const idx = list.findIndex(q => q.id === id);
       if (idx !== -1) {
+        const cleanedScale = Array.isArray(escalaEvaluacion)
+          ? escalaEvaluacion.map(s => (s || '').trim())
+          : list[idx].escalaEvaluacion;
+
+        const newCriteriaByLevel = cleanedScale && cleanedScale.length >= 5 ? {
+          "0": cleanedScale[0],
+          "1": cleanedScale[1],
+          "2": cleanedScale[2],
+          "3": cleanedScale[3],
+          "4": cleanedScale[4]
+        } : (list[idx].criteriaByLevel || {});
+
         list[idx] = {
           ...list[idx],
           pregunta: (pregunta || '').trim(),
           requisito: (requisito || '').trim(),
+          criterioCumplimiento: (requisito || '').trim(),
           evidencia: (evidencia || '').trim(),
+          evidenciaEsperada: (evidencia || '').trim(),
           nota: (nota || '').trim(),
-          escalaEvaluacion: Array.isArray(escalaEvaluacion)
-            ? escalaEvaluacion.map(s => (s || '').trim())
-            : list[idx].escalaEvaluacion
+          escalaEvaluacion: cleanedScale,
+          criteriaByLevel: newCriteriaByLevel
         };
         updated[section] = list;
       }
@@ -2017,61 +2022,49 @@ Aporta valor concreto, análisis certero y profesionalismo técnico.]`;
   };
 
   const calculateSectionScore = (section) => {
-    const questions = customSections[section];
-    let total = 0;
-    let count = 0;
+    const questions = customSections[section] || [];
+    let weightedScoreSum = 0;
+    let weightSum = 0;
 
     questions.forEach(q => {
       const key = `${section}-${q.id}`;
       if (responses[key]?.evaluacion !== undefined) {
-        total += parseInt(responses[key].evaluacion);
-        count++;
+        const peso = Number(q.pesoPonderacion || q.peso || 1.0);
+        const w = peso > 0 ? peso : 1.0;
+        weightedScoreSum += Number(responses[key].evaluacion) * w;
+        weightSum += w;
       }
     });
 
-    return count > 0 ? (total / count).toFixed(1) : 'N/A';
+    return weightSum > 0 ? (weightedScoreSum / weightSum).toFixed(1) : 'N/A';
   };
 
   const calculateAreaScores = () => {
-    const areas = {
-      'Infraestructura del Site': ['Infraestructura del Site'],
-      'Cláusulas ISO 27001': [
-        'Cláusula 4: Contexto de la organización',
-        'Cláusula 5: Liderazgo',
-        'Cláusula 6: Planificación',
-        'Cláusula 7: Apoyo',
-        'Cláusula 8: Operación',
-        'Cláusula 9: Evaluación del desempeño',
-        'Cláusula 10: Mejora',
-      ],
-      'Seguridad de la Información': ['Seguridad de la Información: Controles técnicos y operativos'],
-      'IA y LFPDPPP': ['Inteligencia Artificial y LFPDPPP']
-    };
-
+    const allSections = Object.keys(customSections);
     const areaScores = {};
 
-    Object.keys(areas).forEach(area => {
-      let totalScore = 0;
+    allSections.forEach(section => {
+      let weightedScoreSum = 0;
+      let weightSum = 0;
       let totalQuestions = 0;
       let answeredQuestions = 0;
 
-      areas[area].forEach(section => {
-        if (customSections[section]) {
-          customSections[section].forEach(q => {
-            totalQuestions++;
-            const key = `${section}-${q.id}`;
-            if (responses[key]?.evaluacion !== undefined) {
-              totalScore += parseInt(responses[key].evaluacion);
-              answeredQuestions++;
-            }
-          });
+      (customSections[section] || []).forEach(q => {
+        totalQuestions++;
+        const key = `${section}-${q.id}`;
+        if (responses[key]?.evaluacion !== undefined) {
+          const peso = Number(q.pesoPonderacion || q.peso || 1.0);
+          const w = peso > 0 ? peso : 1.0;
+          weightedScoreSum += Number(responses[key].evaluacion) * w;
+          weightSum += w;
+          answeredQuestions++;
         }
       });
 
-
-      areaScores[area] = {
-        score: answeredQuestions > 0 ? (totalScore / answeredQuestions).toFixed(2) : 0,
-        percentage: answeredQuestions > 0 ? ((totalScore / answeredQuestions) * 25).toFixed(1) : 0,
+      const avg = weightSum > 0 ? (weightedScoreSum / weightSum) : 0;
+      areaScores[section] = {
+        score: avg.toFixed(2),
+        percentage: (avg * 25).toFixed(1),
         answered: answeredQuestions,
         total: totalQuestions
       };
@@ -2081,20 +2074,22 @@ Aporta valor concreto, análisis certero y profesionalismo técnico.]`;
   };
 
   const calculateTotalScore = () => {
-    let total = 0;
-    let count = 0;
+    let weightedScoreSum = 0;
+    let weightSum = 0;
 
     Object.keys(customSections).forEach(section => {
-      customSections[section].forEach(q => {
+      (customSections[section] || []).forEach(q => {
         const key = `${section}-${q.id}`;
         if (responses[key]?.evaluacion !== undefined) {
-          total += parseInt(responses[key].evaluacion);
-          count++;
+          const peso = Number(q.pesoPonderacion || q.peso || 1.0);
+          const w = peso > 0 ? peso : 1.0;
+          weightedScoreSum += Number(responses[key].evaluacion) * w;
+          weightSum += w;
         }
       });
     });
 
-    return count > 0 ? (total / count) : 0;
+    return weightSum > 0 ? (weightedScoreSum / weightSum) : 0;
   };
 
   const calculateTotalRealScore = () => {
@@ -3577,10 +3572,10 @@ Aporta valor concreto, análisis certero y profesionalismo técnico.]`;
                     <div>
                       <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                         <FileSpreadsheet size={16} className="text-emerald-600" />
-                        <span>Plantilla Oficial de Auditoría Estructurada</span>
+                        <span>Plantilla Oficial de Cuestionario (Hoja Única)</span>
                       </div>
                       <p className="text-xs text-slate-500 mt-0.5">
-                        Incluye 3 hojas: <strong>1_Configuración</strong>, <strong>2_Criterios_Evaluación</strong> y <strong>3_Cuestionario_Auditoria</strong> con validaciones.
+                        Hoja <strong>Cuestionario_Auditoria</strong>: cada control incluye sus propios criterios específicos de <strong>Nivel 0 al Nivel 4</strong>.
                       </p>
                     </div>
 
@@ -3589,7 +3584,7 @@ Aporta valor concreto, análisis certero y profesionalismo técnico.]`;
                         type="button"
                         onClick={() => downloadExcelTemplate()}
                         className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg transition shrink-0 flex items-center gap-1.5 shadow-2xs cursor-pointer"
-                        title="Descargar libro Excel con las 3 hojas configuradas"
+                        title="Descargar libro Excel con la hoja Cuestionario_Auditoria configurada"
                       >
                         <Download size={14} />
                         <span>Plantilla Excel (.xlsx)</span>
@@ -3614,7 +3609,7 @@ Aporta valor concreto, análisis certero y profesionalismo técnico.]`;
                         <span>Subir cuestionario diligenciado</span>
                       </div>
                       <p className="text-xs text-slate-500 mt-0.5">
-                        Formatos admitidos: <strong>.xlsx</strong>, <strong>.xls</strong> o <strong>.json</strong> con las 3 hojas o esquema estructurado.
+                        Formatos admitidos: <strong>.xlsx</strong> o <strong>.json</strong> con las columnas oficiales en la fila 3 de encabezados.
                       </p>
                     </div>
 
@@ -3638,12 +3633,10 @@ Aporta valor concreto, análisis certero y profesionalismo técnico.]`;
                       </div>
 
                       <div className="text-[11px] text-emerald-700 flex flex-wrap items-center gap-x-3 gap-y-1 pt-1 border-t border-emerald-200/60">
-                        <span><strong>Plantilla:</strong> {importSummary.templateName}</span>
-                        {importSummary.framework && <span>• <strong>Marco:</strong> {importSummary.framework}</span>}
-                        <span>• <strong>Estructura:</strong> {importSummary.areasCount} Dominios, {importSummary.questionsCount} Controles</span>
-                        <span>• <strong>Rúbrica:</strong> {importSummary.criteriaCount} niveles</span>
+                        <span><strong>Estructura:</strong> {importSummary.areasCount} Dominios • {importSummary.questionsCount} Controles</span>
+                        <span>• Rúbrica técnica individual de Nivel 0 a 4 por control</span>
                         {importSummary.initialResponsesCount > 0 && (
-                          <span className="text-blue-700 font-semibold">• {importSummary.initialResponsesCount} respuestas pre-cargadas</span>
+                          <span className="text-blue-700 font-semibold">• {importSummary.initialResponsesCount} respuestas precalificadas</span>
                         )}
                       </div>
                     </div>
@@ -5265,15 +5258,14 @@ Aporta valor concreto, análisis certero y profesionalismo técnico.]`;
                                       </span>
                                     )}
                                     {item.criticidad && (
-                                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border ${
-                                        item.criticidad.toLowerCase().includes('cr')
-                                          ? 'bg-rose-50 text-rose-700 border-rose-200'
-                                          : item.criticidad.toLowerCase().includes('alt')
+                                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border ${item.criticidad.toLowerCase().includes('cr')
+                                        ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                        : item.criticidad.toLowerCase().includes('alt')
                                           ? 'bg-amber-50 text-amber-700 border-amber-200'
                                           : item.criticidad.toLowerCase().includes('med')
-                                          ? 'bg-blue-50 text-blue-700 border-blue-200'
-                                          : 'bg-slate-100 text-slate-700 border-slate-200'
-                                      }`}>
+                                            ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                            : 'bg-slate-100 text-slate-700 border-slate-200'
+                                        }`}>
                                         Criticidad: {item.criticidad}
                                       </span>
                                     )}
@@ -5371,32 +5363,58 @@ Aporta valor concreto, análisis certero y profesionalismo técnico.]`;
                                   )}
                                 </div>
 
-                                <div className="bg-slate-50 border border-slate-200/80 rounded-lg p-2.5 mb-2.5 text-[11px] text-slate-600">
-                                  <div className="font-semibold text-slate-700 mb-0.5">Criterio de Evaluación:</div>
-                                  {(item.escalaEvaluacion || GENERIC_EVALUATION_SCALE).map((line, index) => (
-                                    <div key={`${item.id}-${index}`} className="leading-tight">{line}</div>
-                                  ))}
+                                <div className="bg-slate-50/80 border border-slate-200/90 rounded-xl p-2.5 mb-2.5 text-[11px] text-slate-600 space-y-1">
+                                  <div className="font-semibold text-slate-700 mb-1 flex items-center justify-between">
+                                    <span>Criterios de Evaluación por Nivel:</span>
+                                    {response.evaluacion !== undefined && (
+                                      <span className="text-blue-700 font-bold bg-blue-50 px-2 py-0.5 rounded text-[10px]">
+                                        Nivel {response.evaluacion} asignado
+                                      </span>
+                                    )}
+                                  </div>
+                                  {[0, 1, 2, 3, 4].map((lvl) => {
+                                    const critText = item.criteriaByLevel?.[String(lvl)] || item.escalaEvaluacion?.[lvl] || GENERIC_EVALUATION_SCALE[lvl];
+                                    const isLvlSelected = response.evaluacion === lvl;
+                                    return (
+                                      <div
+                                        key={`${item.id}-lvl-${lvl}`}
+                                        className={`leading-tight p-1.5 rounded-md transition-colors flex items-start gap-2 ${
+                                          isLvlSelected ? 'bg-blue-100/70 font-semibold text-blue-900 border border-blue-200/70' : 'text-slate-600 hover:bg-slate-100/60'
+                                        }`}
+                                      >
+                                        <span className={`w-4 h-4 rounded text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5 ${
+                                          isLvlSelected ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-700'
+                                        }`}>
+                                          {lvl}
+                                        </span>
+                                        <span className="flex-1 text-[11px] leading-snug">{critText}</span>
+                                      </div>
+                                    );
+                                  })}
                                 </div>
 
                                 <div className="flex gap-2">
-                                  {[0, 1, 2, 3, 4].map(score => (
-                                    <button
-                                      key={score}
-                                      type="button"
-                                      disabled={isReadOnly || activeEvaluationView !== 'my_draft'}
-                                      onClick={() => updateResponse(section, item.id, 'evaluacion', score)}
-                                      className={`w-11 h-11 rounded-lg font-bold text-sm transition-all flex items-center justify-center ${isReadOnly || activeEvaluationView !== 'my_draft'
-                                        ? 'opacity-80 cursor-not-allowed'
-                                        : 'cursor-pointer'
-                                        } ${response.evaluacion === score
-                                          ? 'bg-blue-600 text-white shadow-xs ring-2 ring-blue-600 ring-offset-2'
-                                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200/80'
-                                        }`}
-                                      title={item.escalaEvaluacion?.[score] || GENERIC_EVALUATION_SCALE[score]}
-                                    >
-                                      {score}
-                                    </button>
-                                  ))}
+                                  {[0, 1, 2, 3, 4].map(score => {
+                                    const scoreTooltip = item.criteriaByLevel?.[String(score)] || item.escalaEvaluacion?.[score] || GENERIC_EVALUATION_SCALE[score];
+                                    return (
+                                      <button
+                                        key={score}
+                                        type="button"
+                                        disabled={isReadOnly || activeEvaluationView !== 'my_draft'}
+                                        onClick={() => updateResponse(section, item.id, 'evaluacion', score)}
+                                        className={`w-11 h-11 rounded-lg font-bold text-sm transition-all flex items-center justify-center ${isReadOnly || activeEvaluationView !== 'my_draft'
+                                          ? 'opacity-80 cursor-not-allowed'
+                                          : 'cursor-pointer'
+                                          } ${response.evaluacion === score
+                                            ? 'bg-blue-600 text-white shadow-xs ring-2 ring-blue-600 ring-offset-2'
+                                            : 'bg-slate-100 text-slate-700 hover:bg-slate-200/80'
+                                          }`}
+                                        title={scoreTooltip}
+                                      >
+                                        {score}
+                                      </button>
+                                    );
+                                  })}
                                 </div>
                               </div>
 
@@ -5797,8 +5815,13 @@ Aporta valor concreto, análisis certero y profesionalismo técnico.]`;
               </p>
 
               <div className="space-y-2.5">
-                {(evaluationCriteria || DEFAULT_EVALUATION_CRITERIA).map((crit) => {
-                  const levelNum = Number(crit.nivel_puntaje);
+                {[0, 1, 2, 3, 4].map((levelNum) => {
+                  const qCriteria = rubricModalData.question.criteriaByLevel || {};
+                  const critText = qCriteria[String(levelNum)]
+                    || rubricModalData.question.escalaEvaluacion?.[levelNum]
+                    || (DEFAULT_EVALUATION_CRITERIA[levelNum]?.criterio_tecnico_evaluacion ?? `Nivel ${levelNum}`);
+                  const levelLabel = DEFAULT_EVALUATION_CRITERIA[levelNum]?.etiqueta_nivel || `Nivel ${levelNum}`;
+                  const levelPercent = DEFAULT_EVALUATION_CRITERIA[levelNum]?.porcentaje_equivalente || `${levelNum * 25}%`;
                   const isSelected = rubricModalData.currentScore === levelNum;
                   const levelBadges = [
                     'bg-rose-50 text-rose-700 border-rose-200',
@@ -5810,24 +5833,23 @@ Aporta valor concreto, análisis certero y profesionalismo técnico.]`;
 
                   return (
                     <div
-                      key={crit.nivel_puntaje}
-                      className={`p-3.5 rounded-xl border transition-all ${
-                        isSelected
-                          ? 'bg-blue-50/40 border-blue-400 ring-2 ring-blue-100 shadow-xs'
-                          : 'bg-white border-slate-200/80 hover:border-slate-300'
-                      }`}
+                      key={levelNum}
+                      className={`p-3.5 rounded-xl border transition-all ${isSelected
+                        ? 'bg-blue-50/40 border-blue-400 ring-2 ring-blue-100 shadow-xs'
+                        : 'bg-white border-slate-200/80 hover:border-slate-300'
+                        }`}
                     >
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2 border-b border-slate-100">
                         <div className="flex items-center gap-2">
                           <span className={`w-7 h-7 rounded-lg text-xs font-bold flex items-center justify-center shrink-0 border ${levelBadges[levelNum] || 'bg-slate-100 text-slate-700'}`}>
-                            {crit.nivel_puntaje}
+                            {levelNum}
                           </span>
                           <div>
                             <span className="text-xs font-bold text-slate-800">
-                              Nivel {crit.nivel_puntaje}: {crit.etiqueta_nivel}
+                              Nivel {levelNum}: {levelLabel}
                             </span>
                             <span className="text-[11px] text-slate-400 ml-1.5 font-medium">
-                              ({crit.porcentaje_equivalente})
+                              ({levelPercent})
                             </span>
                           </div>
                         </div>
@@ -5839,11 +5861,10 @@ Aporta valor concreto, análisis certero y profesionalismo técnico.]`;
                               updateResponse(rubricModalData.section, rubricModalData.question.id, 'evaluacion', levelNum);
                               setRubricModalData(prev => ({ ...prev, currentScore: levelNum }));
                             }}
-                            className={`px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 shrink-0 ${
-                              isSelected
-                                ? 'bg-blue-600 text-white shadow-xs'
-                                : 'bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-700'
-                            }`}
+                            className={`px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 shrink-0 ${isSelected
+                              ? 'bg-blue-600 text-white shadow-xs'
+                              : 'bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-700'
+                              }`}
                           >
                             {isSelected ? <Check size={13} /> : null}
                             <span>{isSelected ? 'Calificado' : `Asignar Nivel ${levelNum}`}</span>
@@ -5851,14 +5872,8 @@ Aporta valor concreto, análisis certero y profesionalismo técnico.]`;
                         )}
                       </div>
 
-                      <div className="mt-2 text-xs text-slate-600 leading-relaxed">
-                        <div className="text-slate-700 font-medium">{crit.criterio_tecnico_evaluacion}</div>
-                        {crit.accion_requerida && (
-                          <div className="mt-1 text-[11px] text-slate-500 italic flex items-center gap-1">
-                            <Info size={12} className="shrink-0 text-slate-400" />
-                            <span><strong>Requisito para este nivel:</strong> {crit.accion_requerida}</span>
-                          </div>
-                        )}
+                      <div className="mt-2 text-xs text-slate-700 leading-relaxed font-medium">
+                        {critText}
                       </div>
                     </div>
                   );

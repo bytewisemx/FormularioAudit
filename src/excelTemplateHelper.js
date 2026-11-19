@@ -113,10 +113,12 @@ const addSheetTitleBanner = (ws, title, endColLetter = 'C', bgColor = COLOR_PRIM
 
 /**
  * Genera y descarga la plantilla oficial de preguntas en formato Excel (.xlsx)
- * con las 3 hojas estructuradas exactas:
- * 1. 1_Configuracion
- * 2. 2_Criterios_Evaluacion
- * 3. 3_Cuestionario_Auditoria
+ * con UNA SOLA HOJA ('Cuestionario_Auditoria') donde cada control incluye sus propios
+ * criterios de evaluación del Nivel 0 al Nivel 4.
+ * 
+ * Fila 1: Banner de título corporativo
+ * Fila 2: Subtítulo / Instrucciones de uso
+ * Fila 3: Encabezados exactos del sistema
  */
 export const downloadExcelTemplate = async (sourceSections = DEFAULT_SECTIONS) => {
   try {
@@ -124,152 +126,54 @@ export const downloadExcelTemplate = async (sourceSections = DEFAULT_SECTIONS) =
     workbook.creator = 'ByteWise Auditoría TI';
     workbook.created = new Date();
 
-    // ========================================================
-    // HOJA 1: 1_Configuracion
-    // ========================================================
-    const wsConfig = workbook.addWorksheet('1_Configuracion');
-    wsConfig.views = [{ showGridLines: true }];
+    const ws = workbook.addWorksheet('Cuestionario_Auditoria');
+    ws.views = [{ showGridLines: true }];
 
-    addSheetTitleBanner(wsConfig, 'BYTEWISE — CONFIGURACIÓN DEL SISTEMA DE AUDITORÍA TI', 'C', COLOR_PRIMARY_NAVY);
+    // Fila 1: Banner de Título Corporativo (Fusionado A1:O1)
+    const titleRow = ws.addRow(['BYTEWISE — CUESTIONARIO OFICIAL DE AUDITORÍA TI Y CIBERSEGURIDAD']);
+    titleRow.height = 32;
+    const titleCell = titleRow.getCell(1);
+    titleCell.font = { name: 'Calibri', size: 12, bold: true, color: { argb: 'FFFFFFFF' } };
+    titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_PRIMARY_NAVY } };
+    titleCell.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+    ws.mergeCells('A1:O1');
 
-    // Fila 2: Encabezados
-    const configHeaders = wsConfig.addRow(['clave_sistema', 'valor', 'descripcion_ayuda']);
-    applyHeaderStyle(configHeaders, COLOR_SECONDARY_BLUE);
-
-    const configRows = [
-      {
-        clave: 'nombre_plantilla',
-        valor: DEFAULT_TEMPLATE_CONFIG.nombre_plantilla,
-        desc: 'Nombre descriptivo de la plantilla técnica que se mostrará en el sistema.',
-      },
-      {
-        clave: 'marco_referencia',
-        valor: DEFAULT_TEMPLATE_CONFIG.marco_referencia,
-        desc: 'Estándares y marcos normativos base de la evaluación (ISO 27001, NIST CSF, COBIT).',
-      },
-      {
-        clave: 'version',
-        valor: DEFAULT_TEMPLATE_CONFIG.version,
-        desc: 'Versión del cuestionario de auditoría (ej. 1.0, 2.0).',
-      },
-      {
-        clave: 'escala_minima',
-        valor: DEFAULT_TEMPLATE_CONFIG.escala_minima,
-        desc: 'Calificación numérica mínima para cada control (habitualmente 0).',
-      },
-      {
-        clave: 'escala_maxima',
-        valor: DEFAULT_TEMPLATE_CONFIG.escala_maxima,
-        desc: 'Calificación numérica máxima para cada control (habitualmente 4).',
-      },
-      {
-        clave: 'modalidad_auditoria',
-        valor: DEFAULT_TEMPLATE_CONFIG.modalidad_auditoria,
-        desc: 'Modalidad de trabajo recomendada: "colaborativa" (máx 2 auditores) o "single" (individual).',
-      },
-      {
-        clave: 'requiere_evidencia_obligatoria',
-        valor: DEFAULT_TEMPLATE_CONFIG.requiere_evidencia_obligatoria,
-        desc: 'Define si es obligatorio ingresar evidencia textual o documental para calificar ("SI" o "NO").',
-      },
-    ];
-
-    configRows.forEach((item) => {
-      const r = wsConfig.addRow([item.clave, item.valor, item.desc]);
-      r.height = 24;
-      r.eachCell((cell, colNum) => {
-        cell.font = { name: 'Calibri', size: 10 };
-        cell.border = thinBorder;
-        cell.alignment = { vertical: 'middle', wrapText: true, horizontal: colNum === 1 ? 'center' : 'left' };
-      });
-      r.getCell(1).font = { name: 'Consolas', size: 9.5, bold: true, color: { argb: 'FF1E293B' } };
-    });
-
-    wsConfig.getColumn(1).width = 30;
-    wsConfig.getColumn(2).width = 44;
-    wsConfig.getColumn(3).width = 65;
-
-    // ========================================================
-    // HOJA 2: 2_Criterios_Evaluacion
-    // ========================================================
-    const wsCriteria = workbook.addWorksheet('2_Criterios_Evaluacion');
-    wsCriteria.views = [{ showGridLines: true }];
-
-    addSheetTitleBanner(wsCriteria, 'RÚBRICA DE EVALUACIÓN Y NIVELES DE MADUREZ (ESCALA 0 A 4)', 'E', COLOR_PRIMARY_NAVY);
-
-    // Fila 2: Encabezados
-    const criteriaHeaders = wsCriteria.addRow([
-      'nivel_puntaje',
-      'etiqueta_nivel',
-      'porcentaje_equivalente',
-      'criterio_tecnico_evaluacion',
-      'accion_requerida',
+    // Fila 2: Subtítulo e Instrucciones de Uso (Fusionado A2:O2)
+    const subRow = ws.addRow([
+      'Instrucciones: Diligencie cada control por fila. Las columnas "criterio_nivel_0" a "criterio_nivel_4" definen la rúbrica técnica específica que el auditor visualizará para calificar la madurez (escala 0 a 4).'
     ]);
-    applyHeaderStyle(criteriaHeaders, COLOR_SECONDARY_BLUE);
+    subRow.height = 24;
+    const subCell = subRow.getCell(1);
+    subCell.font = { name: 'Calibri', size: 9.5, italic: true, color: { argb: 'FF475569' } };
+    subCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_MUTED_BG } };
+    subCell.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+    ws.mergeCells('A2:O2');
 
-    DEFAULT_EVALUATION_CRITERIA.forEach((item) => {
-      const r = wsCriteria.addRow([
-        item.nivel_puntaje,
-        item.etiqueta_nivel,
-        item.porcentaje_equivalente,
-        item.criterio_tecnico_evaluacion,
-        item.accion_requerida,
-      ]);
-      r.height = 36;
-      r.eachCell((cell, colNum) => {
-        cell.font = { name: 'Calibri', size: 10 };
-        cell.border = thinBorder;
-        cell.alignment = {
-          vertical: 'top',
-          wrapText: true,
-          horizontal: colNum === 1 || colNum === 3 ? 'center' : 'left',
-        };
-      });
-
-      if (item.nivel_puntaje === 0) {
-        r.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_DANGER_BG } };
-        r.getCell(1).font = { name: 'Calibri', size: 11, bold: true, color: { argb: COLOR_DANGER_TEXT } };
-      } else if (item.nivel_puntaje === 4) {
-        r.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_SUCCESS_BG } };
-        r.getCell(1).font = { name: 'Calibri', size: 11, bold: true, color: { argb: COLOR_SUCCESS_TEXT } };
-      }
-    });
-
-    wsCriteria.getColumn(1).width = 14;
-    wsCriteria.getColumn(2).width = 30;
-    wsCriteria.getColumn(3).width = 22;
-    wsCriteria.getColumn(4).width = 65;
-    wsCriteria.getColumn(5).width = 45;
-
-    // ========================================================
-    // HOJA 3: 3_Cuestionario_Auditoria
-    // ========================================================
-    const wsQuestions = workbook.addWorksheet('3_Cuestionario_Auditoria');
-    wsQuestions.views = [{ showGridLines: true }];
-
-    addSheetTitleBanner(wsQuestions, 'CUESTIONARIO DE CONTROLES DE AUDITORÍA TI — CONTROLES Y EVALUACIÓN', 'K', COLOR_PRIMARY_NAVY);
-
-    // Fila 2: Encabezados obligatorios y extendidos
-    const questionHeaders = wsQuestions.addRow([
+    // Fila 3: Encabezados Exactos del Cuestionario
+    const headerRow = ws.addRow([
       'id_control',
       'dominio',
       'subdominio',
       'norma_referencia',
       'pregunta_control',
-      'criterio_cumplimiento',
       'evidencia_esperada',
       'criticidad',
       'peso_ponderacion',
+      'criterio_nivel_0',
+      'criterio_nivel_1',
+      'criterio_nivel_2',
+      'criterio_nivel_3',
+      'criterio_nivel_4',
       'puntaje_inicial',
       'observaciones_base',
     ]);
-    applyHeaderStyle(questionHeaders, COLOR_SECONDARY_BLUE);
+    applyHeaderStyle(headerRow, COLOR_SECONDARY_BLUE);
 
     const sectionsToUse = sourceSections && Object.keys(sourceSections).length > 0
       ? sourceSections
       : DEFAULT_SECTIONS;
 
-    // Llenar controles con datos enriquecidos
+    // Llenar controles con datos enriquecidos y sus 5 niveles de criterios específicos
     Object.entries(sectionsToUse).forEach(([area, questions]) => {
       (questions || []).forEach((q, idx) => {
         const idStr = String(q.id || `CTRL-${idx + 1}`);
@@ -278,7 +182,7 @@ export const downloadExcelTemplate = async (sourceSections = DEFAULT_SECTIONS) =
         let subdominio = q.subdominio || '';
         let norma = q.normaReferencia || q.norma || '';
         let criticidad = q.criticidad || 'Alta';
-        let peso = q.pesoPonderacion || q.peso || 1;
+        let peso = Number(q.pesoPonderacion || q.peso || 1.0);
 
         if (!subdominio) {
           if (area.includes('Site')) subdominio = 'Instalaciones y Respaldo Físico';
@@ -298,39 +202,56 @@ export const downloadExcelTemplate = async (sourceSections = DEFAULT_SECTIONS) =
           else if (area.includes('Cláusula 10')) norma = 'ISO/IEC 27001 Cláusula 10';
           else if (area.includes('Site')) norma = 'ISO/IEC 27001:2022 A.7.1 / TIA-942';
           else if (area.includes('IA')) norma = 'LFPDPPP / ISO 42001';
-          else norma = 'ISO/IEC 27001:2022 / NIST CSF';
+          else norma = 'ISO/IEC 27001:2022 / NIST CSF 2.0';
         }
 
-        const criterioCumplimiento = q.criterioCumplimiento || q.requisito || q.nota || 'Verificación formal del cumplimiento de la directriz técnica y operativa.';
-        const evidenciaEsperada = q.evidenciaEsperada || q.evidencia || 'Políticas documentadas, bitácoras de eventos, configuraciones técnicas o diagramas.';
+        const evidenciaEsperada = q.evidenciaEsperada || q.evidencia || 'Políticas documentadas, configuraciones técnicas, bitácoras o diagramas de arquitectura.';
 
-        const r = wsQuestions.addRow([
+        // Extraer o generar criterios específicos de Nivel 0 a Nivel 4 para este control
+        const cbLevel = q.criteriaByLevel || {};
+        let crit0 = cbLevel['0'] || (q.escalaEvaluacion?.[0] ?? '');
+        let crit1 = cbLevel['1'] || (q.escalaEvaluacion?.[1] ?? '');
+        let crit2 = cbLevel['2'] || (q.escalaEvaluacion?.[2] ?? '');
+        let crit3 = cbLevel['3'] || (q.escalaEvaluacion?.[3] ?? '');
+        let crit4 = cbLevel['4'] || (q.escalaEvaluacion?.[4] ?? '');
+
+        if (!crit0) crit0 = 'Nivel 0: Inexistente / No implementado. No se cuenta con políticas, controles ni directrices establecidas.';
+        if (!crit1) crit1 = 'Nivel 1: Inicial / Informal. Acciones reactivas o esporádicas sin formalización ni documentación oficial.';
+        if (!crit2) crit2 = 'Nivel 2: En desarrollo / Parcial. Procedimientos parcialmente definidos con aplicación inconsistente.';
+        if (!crit3) crit3 = 'Nivel 3: Definido y Operativo. Política formal aprobada, procedimiento implementado y evidencia verificable.';
+        if (!crit4) crit4 = 'Nivel 4: Optimizado. Control automatizado, monitoreo continuo de métricas y mejora continua demostrable.';
+
+        const r = ws.addRow([
           idStr,
           area,
           subdominio,
           norma,
           q.pregunta || '',
-          criterioCumplimiento,
           evidenciaEsperada,
           criticidad,
-          peso,
-          '', // puntaje_inicial vacío por defecto para que el auditor califique
+          peso.toFixed(1),
+          crit0,
+          crit1,
+          crit2,
+          crit3,
+          crit4,
+          q.puntajeInicial !== undefined && q.puntajeInicial !== null ? String(q.puntajeInicial) : '',
           q.observacionesBase || '',
         ]);
 
-        r.height = 38;
+        r.height = 42;
         r.eachCell((cell, colNum) => {
-          cell.font = { name: 'Calibri', size: 10 };
+          cell.font = { name: 'Calibri', size: 9.5 };
           cell.border = thinBorder;
           cell.alignment = {
             vertical: 'top',
             wrapText: true,
-            horizontal: colNum === 1 || colNum === 8 || colNum === 9 || colNum === 10 ? 'center' : 'left',
+            horizontal: colNum === 1 || colNum === 7 || colNum === 8 || colNum === 14 ? 'center' : 'left',
           };
         });
 
-        // 1. DataValidation para 'criticidad' (Columna 8 / H)
-        const criticidadCell = r.getCell(8);
+        // 1. DataValidation para 'criticidad' (Columna 7 / G)
+        const criticidadCell = r.getCell(7);
         criticidadCell.dataValidation = {
           type: 'list',
           allowBlank: true,
@@ -340,30 +261,35 @@ export const downloadExcelTemplate = async (sourceSections = DEFAULT_SECTIONS) =
           error: 'Por favor selecciona un valor de la lista desplegable: Crítica, Alta, Media o Baja.',
         };
 
-        // 2. DataValidation para 'puntaje_inicial' (Columna 10 / J)
-        const puntajeCell = r.getCell(10);
+        // 2. DataValidation para 'puntaje_inicial' (Columna 14 / N)
+        const puntajeCell = r.getCell(14);
         puntajeCell.dataValidation = {
           type: 'list',
           allowBlank: true,
           formulae: ['"0,1,2,3,4"'],
           showErrorMessage: true,
           errorTitle: 'Calificación no válida',
-          error: 'Por favor selecciona un puntaje entre 0 y 4 (según la hoja 2_Criterios_Evaluacion).',
+          error: 'Por favor selecciona un puntaje entre 0 y 4.',
         };
       });
     });
 
-    wsQuestions.getColumn(1).width = 14; // id_control
-    wsQuestions.getColumn(2).width = 28; // dominio
-    wsQuestions.getColumn(3).width = 24; // subdominio
-    wsQuestions.getColumn(4).width = 22; // norma_referencia
-    wsQuestions.getColumn(5).width = 54; // pregunta_control
-    wsQuestions.getColumn(6).width = 38; // criterio_cumplimiento
-    wsQuestions.getColumn(7).width = 34; // evidencia_esperada
-    wsQuestions.getColumn(8).width = 16; // criticidad
-    wsQuestions.getColumn(9).width = 18; // peso_ponderacion
-    wsQuestions.getColumn(10).width = 16; // puntaje_inicial
-    wsQuestions.getColumn(11).width = 32; // observaciones_base
+    // Anchos de columna configurados profesionalmente
+    ws.getColumn(1).width = 13;  // id_control
+    ws.getColumn(2).width = 28;  // dominio
+    ws.getColumn(3).width = 24;  // subdominio
+    ws.getColumn(4).width = 22;  // norma_referencia
+    ws.getColumn(5).width = 55;  // pregunta_control
+    ws.getColumn(6).width = 36;  // evidencia_esperada
+    ws.getColumn(7).width = 14;  // criticidad
+    ws.getColumn(8).width = 18;  // peso_ponderacion
+    ws.getColumn(9).width = 36;  // criterio_nivel_0
+    ws.getColumn(10).width = 36; // criterio_nivel_1
+    ws.getColumn(11).width = 36; // criterio_nivel_2
+    ws.getColumn(12).width = 36; // criterio_nivel_3
+    ws.getColumn(13).width = 36; // criterio_nivel_4
+    ws.getColumn(14).width = 16; // puntaje_inicial
+    ws.getColumn(15).width = 30; // observaciones_base
 
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], {
@@ -380,6 +306,7 @@ export const downloadExcelTemplate = async (sourceSections = DEFAULT_SECTIONS) =
 
 /**
  * Genera y descarga el esquema estructurado en formato JSON (.json)
+ * reflejando la misma estructura de una sola hoja y criterios por nivel
  */
 export const downloadJsonTemplate = async (sourceSections = DEFAULT_SECTIONS) => {
   try {
@@ -390,16 +317,34 @@ export const downloadJsonTemplate = async (sourceSections = DEFAULT_SECTIONS) =>
     const questionsList = [];
     Object.entries(sectionsToUse).forEach(([area, questions]) => {
       (questions || []).forEach((q, idx) => {
+        const cbLevel = q.criteriaByLevel || {};
+        const crit0 = cbLevel['0'] || q.escalaEvaluacion?.[0] || 'Nivel 0: Inexistente / No implementado.';
+        const crit1 = cbLevel['1'] || q.escalaEvaluacion?.[1] || 'Nivel 1: Inicial / Informal.';
+        const crit2 = cbLevel['2'] || q.escalaEvaluacion?.[2] || 'Nivel 2: En desarrollo / Parcial.';
+        const crit3 = cbLevel['3'] || q.escalaEvaluacion?.[3] || 'Nivel 3: Definido y Operativo.';
+        const crit4 = cbLevel['4'] || q.escalaEvaluacion?.[4] || 'Nivel 4: Optimizado y Medido.';
+
         questionsList.push({
           id_control: String(q.id || `CTRL-${idx + 1}`),
           dominio: area,
-          subdominio: q.subdominio || 'General',
+          subdominio: q.subdominio || 'Operaciones de TI',
           norma_referencia: q.normaReferencia || q.norma || 'ISO/IEC 27001:2022',
           pregunta_control: q.pregunta || '',
-          criterio_cumplimiento: q.criterioCumplimiento || q.requisito || q.nota || '',
           evidencia_esperada: q.evidenciaEsperada || q.evidencia || '',
           criticidad: q.criticidad || 'Alta',
-          peso_ponderacion: q.pesoPonderacion || 1,
+          peso_ponderacion: Number(q.pesoPonderacion || q.peso || 1.0),
+          criterio_nivel_0: crit0,
+          criterio_nivel_1: crit1,
+          criterio_nivel_2: crit2,
+          criterio_nivel_3: crit3,
+          criterio_nivel_4: crit4,
+          criteriaByLevel: {
+            "0": crit0,
+            "1": crit1,
+            "2": crit2,
+            "3": crit3,
+            "4": crit4
+          },
           puntaje_inicial: q.puntajeInicial !== undefined ? q.puntajeInicial : null,
           observaciones_base: q.observacionesBase || '',
         });
@@ -407,8 +352,8 @@ export const downloadJsonTemplate = async (sourceSections = DEFAULT_SECTIONS) =>
     });
 
     const exportPayload = {
-      config: DEFAULT_TEMPLATE_CONFIG,
-      criteria: DEFAULT_EVALUATION_CRITERIA,
+      template: 'Cuestionario_Auditoria',
+      version: '2.0',
       questions: questionsList,
     };
 
@@ -428,26 +373,15 @@ export const downloadJsonTemplate = async (sourceSections = DEFAULT_SECTIONS) =>
 };
 
 /**
- * Helper para normalizar textos de nombres de columnas
- */
-const cleanColName = (val) => {
-  return String(val || '')
-    .trim()
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[\s\-_]/g, '');
-};
-
-/**
- * Lee un archivo .xlsx o .json y lo transforma en la estructura de secciones, criterios y configuración.
- * Compatible con la plantilla de 3 hojas y archivos heredados.
+ * Lee un archivo .xlsx o .json y lo transforma en la estructura de secciones y controles.
+ * Diseñado para la plantilla de hoja única ('Cuestionario_Auditoria') donde cada control
+ * contiene sus criterios de evaluación específicos del Nivel 0 al Nivel 4 (criteriaByLevel).
  */
 export const parseQuestionsFile = async (file) => {
   const fileName = (file.name || '').toLowerCase();
 
   // ========================================================
-  // Caso 1: Archivo JSON
+  // Caso 1: Archivo JSON (.json)
   // ========================================================
   if (fileName.endsWith('.json')) {
     const text = await file.text();
@@ -463,43 +397,73 @@ export const parseQuestionsFile = async (file) => {
     }
 
     let parsed = {};
-    let config = { ...DEFAULT_TEMPLATE_CONFIG };
-    let criteria = [...DEFAULT_EVALUATION_CRITERIA];
     const initialResponses = {};
 
-    // Formato estructurado { config, criteria, questions }
-    if (data.questions && Array.isArray(data.questions)) {
-      if (data.config) config = { ...config, ...data.config };
-      if (Array.isArray(data.criteria) && data.criteria.length > 0) criteria = data.criteria;
+    // Formato estructurado { questions: [...] }
+    const questionsArray = Array.isArray(data.questions)
+      ? data.questions
+      : (Array.isArray(data) ? data : null);
 
-      data.questions.forEach((q, idx) => {
+    if (questionsArray && Array.isArray(questionsArray)) {
+      questionsArray.forEach((q, idx) => {
         const dom = q.dominio || q.area || 'Dominio General';
         if (!parsed[dom]) parsed[dom] = [];
 
         const idVal = q.id_control || q.id || `CTRL-${idx + 1}`;
+        const rawCriteria = q.criteriaByLevel || {};
+
+        const crit0 = rawCriteria['0'] || q.criterio_nivel_0 || (q.escalaEvaluacion?.[0] ?? 'Nivel 0: Inexistente / No implementado');
+        const crit1 = rawCriteria['1'] || q.criterio_nivel_1 || (q.escalaEvaluacion?.[1] ?? 'Nivel 1: Inicial / Informal');
+        const crit2 = rawCriteria['2'] || q.criterio_nivel_2 || (q.escalaEvaluacion?.[2] ?? 'Nivel 2: Parcialmente definido');
+        const crit3 = rawCriteria['3'] || q.criterio_nivel_3 || (q.escalaEvaluacion?.[3] ?? 'Nivel 3: Definido y Operativo');
+        const crit4 = rawCriteria['4'] || q.criterio_nivel_4 || (q.escalaEvaluacion?.[4] ?? 'Nivel 4: Optimizado con mejora continua');
+
+        const criteriaByLevel = {
+          "0": String(crit0).trim(),
+          "1": String(crit1).trim(),
+          "2": String(crit2).trim(),
+          "3": String(crit3).trim(),
+          "4": String(crit4).trim(),
+        };
+
+        const escalaEvaluacion = [
+          criteriaByLevel["0"],
+          criteriaByLevel["1"],
+          criteriaByLevel["2"],
+          criteriaByLevel["3"],
+          criteriaByLevel["4"]
+        ];
+
         const item = {
           id: idVal,
           pregunta: q.pregunta_control || q.pregunta || '',
           dominio: dom,
           subdominio: q.subdominio || '',
           normaReferencia: q.norma_referencia || q.norma || '',
-          criterioCumplimiento: q.criterio_cumplimiento || q.requisito || q.nota || '',
-          requisito: q.criterio_cumplimiento || q.requisito || q.nota || '',
+          criterioCumplimiento: criteriaByLevel["3"],
+          requisito: criteriaByLevel["3"],
           evidenciaEsperada: q.evidencia_esperada || q.evidencia || '',
           evidencia: q.evidencia_esperada || q.evidencia || '',
           criticidad: q.criticidad || 'Alta',
-          pesoPonderacion: Number(q.peso_ponderacion || q.peso || 1),
-          observacionesBase: q.observaciones_base || '',
+          pesoPonderacion: Number(q.peso_ponderacion || q.peso || 1.0),
+          criteriaByLevel,
+          escalaEvaluacion,
+          observacionesBase: q.observaciones_base || q.observacionesBase || '',
         };
         parsed[dom].push(item);
 
-        if (q.puntaje_inicial !== undefined && q.puntaje_inicial !== null && q.puntaje_inicial !== '') {
-          const key = `${dom}-${idVal}`;
-          initialResponses[key] = {
-            evaluacion: Number(q.puntaje_inicial),
-            score: Number(q.puntaje_inicial),
-            observaciones: q.observaciones_base || '',
-          };
+        const initScore = q.puntaje_inicial !== undefined && q.puntaje_inicial !== null ? q.puntaje_inicial : q.puntajeInicial;
+        if (initScore !== undefined && initScore !== null && initScore !== '') {
+          const numScore = Number(initScore);
+          if (!isNaN(numScore) && numScore >= 0 && numScore <= 4) {
+            const key = `${dom}-${idVal}`;
+            initialResponses[key] = {
+              evaluacion: numScore,
+              score: numScore,
+              observaciones: item.observacionesBase,
+              evidencia: item.evidenciaEsperada,
+            };
+          }
         }
       });
     } else {
@@ -507,19 +471,48 @@ export const parseQuestionsFile = async (file) => {
       const sourceObj = data.parsed || data;
       Object.entries(sourceObj).forEach(([area, list]) => {
         if (Array.isArray(list)) {
-          parsed[area] = list.map((item, idx) => ({
-            id: item.id || idx + 1,
-            pregunta: item.pregunta || '',
-            criterioCumplimiento: item.criterioCumplimiento || item.requisito || item.nota || '',
-            requisito: item.requisito || item.criterioCumplimiento || item.nota || '',
-            evidenciaEsperada: item.evidenciaEsperada || item.evidencia || '',
-            evidencia: item.evidencia || item.evidenciaEsperada || '',
-            criticidad: item.criticidad || 'Alta',
-            pesoPonderacion: Number(item.pesoPonderacion || 1),
-            subdominio: item.subdominio || '',
-            normaReferencia: item.normaReferencia || '',
-            escalaEvaluacion: item.escalaEvaluacion || null,
-          }));
+          parsed[area] = list.map((q, idx) => {
+            const idVal = q.id || idx + 1;
+            const rawCriteria = q.criteriaByLevel || {};
+            const crit0 = rawCriteria['0'] || q.criterio_nivel_0 || (q.escalaEvaluacion?.[0] ?? 'Nivel 0: Inexistente / No implementado');
+            const crit1 = rawCriteria['1'] || q.criterio_nivel_1 || (q.escalaEvaluacion?.[1] ?? 'Nivel 1: Inicial / Informal');
+            const crit2 = rawCriteria['2'] || q.criterio_nivel_2 || (q.escalaEvaluacion?.[2] ?? 'Nivel 2: Parcialmente definido');
+            const crit3 = rawCriteria['3'] || q.criterio_nivel_3 || (q.escalaEvaluacion?.[3] ?? 'Nivel 3: Definido y Operativo');
+            const crit4 = rawCriteria['4'] || q.criterio_nivel_4 || (q.escalaEvaluacion?.[4] ?? 'Nivel 4: Optimizado con mejora continua');
+
+            const criteriaByLevel = {
+              "0": String(crit0).trim(),
+              "1": String(crit1).trim(),
+              "2": String(crit2).trim(),
+              "3": String(crit3).trim(),
+              "4": String(crit4).trim(),
+            };
+
+            const escalaEvaluacion = [
+              criteriaByLevel["0"],
+              criteriaByLevel["1"],
+              criteriaByLevel["2"],
+              criteriaByLevel["3"],
+              criteriaByLevel["4"]
+            ];
+
+            return {
+              id: idVal,
+              pregunta: q.pregunta || '',
+              dominio: area,
+              subdominio: q.subdominio || '',
+              normaReferencia: q.normaReferencia || q.norma || '',
+              criterioCumplimiento: criteriaByLevel["3"],
+              requisito: criteriaByLevel["3"],
+              evidenciaEsperada: q.evidenciaEsperada || q.evidencia || '',
+              evidencia: q.evidencia || q.evidenciaEsperada || '',
+              criticidad: q.criticidad || 'Alta',
+              pesoPonderacion: Number(q.pesoPonderacion || q.peso || 1.0),
+              criteriaByLevel,
+              escalaEvaluacion,
+              observacionesBase: q.observacionesBase || '',
+            };
+          });
         }
       });
     }
@@ -535,9 +528,8 @@ export const parseQuestionsFile = async (file) => {
       parsed,
       areasCount: Object.keys(parsed).length,
       questionsCount: totalQ,
-      config,
-      criteria,
       initialResponses,
+      hasCriteriaByLevel: true,
     };
   }
 
@@ -552,102 +544,30 @@ export const parseQuestionsFile = async (file) => {
     throw new Error('El archivo Excel no contiene ninguna hoja de cálculo.');
   }
 
-  // 1. Detección de Hoja de Configuración
-  let wsConfig = workbook.worksheets.find(ws => {
-    const n = cleanColName(ws.name);
-    return n.includes('configuracion') || n.includes('config');
-  });
-
-  // 2. Detección de Hoja de Criterios
-  let wsCriteria = workbook.worksheets.find(ws => {
-    const n = cleanColName(ws.name);
-    return n.includes('criterios') || n.includes('rubrica') || n.includes('evaluacion');
-  });
-
-  // 3. Detección de Hoja del Cuestionario
-  let wsQuestions = workbook.worksheets.find(ws => {
+  // Tomar la primera hoja (o la que se llame Cuestionario_Auditoria)
+  const wsQuestions = workbook.worksheets.find(ws => {
     const n = cleanColName(ws.name);
     return n.includes('cuestionario') || n.includes('preguntas') || n.includes('controles') || n.includes('auditoria');
-  });
+  }) || workbook.worksheets[0];
 
-  // Fallback si los nombres no coinciden exactamente
-  if (!wsQuestions) {
-    if (workbook.worksheets.length >= 3) {
-      wsConfig = wsConfig || workbook.worksheets[0];
-      wsCriteria = wsCriteria || workbook.worksheets[1];
-      wsQuestions = workbook.worksheets[2];
-    } else if (workbook.worksheets.length === 2) {
-      wsQuestions = workbook.worksheets[1];
-    } else {
-      wsQuestions = workbook.worksheets[0];
-    }
-  }
-
-  // Parsear Configuración
-  const parsedConfig = { ...DEFAULT_TEMPLATE_CONFIG };
-  if (wsConfig) {
-    let keyCol = -1;
-    let valCol = -1;
-    wsConfig.eachRow((row, rowNumber) => {
-      if (rowNumber <= 3 && keyCol === -1) {
-        row.eachCell((cell, colNum) => {
-          const val = cleanColName(cell.value);
-          if (val.includes('clave') || val.includes('parametro') || val.includes('campo')) keyCol = colNum;
-          if (val.includes('valor') || val.includes('dato') || val.includes('configuracion')) valCol = colNum;
-        });
-      } else if (keyCol !== -1 && valCol !== -1) {
-        const k = String(row.getCell(keyCol).value || '').trim();
-        const v = row.getCell(valCol).value;
-        if (k && v !== undefined && v !== null) {
-          parsedConfig[k] = v;
-        }
+  // Helper para extraer texto seguro de una celda de ExcelJS
+  const getCellSafeText = (cell) => {
+    if (!cell || cell.value === null || cell.value === undefined) return '';
+    if (typeof cell.value === 'object') {
+      if (Array.isArray(cell.value.richText)) {
+        return cell.value.richText.map(t => t.text).join('').trim();
       }
-    });
-  }
-
-  // Parsear Criterios de Evaluación
-  let parsedCriteria = [...DEFAULT_EVALUATION_CRITERIA];
-  if (wsCriteria) {
-    let nivelCol = -1;
-    let etiquetaCol = -1;
-    let porcentajeCol = -1;
-    let criterioCol = -1;
-    let accionCol = -1;
-    const tempCriteria = [];
-
-    wsCriteria.eachRow((row, rowNumber) => {
-      if (rowNumber <= 3 && nivelCol === -1) {
-        row.eachCell((cell, colNum) => {
-          const val = cleanColName(cell.value);
-          if (val.includes('nivel') || val.includes('puntaje') || val.includes('calificacion')) nivelCol = colNum;
-          if (val.includes('etiqueta') || val.includes('nombre') || val.includes('madurez')) etiquetaCol = colNum;
-          if (val.includes('porcentaje') || val.includes('equivalente')) porcentajeCol = colNum;
-          if (val.includes('criterio') || val.includes('descripcion')) criterioCol = colNum;
-          if (val.includes('accion') || val.includes('requerida') || val.includes('sugerencia')) accionCol = colNum;
-        });
-      } else if (nivelCol !== -1) {
-        const rawNivel = row.getCell(nivelCol).value;
-        if (rawNivel !== null && rawNivel !== undefined && rawNivel !== '') {
-          const nivelNum = Number(String(rawNivel).replace(/[^\d]/g, ''));
-          tempCriteria.push({
-            nivel_puntaje: isNaN(nivelNum) ? tempCriteria.length : nivelNum,
-            etiqueta_nivel: String(row.getCell(etiquetaCol !== -1 ? etiquetaCol : 2).value || `Nivel ${nivelNum}`).trim(),
-            porcentaje_equivalente: String(row.getCell(porcentajeCol !== -1 ? porcentajeCol : 3).value || `${nivelNum * 25}%`).trim(),
-            criterio_tecnico_evaluacion: String(row.getCell(criterioCol !== -1 ? criterioCol : 4).value || '').trim(),
-            accion_requerida: String(row.getCell(accionCol !== -1 ? accionCol : 5).value || '').trim(),
-          });
-        }
+      if (cell.value.result !== undefined) {
+        return String(cell.value.result).trim();
       }
-    });
-
-    if (tempCriteria.length >= 3) {
-      parsedCriteria = tempCriteria.sort((a, b) => a.nivel_puntaje - b.nivel_puntaje);
+      if (cell.value.text !== undefined) {
+        return String(cell.value.text).trim();
+      }
     }
-  }
+    return String(cell.value).trim();
+  };
 
-  // ========================================================
-  // Parsear Cuestionario de Auditoría
-  // ========================================================
+  // Escanear las primeras 6 filas para detectar la fila de encabezados
   let headerRowIndex = -1;
   const colMap = {
     id: -1,
@@ -655,22 +575,19 @@ export const parseQuestionsFile = async (file) => {
     subdominio: -1,
     norma: -1,
     pregunta: -1,
-    criterio: -1,
     evidencia: -1,
     criticidad: -1,
     peso: -1,
+    criterio0: -1,
+    criterio1: -1,
+    criterio2: -1,
+    criterio3: -1,
+    criterio4: -1,
     puntaje: -1,
     observaciones: -1,
-    // Compatibilidad con columnas de escala de versiones antiguas
-    nivel0: -1,
-    nivel1: -1,
-    nivel2: -1,
-    nivel3: -1,
-    nivel4: -1,
   };
 
-  // Escanear las primeras 5 filas para detectar los encabezados
-  const maxScanRows = Math.min(wsQuestions.rowCount || 5, 5);
+  const maxScanRows = Math.min(wsQuestions.rowCount || 6, 6);
   for (let r = 1; r <= maxScanRows; r++) {
     const row = wsQuestions.getRow(r);
     let matchedKeyCols = 0;
@@ -691,24 +608,27 @@ export const parseQuestionsFile = async (file) => {
       } else if (val === 'preguntacontrol' || val === 'pregunta' || val === 'control' || val === 'enunciado') {
         colMap.pregunta = colNumber;
         matchedKeyCols++;
-      } else if (val === 'criteriocumplimiento' || val === 'criterio' || val === 'requisito' || val === 'nota') {
-        colMap.criterio = colNumber;
-        matchedKeyCols++;
       } else if (val.includes('evidencia')) {
         colMap.evidencia = colNumber;
       } else if (val.includes('criticidad') || val.includes('prioridad')) {
         colMap.criticidad = colNumber;
       } else if (val.includes('peso') || val.includes('ponderacion')) {
         colMap.peso = colNumber;
+      } else if (val === 'criterionivel0' || val === 'criterio0' || val === 'nivel0') {
+        colMap.criterio0 = colNumber;
+      } else if (val === 'criterionivel1' || val === 'criterio1' || val === 'nivel1') {
+        colMap.criterio1 = colNumber;
+      } else if (val === 'criterionivel2' || val === 'criterio2' || val === 'nivel2') {
+        colMap.criterio2 = colNumber;
+      } else if (val === 'criterionivel3' || val === 'criterio3' || val === 'nivel3') {
+        colMap.criterio3 = colNumber;
+      } else if (val === 'criterionivel4' || val === 'criterio4' || val === 'nivel4') {
+        colMap.criterio4 = colNumber;
       } else if (val.includes('puntaje') || val.includes('score') || val.includes('calificacion')) {
         colMap.puntaje = colNumber;
       } else if (val.includes('observacion') || val.includes('hallazgo') || val.includes('comentario')) {
         colMap.observaciones = colNumber;
-      } else if (val.includes('nivel0')) colMap.nivel0 = colNumber;
-      else if (val.includes('nivel1')) colMap.nivel1 = colNumber;
-      else if (val.includes('nivel2')) colMap.nivel2 = colNumber;
-      else if (val.includes('nivel3')) colMap.nivel3 = colNumber;
-      else if (val.includes('nivel4')) colMap.nivel4 = colNumber;
+      }
     });
 
     if (matchedKeyCols >= 2 && (colMap.pregunta !== -1 || colMap.dominio !== -1)) {
@@ -718,18 +638,17 @@ export const parseQuestionsFile = async (file) => {
   }
 
   if (headerRowIndex === -1) {
-    throw new Error('No se pudo identificar la fila de encabezados en la hoja del cuestionario. Asegúrate de incluir columnas como "id_control", "dominio", "pregunta_control" y "criterio_cumplimiento".');
+    throw new Error('No se pudo identificar la fila de encabezados en el archivo Excel. Asegúrate de que la fila 3 contenga encabezados como "id_control", "dominio", "pregunta_control" y "criterio_nivel_0" a "criterio_nivel_4".');
   }
 
-  // Validación de columnas obligatorias
+  // Validación de columnas obligatorias esenciales
   const missingCols = [];
   if (colMap.id === -1) missingCols.push('id_control');
   if (colMap.dominio === -1) missingCols.push('dominio');
   if (colMap.pregunta === -1) missingCols.push('pregunta_control');
-  if (colMap.criterio === -1) missingCols.push('criterio_cumplimiento');
 
   if (missingCols.length > 0) {
-    throw new Error(`La hoja del cuestionario no contiene las siguientes columnas obligatorias: ${missingCols.join(', ')}. Verifica que la fila ${headerRowIndex} tenga los nombres correctos.`);
+    throw new Error(`La hoja del cuestionario no contiene las siguientes columnas obligatorias: ${missingCols.join(', ')}. Verifica la fila ${headerRowIndex} de encabezados.`);
   }
 
   const parsed = {};
@@ -738,27 +657,32 @@ export const parseQuestionsFile = async (file) => {
   let totalQuestions = 0;
 
   wsQuestions.eachRow((row, rowNumber) => {
-    if (rowNumber <= headerRowIndex) return; // Saltar títulos y encabezados
+    if (rowNumber <= headerRowIndex) return; // Ignorar títulos y encabezados
 
-    const idVal = row.getCell(colMap.id).value;
-    const domVal = String(row.getCell(colMap.dominio).value || '').trim();
-    const preguntaVal = String(row.getCell(colMap.pregunta).value || '').trim();
-    const criterioVal = String(row.getCell(colMap.criterio).value || '').trim();
-    const evidenciaVal = colMap.evidencia !== -1 ? String(row.getCell(colMap.evidencia).value || '').trim() : '';
-    const subdominioVal = colMap.subdominio !== -1 ? String(row.getCell(colMap.subdominio).value || '').trim() : '';
-    const normaVal = colMap.norma !== -1 ? String(row.getCell(colMap.norma).value || '').trim() : '';
-    const criticidadVal = colMap.criticidad !== -1 ? String(row.getCell(colMap.criticidad).value || '').trim() : 'Alta';
-    const rawPeso = colMap.peso !== -1 ? row.getCell(colMap.peso).value : 1;
-    const pesoVal = Number(rawPeso) > 0 ? Number(rawPeso) : 1;
+    const idVal = getCellSafeText(row.getCell(colMap.id));
+    const domVal = getCellSafeText(row.getCell(colMap.dominio));
+    const preguntaVal = getCellSafeText(row.getCell(colMap.pregunta));
+    const subdominioVal = colMap.subdominio !== -1 ? getCellSafeText(row.getCell(colMap.subdominio)) : '';
+    const normaVal = colMap.norma !== -1 ? getCellSafeText(row.getCell(colMap.norma)) : '';
+    const evidenciaVal = colMap.evidencia !== -1 ? getCellSafeText(row.getCell(colMap.evidencia)) : '';
+    const criticidadVal = colMap.criticidad !== -1 ? getCellSafeText(row.getCell(colMap.criticidad)) : 'Alta';
+    const rawPeso = colMap.peso !== -1 ? row.getCell(colMap.peso).value : 1.0;
+    const pesoVal = Number(rawPeso) > 0 ? Number(rawPeso) : 1.0;
+
+    const crit0Val = colMap.criterio0 !== -1 ? getCellSafeText(row.getCell(colMap.criterio0)) : '';
+    const crit1Val = colMap.criterio1 !== -1 ? getCellSafeText(row.getCell(colMap.criterio1)) : '';
+    const crit2Val = colMap.criterio2 !== -1 ? getCellSafeText(row.getCell(colMap.criterio2)) : '';
+    const crit3Val = colMap.criterio3 !== -1 ? getCellSafeText(row.getCell(colMap.criterio3)) : '';
+    const crit4Val = colMap.criterio4 !== -1 ? getCellSafeText(row.getCell(colMap.criterio4)) : '';
+
     const puntajeVal = colMap.puntaje !== -1 ? row.getCell(colMap.puntaje).value : null;
-    const obsVal = colMap.observaciones !== -1 ? String(row.getCell(colMap.observaciones).value || '').trim() : '';
+    const obsVal = colMap.observaciones !== -1 ? getCellSafeText(row.getCell(colMap.observaciones)) : '';
 
     // Si la fila está totalmente vacía, ignorarla limpiamente
     if (!idVal && !domVal && !preguntaVal) {
       return;
     }
 
-    // Si tiene ID o Dominio pero falta la pregunta
     if (!preguntaVal) {
       throw new Error(`En la fila ${rowNumber} del cuestionario, el campo "pregunta_control" está vacío. Completa la pregunta o elimina la fila vacía.`);
     }
@@ -774,13 +698,22 @@ export const parseQuestionsFile = async (file) => {
     const qIdStr = idVal ? String(idVal).trim() : String(parsed[currentDomain].length + 1);
     const qId = isNaN(Number(qIdStr)) ? qIdStr : Number(qIdStr);
 
-    // Escala específica de pregunta si viene en columnas antiguas nivel0-nivel4
-    const escalaEspecifica = [];
-    if (colMap.nivel0 !== -1 && row.getCell(colMap.nivel0).value) escalaEspecifica.push(String(row.getCell(colMap.nivel0).value).trim());
-    if (colMap.nivel1 !== -1 && row.getCell(colMap.nivel1).value) escalaEspecifica.push(String(row.getCell(colMap.nivel1).value).trim());
-    if (colMap.nivel2 !== -1 && row.getCell(colMap.nivel2).value) escalaEspecifica.push(String(row.getCell(colMap.nivel2).value).trim());
-    if (colMap.nivel3 !== -1 && row.getCell(colMap.nivel3).value) escalaEspecifica.push(String(row.getCell(colMap.nivel3).value).trim());
-    if (colMap.nivel4 !== -1 && row.getCell(colMap.nivel4).value) escalaEspecifica.push(String(row.getCell(colMap.nivel4).value).trim());
+    // Criterios específicos por nivel para este control
+    const criteriaByLevel = {
+      "0": crit0Val || "Nivel 0: Inexistente / No implementado. Sin directrices ni controles.",
+      "1": crit1Val || "Nivel 1: Inicial / Informal. Prácticas esporádicas sin documentación formal.",
+      "2": crit2Val || "Nivel 2: En desarrollo / Parcialmente documentado y formalizado.",
+      "3": crit3Val || "Nivel 3: Definido y Operativo. Política aprobada y aplicada consistentemente.",
+      "4": crit4Val || "Nivel 4: Optimizado. Automatizado con métricas y mejora continua.",
+    };
+
+    const escalaEvaluacion = [
+      criteriaByLevel["0"],
+      criteriaByLevel["1"],
+      criteriaByLevel["2"],
+      criteriaByLevel["3"],
+      criteriaByLevel["4"]
+    ];
 
     const questionItem = {
       id: qId,
@@ -788,14 +721,15 @@ export const parseQuestionsFile = async (file) => {
       dominio: currentDomain,
       subdominio: subdominioVal,
       normaReferencia: normaVal,
-      criterioCumplimiento: criterioVal,
-      requisito: criterioVal, // retrocompatibilidad
+      criterioCumplimiento: criteriaByLevel["3"],
+      requisito: criteriaByLevel["3"],
       evidenciaEsperada: evidenciaVal,
-      evidencia: evidenciaVal, // retrocompatibilidad
+      evidencia: evidenciaVal,
       criticidad: criticidadVal || 'Alta',
       pesoPonderacion: pesoVal,
+      criteriaByLevel,
+      escalaEvaluacion,
       observacionesBase: obsVal,
-      escalaEvaluacion: escalaEspecifica.length >= 2 ? escalaEspecifica : null,
     };
 
     parsed[currentDomain].push(questionItem);
@@ -824,9 +758,8 @@ export const parseQuestionsFile = async (file) => {
     parsed,
     areasCount: Object.keys(parsed).length,
     questionsCount: totalQuestions,
-    config: parsedConfig,
-    criteria: parsedCriteria,
     initialResponses,
+    hasCriteriaByLevel: true,
   };
 };
 
