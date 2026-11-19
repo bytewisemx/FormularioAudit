@@ -3894,7 +3894,7 @@ Aporta valor concreto, análisis certero y profesionalismo técnico.]`;
                 </button>
               )}
               {/* Botón Consolidar y Fusionar (Merge) - Solo para auditores autenticados en modo edición */}
-              {!isGuestMode && !isReadOnly && (dualMetrics.hasColleague || Object.keys(evaluations).length > 1) && (
+              {!isGuestMode && !isReadOnly && activeEvaluationView === 'my_draft' && (dualMetrics.hasColleague || Object.keys(evaluations).length > 1) && (
                 <button
                   onClick={() => setShowMergeModal(true)}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200/70 rounded-lg transition-colors cursor-pointer shadow-2xs"
@@ -3905,7 +3905,7 @@ Aporta valor concreto, análisis certero y profesionalismo técnico.]`;
                 </button>
               )}
               {/* Botón Compartir - Oculto en enlaces compartidos y modo solo lectura */}
-              {!isGuestMode && !isReadOnly && (
+              {!isGuestMode && !isReadOnly && activeEvaluationView === 'my_draft' && (
                 <button
                   onClick={(e) => {
                     const currentObj = savedAudits.find(a => a.id === currentAuditId) || {
@@ -3922,7 +3922,7 @@ Aporta valor concreto, análisis certero y profesionalismo técnico.]`;
                 </button>
               )}
               {/* Botón Descargar Informe - Oculto en enlaces compartidos y modo solo lectura */}
-              {!isGuestMode && !isReadOnly && (
+              {!isGuestMode && !isReadOnly && activeEvaluationView === 'my_draft' && (
                 <div className="relative">
                   <button
                     onClick={() => { setShowExportMenu(!showExportMenu); setShowSettings(false); }}
@@ -3955,7 +3955,7 @@ Aporta valor concreto, análisis certero y profesionalismo técnico.]`;
                 </div>
               )}
               {/* Botón Ajustes de Auditoría - Oculto en enlaces compartidos y modo solo lectura */}
-              {!isGuestMode && !isReadOnly && (
+              {!isGuestMode && !isReadOnly && activeEvaluationView === 'my_draft' && (
                 <div className="relative inline-block text-left">
                   <button
                     onClick={() => { setShowSettings(!showSettings); setShowExportMenu(false); }}
@@ -5378,13 +5378,11 @@ Aporta valor concreto, análisis certero y profesionalismo técnico.]`;
                                     return (
                                       <div
                                         key={`${item.id}-lvl-${lvl}`}
-                                        className={`leading-tight p-1.5 rounded-md transition-colors flex items-start gap-2 ${
-                                          isLvlSelected ? 'bg-blue-100/70 font-semibold text-blue-900 border border-blue-200/70' : 'text-slate-600 hover:bg-slate-100/60'
-                                        }`}
+                                        className={`leading-tight p-1.5 rounded-md transition-colors flex items-start gap-2 ${isLvlSelected ? 'bg-blue-100/70 font-semibold text-blue-900 border border-blue-200/70' : 'text-slate-600 hover:bg-slate-100/60'
+                                          }`}
                                       >
-                                        <span className={`w-4 h-4 rounded text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5 ${
-                                          isLvlSelected ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-700'
-                                        }`}>
+                                        <span className={`w-4 h-4 rounded text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5 ${isLvlSelected ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-700'
+                                          }`}>
                                           {lvl}
                                         </span>
                                         <span className="flex-1 text-[11px] leading-snug">{critText}</span>
