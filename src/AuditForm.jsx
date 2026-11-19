@@ -25,7 +25,8 @@ import {
   saveUserDraftToFirestore,
   fetchAuditDraftsFromFirestore,
   buildDraftDoc,
-  findColleagueInAudit
+  findColleagueInAudit,
+  findUserDraft
 } from "./utils/auditDraftsService";
 
 import { saveAs } from "file-saver";
@@ -589,10 +590,13 @@ const AuditForm = () => {
         : (finalA.answers && Object.keys(finalA.answers).length > 0 ? finalA.answers : initialResponses);
       setResponses(offAns);
     } else if (targetView !== 'my_draft') {
-      // Vista borrador de colega desde la subcolección aislada
-      const colDraftFromSub = fetchedDrafts[targetView]?.answers || auditDraftsCache[audit.id]?.[targetView]?.answers;
-      if (colDraftFromSub && Object.keys(colDraftFromSub).length > 0) {
-        setResponses(colDraftFromSub);
+      // Vista borrador de colega desde la subcolección aislada (Modo Solo Lectura)
+      const colEntry = findColleagueInAudit(audit, fetchedDrafts, currentAuditorUid, user?.email, currentAuditorName);
+      const colAnswers = fetchedDrafts[targetView]?.answers
+        || colEntry?.answers
+        || auditDraftsCache[audit.id]?.[targetView]?.answers;
+      if (colAnswers && Object.keys(colAnswers).length > 0) {
+        setResponses(colAnswers);
       } else {
         const colDraft = norm.drafts?.[targetView]?.answers || evals[targetView]?.answers;
         if (colDraft && Object.keys(colDraft).length > 0) {
@@ -604,9 +608,10 @@ const AuditForm = () => {
       }
     } else {
       // "my_draft": buscar el borrador propio estrictamente aislado en la subcolección
-      const myDraftFromSub = fetchedDrafts[currentAuditorUid]?.answers || auditDraftsCache[audit.id]?.[currentAuditorUid]?.answers;
-      if (myDraftFromSub && Object.keys(myDraftFromSub).length > 0) {
-        setResponses(myDraftFromSub);
+      const myDraft = findUserDraft(fetchedDrafts, currentAuditorUid, user?.email, currentAuditorName)
+        || findUserDraft(auditDraftsCache[audit.id], currentAuditorUid, user?.email, currentAuditorName);
+      if (myDraft?.answers && Object.keys(myDraft.answers).length > 0) {
+        setResponses(myDraft.answers);
       } else {
         const myDraftInfo = getMyDraftFromAudit(norm, currentAuditorUid, user?.email, currentAuditorName);
         if (myDraftInfo.answers && Object.keys(myDraftInfo.answers).length > 0) {
@@ -2058,10 +2063,17 @@ Aporta valor concreto, análisis certero y profesionalismo técnico.]`;
         .then(drafts => {
           if (drafts && Object.keys(drafts).length > 0) {
             const evals = {};
-            Object.entries(drafts).forEach(([uid, d]) => {
-              evals[uid] = {
-                auditorName: d.ownerName || 'Auditor',
-                name: d.ownerName || 'Auditor',
+            const seenEmails = new Set();
+            Object.entries(drafts).forEach(([key, d]) => {
+              if (!d || !d.ownerName) return;
+              const mailKey = (d.ownerEmail || d.ownerUid || key).toLowerCase();
+              if (seenEmails.has(mailKey)) return;
+              seenEmails.add(mailKey);
+
+              const idKey = d.ownerUid || key;
+              evals[idKey] = {
+                auditorName: d.ownerName,
+                name: d.ownerName,
                 email: d.ownerEmail || '',
                 answers: d.answers || {},
                 progress: d.progress || 0,
@@ -4233,8 +4245,8 @@ Aporta valor concreto, análisis certero y profesionalismo técnico.]`;
                   <Share2 size={18} />
                 </button>
               )}
-              {/* Botón Descargar Informe - Oculto en enlaces compartidos y modo solo lectura */}
-              {!isGuestMode && !isReadOnly && activeEvaluationView === 'my_draft' && (
+              {/* Botón Descargar Informe - Disponible en borrador propio o en Versión Oficial consolidada */}
+              {!isGuestMode && ((!isReadOnly && activeEvaluationView === 'my_draft') || activeEvaluationView === 'official') && (
                 <div className="relative">
                   <button
                     onClick={() => { setShowExportMenu(!showExportMenu); setShowSettings(false); }}

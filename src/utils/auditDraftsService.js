@@ -114,7 +114,14 @@ export const fetchAuditDraftsFromFirestore = async (db, auditId, rawAuditData = 
     const drafts = {};
 
     snap.forEach(d => {
-      drafts[d.id] = d.data();
+      const data = d.data();
+      drafts[d.id] = data;
+      if (data.ownerEmail) {
+        drafts[data.ownerEmail.toLowerCase()] = data;
+      }
+      if (data.ownerUid) {
+        drafts[data.ownerUid] = data;
+      }
     });
 
     // Si ya existen borradores en la subcolección, retornarlos
@@ -158,6 +165,34 @@ export const fetchAuditDraftsFromFirestore = async (db, auditId, rawAuditData = 
     console.error("Error consultando subcolección de borradores:", err);
     return {};
   }
+};
+
+/**
+ * Encuentra de forma infalible el borrador propio del usuario actual en un mapa de borradores
+ */
+export const findUserDraft = (draftsMap = {}, currentUid = '', currentEmail = '', currentName = '') => {
+  if (!draftsMap || typeof draftsMap !== 'object') return null;
+
+  // 1. Coincidencia directa por currentUid
+  if (currentUid && draftsMap[currentUid]) return draftsMap[currentUid];
+
+  // 2. Coincidencia directa por email
+  if (currentEmail) {
+    const cleanMail = cleanText(currentEmail);
+    if (draftsMap[cleanMail]) return draftsMap[cleanMail];
+    for (const d of Object.values(draftsMap)) {
+      if (d && cleanText(d.ownerEmail) === cleanMail) return d;
+    }
+  }
+
+  // 3. Coincidencia mediante isSameAuditor
+  for (const d of Object.values(draftsMap)) {
+    if (d && isSameAuditor({ uid: d.ownerUid, email: d.ownerEmail, name: d.ownerName }, currentUid, currentEmail, currentName)) {
+      return d;
+    }
+  }
+
+  return null;
 };
 
 /**
