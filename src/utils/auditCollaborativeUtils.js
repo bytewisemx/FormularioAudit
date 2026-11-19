@@ -71,7 +71,7 @@ export const calculateProgressFromAnswers = (answers = {}, totalQuestions = 0) =
   const answeredCount = Object.values(answers).filter(a => {
     if (!a) return false;
     return a.score !== undefined && a.score !== null && a.score !== '' ||
-           a.evaluacion !== undefined && a.evaluacion !== null && a.evaluacion !== '';
+      a.evaluacion !== undefined && a.evaluacion !== null && a.evaluacion !== '';
   }).length;
 
   if (totalQuestions <= 0) return answeredCount > 0 ? 100 : 0;
@@ -89,8 +89,8 @@ export const normalizeAudit = (rawAudit, _currentUser = null) => {
   const companyName = rawAudit.companyName || rawAudit.nombreEmpresa || data.introData?.nombreEmpresa || 'Empresa';
 
   // 1. Obtener o inferir lista de auditores
-  let auditors = Array.isArray(rawAudit.auditors) 
-    ? [...rawAudit.auditors] 
+  let auditors = Array.isArray(rawAudit.auditors)
+    ? [...rawAudit.auditors]
     : (Array.isArray(data.auditors) ? [...data.auditors] : []);
 
   if (auditors.length === 0) {
@@ -330,3 +330,4 @@ export const autoMergeDraftAnswers = (answersA = {}, answersB = {}) => {
     totalEvaluated: allKeys.length
   };
 };
+

@@ -1,8 +1,8 @@
 import { DEFAULT_SECTIONS } from "./defaultSections";
 
-import React, { useEffect, useState, useMemo } from 'react';
-import { ChevronDown, ChevronUp, ChevronRight, Download, FileText, FileSpreadsheet, RefreshCw, Mic, Sparkles, Building2, Shield, Brain, Hash, CheckCircle, Search, Settings, Share2, KeyRound, Trash2, Home, Plus, X, Globe, Copy, Check, ExternalLink, Loader2, Upload, FileCode, Layers, ArrowLeft, Calendar, User, Users, BarChart2, ThumbsUp, ThumbsDown, AlertTriangle, Lightbulb, LayoutGrid, List, CheckCircle2, Maximize2, Minimize2, LogOut, Pin, Lock, Unlock, Archive, History, RotateCcw, Eye, EyeOff, GitMerge, Edit3, ShieldCheck } from 'lucide-react';
-import { downloadExcelTemplate, parseQuestionsFile, exportAuditToProfessionalExcel } from './excelTemplateHelper';
+import React, { useEffect, useState } from 'react';
+import { ChevronDown, ChevronUp, ChevronRight, Download, FileText, FileSpreadsheet, RefreshCw, Mic, Sparkles, Building2, Shield, Brain, Hash, CheckCircle, Search, Settings, Share2, KeyRound, Trash2, Home, Plus, X, Globe, Copy, Check, ExternalLink, Loader2, Upload, FileCode, Layers, ArrowLeft, Calendar, User, Users, BarChart2, ThumbsUp, ThumbsDown, AlertTriangle, Lightbulb, LayoutGrid, List, CheckCircle2, Maximize2, Minimize2, LogOut, Pin, Lock, Unlock, Archive, History, RotateCcw, Eye, EyeOff, GitMerge, Edit3, ShieldCheck, Scale, Info, HelpCircle, BookOpen } from 'lucide-react';
+import { downloadExcelTemplate, downloadJsonTemplate, parseQuestionsFile, exportAuditToProfessionalExcel, DEFAULT_TEMPLATE_CONFIG, DEFAULT_EVALUATION_CRITERIA } from './excelTemplateHelper';
 import { db, auth } from "./firebase";
 import { collection, doc, setDoc, getDoc, updateDoc, getDocs, deleteDoc, onSnapshot } from "firebase/firestore";
 import { onAuthStateChanged, signOut, signInAnonymously } from "firebase/auth";
@@ -73,13 +73,13 @@ const sortSections = (sections) => {
   const sortedKeys = [...sectionsKeys].sort((a, b) => {
     const idxA = defaultKeys.indexOf(a);
     const idxB = defaultKeys.indexOf(b);
-    
+
     if (idxA !== -1 && idxB !== -1) {
       return idxA - idxB;
     }
     if (idxA !== -1) return -1;
     if (idxB !== -1) return 1;
-    
+
     return a.localeCompare(b);
   });
 
@@ -216,7 +216,7 @@ const AuditForm = () => {
   const [dictatingKey, setDictatingKey] = useState(null);
   const [rewritingKey, setRewritingKey] = useState(null);
   const [activeSection, setActiveSection] = useState('Información General');
-  
+
   const [savedAudits, setSavedAudits] = useState([]);
   const [pinnedAuditIds, setPinnedAuditIds] = useState(() => {
     try {
@@ -235,7 +235,7 @@ const AuditForm = () => {
         : [...prev, auditId];
       try {
         localStorage.setItem('bytewise_pinned_audits', JSON.stringify(next));
-      } catch (err) {}
+      } catch (err) { }
       return next;
     });
   };
@@ -273,7 +273,7 @@ const AuditForm = () => {
       const updated = [newLog, ...prev].slice(0, 300);
       try {
         localStorage.setItem('bytewise_audit_logs', JSON.stringify(updated));
-      } catch (err) {}
+      } catch (err) { }
       return updated;
     });
 
@@ -364,11 +364,17 @@ const AuditForm = () => {
   const [isGeneratingSub, setIsGeneratingSub] = useState(false);
   const [isInvestigatingCompany, setIsInvestigatingCompany] = useState(false);
   const [copiedPreliminar, setCopiedPreliminar] = useState(false);
-  
+
   const [creationMode, setCreationMode] = useState('base'); // 'base' | 'blank' | 'import'
   const [importedSections, setImportedSections] = useState(null);
   const [importedFileName, setImportedFileName] = useState('');
   const setImportFileName = setImportedFileName;
+  const [importedConfig, setImportedConfig] = useState(null);
+  const [importedCriteria, setImportedCriteria] = useState(null);
+  const [importedInitialResponses, setImportedInitialResponses] = useState({});
+  const [evaluationCriteria, setEvaluationCriteria] = useState(() => DEFAULT_EVALUATION_CRITERIA);
+  const [auditConfig, setAuditConfig] = useState(() => DEFAULT_TEMPLATE_CONFIG);
+  const [rubricModalData, setRubricModalData] = useState(null);
   const [importSummary, setImportSummary] = useState(null);
   const [importError, setImportError] = useState('');
 
@@ -479,15 +485,27 @@ const AuditForm = () => {
       const result = await parseQuestionsFile(file);
       setImportedSections(result.parsed);
       setImportedFileName(file.name);
+      setImportedConfig(result.config || DEFAULT_TEMPLATE_CONFIG);
+      setImportedCriteria(result.criteria || DEFAULT_EVALUATION_CRITERIA);
+      setImportedInitialResponses(result.initialResponses || {});
       setImportSummary({
+        templateType: result.templateType,
+        templateName: result.config?.nombre_plantilla || 'Plantilla de Auditoría',
+        framework: result.config?.marco_referencia || 'Cuestionario de Evaluación',
+        version: result.config?.version || '2.0',
         areasCount: result.areasCount,
-        questionsCount: result.questionsCount
+        questionsCount: result.questionsCount,
+        criteriaCount: result.criteriaCount || (result.criteria ? result.criteria.length : 5),
+        initialResponsesCount: Object.keys(result.initialResponses || {}).length
       });
     } catch (err) {
       console.error(err);
       setImportError(err.message || "Error al leer el archivo. Asegúrate de que sea un archivo de Excel (.xlsx) o .json válido.");
       setImportedSections(null);
       setImportedFileName('');
+      setImportedConfig(null);
+      setImportedCriteria(null);
+      setImportedInitialResponses({});
       setImportSummary(null);
     } finally {
       e.target.value = '';
@@ -517,6 +535,12 @@ const AuditForm = () => {
     setCreationMode('base');
     setImportedSections(null);
     setImportedFileName('');
+    setImportedConfig(null);
+    setImportedCriteria(null);
+    setImportedInitialResponses({});
+    setEvaluationCriteria(DEFAULT_EVALUATION_CRITERIA);
+    setAuditConfig(DEFAULT_TEMPLATE_CONFIG);
+    setRubricModalData(null);
     setImportSummary(null);
     setImportError('');
   };
@@ -530,7 +554,7 @@ const AuditForm = () => {
     const norm = normalizeAudit(audit, user);
     const data = audit.data || audit;
     setIntroData(data.introData || audit.introData || INITIAL_INTRO_DATA);
-    
+
     setAuditMode(norm.mode || 'single');
     setMaxAuditors(norm.maxAuditors || 1);
     setAuditorsList(norm.auditors || []);
@@ -576,6 +600,9 @@ const AuditForm = () => {
     setPositiveComments(data.positiveComments || audit.positiveComments || '');
     setNegativeComments(data.negativeComments || audit.negativeComments || '');
     setRecommendations(data.recommendations || audit.recommendations || '');
+    setEvaluationCriteria(data.evaluationCriteria || audit.evaluationCriteria || DEFAULT_EVALUATION_CRITERIA);
+    setAuditConfig(data.auditConfig || audit.auditConfig || DEFAULT_TEMPLATE_CONFIG);
+    setRubricModalData(null);
     const actorData = data.actor || audit.actor || {};
     setActor({
       nombreEmpresa: norm.companyName || actorData.nombreEmpresa || data.introData?.nombreEmpresa || audit.nombreEmpresa || '',
@@ -726,7 +753,7 @@ const AuditForm = () => {
       token = Math.random().toString(36).substring(2, 10) + Math.random().toString(36).substring(2, 10);
       audit.shareToken = token;
       if (db) {
-        updateDoc(doc(db, "auditorias", audit.id), { shareToken: token }).catch(() => {});
+        updateDoc(doc(db, "auditorias", audit.id), { shareToken: token }).catch(() => { });
       }
     }
     setShareModalAudit({ ...audit, shareToken: token });
@@ -1057,50 +1084,11 @@ const AuditForm = () => {
       }
     }
 
-    const activeProgress = calculateProgressFromAnswers(safeResponses, customSections);
-    const updatedDrafts = {
-      ...(drafts || {}),
-      [currentAuditorUid]: {
-        answers: safeResponses,
-        progress: activeProgress,
-        updatedAt: new Date().toISOString()
-      }
-    };
-
-    const currentAuditorsPayload = (auditorsList && auditorsList.length > 0) ? auditorsList : [
-      { uid: currentAuditorUid, name: currentAuditorName, email: user?.email || '', role: currentAuditorRole }
-    ];
-
-    const currentOfficialPayload = officialVersion || { isPublished: false, mergedAt: null, mergedBy: null, answers: {} };
-
     const auditData = {
       id: currentAuditId,
-      companyName: companyName || 'Empresa sin nombre',
-      nombreEmpresa: companyName || 'Empresa sin nombre',
-      mode: auditMode || 'single',
-      maxAuditors: maxAuditors || (auditMode === 'collaborative' ? 2 : 1),
-      auditors: currentAuditorsPayload,
-      drafts: updatedDrafts,
-      officialVersion: currentOfficialPayload,
       lastModified: new Date().toISOString(),
-      data: { 
-        introData, 
-        responses: safeResponses, 
-        generalComments, 
-        positiveComments, 
-        negativeComments, 
-        recommendations, 
-        actor, 
-        customSections, 
-        deletedQuestions, 
-        evaluations, 
-        finalAudit,
-        mode: auditMode || 'single',
-        maxAuditors: maxAuditors || (auditMode === 'collaborative' ? 2 : 1),
-        auditors: currentAuditorsPayload,
-        drafts: updatedDrafts,
-        officialVersion: currentOfficialPayload
-      }
+      nombreEmpresa: companyName || 'Empresa sin nombre',
+      data: { introData, responses: safeResponses, generalComments, positiveComments, negativeComments, recommendations, actor, customSections, deletedQuestions, evaluations, finalAudit, evaluationCriteria, auditConfig }
     };
     if (index >= 0) {
       newList[index] = auditData;
@@ -1108,7 +1096,7 @@ const AuditForm = () => {
       newList.push(auditData);
     }
     setSavedAudits(newList);
-    
+
     let timer;
     if (db) {
       timer = setTimeout(() => {
@@ -1118,14 +1106,14 @@ const AuditForm = () => {
           setDoc(docRef, auditData, { merge: true })
             .then(() => console.log("Auditoría guardada exitosamente en Firebase (debounced)."))
             .catch(e => console.error("Error al guardar en Firebase:", e));
-        } catch(e) {}
+        } catch (e) { }
       }, 1500);
     }
 
     return () => {
       if (timer) clearTimeout(timer);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [introData, responses, generalComments, positiveComments, negativeComments, recommendations, actor, customSections, deletedQuestions, evaluations, finalAudit, currentAuditId, step, isReadOnly]);
 
   // Sincronización en tiempo real con onSnapshot y presencia activa
@@ -1197,7 +1185,7 @@ const AuditForm = () => {
               [clientId]: mySessionData
             }
           }, { merge: true });
-        } catch (e) {}
+        } catch (e) { }
       }
     };
 
@@ -1210,8 +1198,8 @@ const AuditForm = () => {
         const docRef = doc(db, "auditorias", currentAuditId);
         updateDoc(docRef, {
           [`activeSessions.${clientId}`]: null
-        }).catch(() => {});
-      } catch (e) {}
+        }).catch(() => { });
+      } catch (e) { }
     };
   }, [step, currentAuditId, isReadOnly, user, actor.nombreAuditor]);
 
@@ -1221,7 +1209,7 @@ const AuditForm = () => {
         const docRef = doc(db, "auditorias", currentAuditId);
         updateDoc(docRef, {
           [`activeSessions.${clientId}`]: null
-        }).catch(() => {});
+        }).catch(() => { });
       }
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
@@ -1343,125 +1331,125 @@ const AuditForm = () => {
   const rewriteCommentsWithAI = () => rewriteReportCommentWithAI('general');
 
 
-const rewriteObservationWithAI = async (section, item) => {
-  const key = `${section}-${item.id}`;
-  const userText = (responses[key]?.observaciones || "").trim();
-  if (!userText) return alert("Escribe o dicta algo en la observación primero.");
+  const rewriteObservationWithAI = async (section, item) => {
+    const key = `${section}-${item.id}`;
+    const userText = (responses[key]?.observaciones || "").trim();
+    if (!userText) return alert("Escribe o dicta algo en la observación primero.");
 
-  setRewritingKey(key);
-  try {
-    const res = await fetch(
-      "https://n8n-n8n.bg5sbc.easypanel.host/webhook/cd537a01-7f79-4b98-b05b-0c681e507dbe",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": "bw_ai_comments_9F3xL8Qp_2026",
-        },
-        body: JSON.stringify({
-          text: userText,
-          instruccion: "Redacta de forma profesional y clara la observación y hallazgo para esta pregunta de auditoría de TI. Omite cualquier estructura o metadato JSON y devuelve únicamente el texto redactado.",
-          context: {
-            tipo: "observacion_especifica",
-            pregunta: item.pregunta,
-            requisito: item.requisito || "",
-            empresa: introData.nombreEmpresa || "",
-          }
-        }),
-      }
-    );
-
-    if (!res.ok) throw new Error("Error al llamar IA");
-
-    const data = await res.json();
-    const cleanText = filterAiResponse(data);
-
-    updateResponse(section, item.id, 'observaciones', cleanText);
-  } catch (err) {
-    console.error(err);
-    alert("Error al mejorar la observación con IA");
-  } finally {
-    setRewritingKey(null);
-  }
-};
-
-const generateSubquestionWithAI = async (itemQuestionText) => {
-  if (!subpromptText.trim()) return alert("Escribe de qué se trata la subpregunta primero.");
-  
-  setIsGeneratingSub(true);
-  try {
-    const res = await fetch(
-      "https://n8n-n8n.bg5sbc.easypanel.host/webhook/cd537a01-7f79-4b98-b05b-0c681e507dbe",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": "bw_ai_comments_9F3xL8Qp_2026",
-        },
-        body: JSON.stringify({
-          text: `[INSTRUCCIÓN: Actúa como un redactor técnico de auditorías de TI. Genera una sola PREGUNTA GUÍA O SUBPREGUNTA sugerida para profundizar y obtener más información del auditado. Esta subpregunta se colgará de una pregunta principal. No redactes respuestas ni observaciones, debe ser estrictamente una pregunta interrogativa. El tema o contexto que debe indagar la subpregunta es: "${subpromptText}". La pregunta principal relacionada es: "${itemQuestionText}"].\n\nDevuelve únicamente la pregunta generada en formato de pregunta profesional (utilizando signos de interrogación).`,
-          context: {
-            tipo: "pregunta_auditoria_sugerida",
-            pregunta_padre: itemQuestionText
-          }
-        }),
-      }
-    );
-
-    if (!res.ok) throw new Error("Error en webhook de IA");
-    const data = await res.json();
-    const cleanText = filterAiResponse(data);
-
-    setSubpromptText(cleanText);
-  } catch (e) {
-    console.error(e);
-    alert("Error al generar la subpregunta sugerida.");
-  } finally {
-    setIsGeneratingSub(false);
-  }
-};
-
-const investigateCompanyWithAI = async (overrideUrl = null) => {
-  if (isReadOnly || activeEvaluationView !== 'my_draft') return;
-  let rawUrl = (overrideUrl !== null ? overrideUrl : (introData.sitioWeb || '')).trim();
-  if (!rawUrl) {
-    alert("Por favor ingresa la URL o página web de la empresa (ej: https://empresa.com)");
-    return;
-  }
-
-  if (!/^https?:\/\//i.test(rawUrl)) {
-    rawUrl = 'https://' + rawUrl;
-    updateIntroData('sitioWeb', rawUrl);
-  }
-
-  setIsInvestigatingCompany(true);
-
-  try {
-    let siteContent = '';
-    let fetchSuccess = false;
-
-    // 1. Intentar obtener contenido público con Jina Reader (timeout seguro)
+    setRewritingKey(key);
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8500);
-      const jinaRes = await fetch(`https://r.jina.ai/${rawUrl}`, {
-        signal: controller.signal
-      });
-      clearTimeout(timeoutId);
-      if (jinaRes.ok) {
-        const rawText = await jinaRes.text();
-        if (rawText && rawText.length > 80) {
-          siteContent = rawText.slice(0, 3800);
-          fetchSuccess = true;
+      const res = await fetch(
+        "https://n8n-n8n.bg5sbc.easypanel.host/webhook/cd537a01-7f79-4b98-b05b-0c681e507dbe",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": "bw_ai_comments_9F3xL8Qp_2026",
+          },
+          body: JSON.stringify({
+            text: userText,
+            instruccion: "Redacta de forma profesional y clara la observación y hallazgo para esta pregunta de auditoría de TI. Omite cualquier estructura o metadato JSON y devuelve únicamente el texto redactado.",
+            context: {
+              tipo: "observacion_especifica",
+              pregunta: item.pregunta,
+              requisito: item.requisito || "",
+              empresa: introData.nombreEmpresa || "",
+            }
+          }),
         }
-      }
-    } catch (fetchErr) {
-      console.warn("Jina Reader no pudo extraer directamente (continuando con análisis de dominio/contexto):", fetchErr);
+      );
+
+      if (!res.ok) throw new Error("Error al llamar IA");
+
+      const data = await res.json();
+      const cleanText = filterAiResponse(data);
+
+      updateResponse(section, item.id, 'observaciones', cleanText);
+    } catch (err) {
+      console.error(err);
+      alert("Error al mejorar la observación con IA");
+    } finally {
+      setRewritingKey(null);
+    }
+  };
+
+  const generateSubquestionWithAI = async (itemQuestionText) => {
+    if (!subpromptText.trim()) return alert("Escribe de qué se trata la subpregunta primero.");
+
+    setIsGeneratingSub(true);
+    try {
+      const res = await fetch(
+        "https://n8n-n8n.bg5sbc.easypanel.host/webhook/cd537a01-7f79-4b98-b05b-0c681e507dbe",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": "bw_ai_comments_9F3xL8Qp_2026",
+          },
+          body: JSON.stringify({
+            text: `[INSTRUCCIÓN: Actúa como un redactor técnico de auditorías de TI. Genera una sola PREGUNTA GUÍA O SUBPREGUNTA sugerida para profundizar y obtener más información del auditado. Esta subpregunta se colgará de una pregunta principal. No redactes respuestas ni observaciones, debe ser estrictamente una pregunta interrogativa. El tema o contexto que debe indagar la subpregunta es: "${subpromptText}". La pregunta principal relacionada es: "${itemQuestionText}"].\n\nDevuelve únicamente la pregunta generada en formato de pregunta profesional (utilizando signos de interrogación).`,
+            context: {
+              tipo: "pregunta_auditoria_sugerida",
+              pregunta_padre: itemQuestionText
+            }
+          }),
+        }
+      );
+
+      if (!res.ok) throw new Error("Error en webhook de IA");
+      const data = await res.json();
+      const cleanText = filterAiResponse(data);
+
+      setSubpromptText(cleanText);
+    } catch (e) {
+      console.error(e);
+      alert("Error al generar la subpregunta sugerida.");
+    } finally {
+      setIsGeneratingSub(false);
+    }
+  };
+
+  const investigateCompanyWithAI = async (overrideUrl = null) => {
+    if (isReadOnly || activeEvaluationView !== 'my_draft') return;
+    let rawUrl = (overrideUrl !== null ? overrideUrl : (introData.sitioWeb || '')).trim();
+    if (!rawUrl) {
+      alert("Por favor ingresa la URL o página web de la empresa (ej: https://empresa.com)");
+      return;
     }
 
-    // 2. Construir prompt estructurado para el webhook
-    const companyName = introData.nombreEmpresa || 'la empresa';
-    const promptInstruction = `[INSTRUCCIÓN: Actúa como Auditor Líder Senior en Ciberseguridad y Auditoría de TI (ISO 27001, NIST CSF, CIS Controls).
+    if (!/^https?:\/\//i.test(rawUrl)) {
+      rawUrl = 'https://' + rawUrl;
+      updateIntroData('sitioWeb', rawUrl);
+    }
+
+    setIsInvestigatingCompany(true);
+
+    try {
+      let siteContent = '';
+      let fetchSuccess = false;
+
+      // 1. Intentar obtener contenido público con Jina Reader (timeout seguro)
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8500);
+        const jinaRes = await fetch(`https://r.jina.ai/${rawUrl}`, {
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        if (jinaRes.ok) {
+          const rawText = await jinaRes.text();
+          if (rawText && rawText.length > 80) {
+            siteContent = rawText.slice(0, 3800);
+            fetchSuccess = true;
+          }
+        }
+      } catch (fetchErr) {
+        console.warn("Jina Reader no pudo extraer directamente (continuando con análisis de dominio/contexto):", fetchErr);
+      }
+
+      // 2. Construir prompt estructurado para el webhook
+      const companyName = introData.nombreEmpresa || 'la empresa';
+      const promptInstruction = `[INSTRUCCIÓN: Actúa como Auditor Líder Senior en Ciberseguridad y Auditoría de TI (ISO 27001, NIST CSF, CIS Controls).
 Realiza una investigación preliminar ejecutiva y de inteligencia para orientar la auditoría de TI de la empresa "${companyName}" a partir de su página web: ${rawUrl}.
 
 ${fetchSuccess ? `Contenido público extraído del sitio web:\n${siteContent}\n` : `(Nota: No se pudo scrapear en vivo por restricciones de red del servidor, analiza con base en el dominio ${rawUrl}, nombre de la empresa "${companyName}" y patrones de la industria correspondiente).`}
@@ -1479,188 +1467,188 @@ Debes estructurar el resultado estrictamente en estas 3 secciones con formato Ma
 
 Aporta valor concreto, análisis certero y profesionalismo técnico.]`;
 
-    // 3. Llamar al webhook de IA
-    const res = await fetch(
-      "https://n8n-n8n.bg5sbc.easypanel.host/webhook/cd537a01-7f79-4b98-b05b-0c681e507dbe",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": "bw_ai_comments_9F3xL8Qp_2026",
-        },
-        body: JSON.stringify({
-          text: promptInstruction,
-          context: {
-            tipo: "investigacion_preliminar_empresa",
-            url: rawUrl,
-            empresa: companyName,
-            fetchSuccess: fetchSuccess
-          }
-        })
-      }
-    );
-
-    if (!res.ok) throw new Error("Error en webhook de IA");
-    const data = await res.json();
-    const cleanText = filterAiResponse(data);
-
-    updateIntroData('preliminarEmpresa', cleanText);
-  } catch (err) {
-    console.error(err);
-    alert("Ocurrió un error al realizar la investigación preliminar con IA. Por favor verifica la URL e inténtalo nuevamente.");
-  } finally {
-    setIsInvestigatingCompany(false);
-  }
-};
-
-const saveSubquestion = (section, itemId) => {
-  if (isReadOnly || activeEvaluationView !== 'my_draft') return;
-  if (!subpromptText.trim()) return alert("La subpregunta no puede estar vacía.");
-  
-  setCustomSections(prev => {
-    const newSections = { ...prev };
-    const questions = [...(newSections[section] || [])];
-    const qIndex = questions.findIndex(q => q.id === itemId);
-    if (qIndex !== -1) {
-      const q = { ...questions[qIndex] };
-      const subs = [...(q.subquestions || [])];
-      subs.push({
-        id: 'sub_' + Date.now(),
-        texto: subpromptText.trim()
-      });
-      q.subquestions = subs;
-      questions[qIndex] = q;
-      newSections[section] = questions;
-    }
-    return newSections;
-  });
-  
-  setAddingSubFor(null);
-  setSubpromptText('');
-};
-
-const deleteSubquestion = (section, itemId, subId) => {
-  if (isReadOnly || activeEvaluationView !== 'my_draft') return;
-  if (!window.confirm("¿Seguro que deseas eliminar esta pregunta sugerida?")) return;
-  setCustomSections(prev => {
-    const newSections = { ...prev };
-    const questions = [...(newSections[section] || [])];
-    const qIndex = questions.findIndex(q => q.id === itemId);
-    if (qIndex !== -1) {
-      const q = { ...questions[qIndex] };
-      q.subquestions = (q.subquestions || []).filter(sub => sub.id !== subId);
-      questions[qIndex] = q;
-      newSections[section] = questions;
-    }
-    return newSections;
-  });
-};
-
-const updateSubquestionResponse = (section, itemId, subId, respuestaVal) => {
-  if (isReadOnly || activeEvaluationView !== 'my_draft') return;
-  setCustomSections(prev => {
-    const newSections = { ...prev };
-    const questions = [...(newSections[section] || [])];
-    const qIndex = questions.findIndex(q => q.id === itemId);
-    if (qIndex !== -1) {
-      const q = { ...questions[qIndex] };
-      const subs = (q.subquestions || []).map(sub => {
-        if (sub.id === subId) {
-          return { ...sub, respuesta: respuestaVal };
+      // 3. Llamar al webhook de IA
+      const res = await fetch(
+        "https://n8n-n8n.bg5sbc.easypanel.host/webhook/cd537a01-7f79-4b98-b05b-0c681e507dbe",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": "bw_ai_comments_9F3xL8Qp_2026",
+          },
+          body: JSON.stringify({
+            text: promptInstruction,
+            context: {
+              tipo: "investigacion_preliminar_empresa",
+              url: rawUrl,
+              empresa: companyName,
+              fetchSuccess: fetchSuccess
+            }
+          })
         }
-        return sub;
-      });
-      q.subquestions = subs;
-      questions[qIndex] = q;
-      newSections[section] = questions;
+      );
+
+      if (!res.ok) throw new Error("Error en webhook de IA");
+      const data = await res.json();
+      const cleanText = filterAiResponse(data);
+
+      updateIntroData('preliminarEmpresa', cleanText);
+    } catch (err) {
+      console.error(err);
+      alert("Ocurrió un error al realizar la investigación preliminar con IA. Por favor verifica la URL e inténtalo nuevamente.");
+    } finally {
+      setIsInvestigatingCompany(false);
     }
-    return newSections;
-  });
-};
+  };
 
-const handleSaveQuickEditQuestion = (e) => {
-  if (e) e.preventDefault();
-  if (isReadOnly || activeEvaluationView !== 'my_draft') return;
-  if (!editingQuestionData) return;
-  const { section, id, pregunta, requisito, evidencia, nota, escalaEvaluacion } = editingQuestionData;
-  setCustomSections(prev => {
-    const updated = { ...prev };
-    const list = [...(updated[section] || [])];
-    const idx = list.findIndex(q => q.id === id);
-    if (idx !== -1) {
-      list[idx] = {
-        ...list[idx],
-        pregunta: (pregunta || '').trim(),
-        requisito: (requisito || '').trim(),
-        evidencia: (evidencia || '').trim(),
-        nota: (nota || '').trim(),
-        escalaEvaluacion: Array.isArray(escalaEvaluacion)
-          ? escalaEvaluacion.map(s => (s || '').trim())
-          : list[idx].escalaEvaluacion
-      };
-      updated[section] = list;
-    }
-    return updated;
-  });
-  setEditingQuestionData(null);
-};
+  const saveSubquestion = (section, itemId) => {
+    if (isReadOnly || activeEvaluationView !== 'my_draft') return;
+    if (!subpromptText.trim()) return alert("La subpregunta no puede estar vacía.");
 
-const startInlineDictation = (section, id) => {
-  const key = `${section}-${id}`;
-  
-  if (dictatingKey === key) {
-    setDictatingKey(null);
-    if (window.inlineRecognition) window.inlineRecognition.stop();
-    return;
-  }
-
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) return alert("Dictado no soportado en este navegador.");
-  
-  if (window.inlineRecognition) {
-    window.inlineRecognition.stop();
-  }
-
-  const recognition = new SpeechRecognition();
-  recognition.continuous = false;
-  recognition.interimResults = true;
-  recognition.lang = 'es-MX';
-
-  setDictatingKey(key);
-
-  recognition.onresult = (event) => {
-    let finalChunk = '';
-    for (let i = event.resultIndex; i < event.results.length; ++i) {
-      if (event.results[i].isFinal) {
-        finalChunk += event.results[i][0].transcript + ' ';
+    setCustomSections(prev => {
+      const newSections = { ...prev };
+      const questions = [...(newSections[section] || [])];
+      const qIndex = questions.findIndex(q => q.id === itemId);
+      if (qIndex !== -1) {
+        const q = { ...questions[qIndex] };
+        const subs = [...(q.subquestions || [])];
+        subs.push({
+          id: 'sub_' + Date.now(),
+          texto: subpromptText.trim()
+        });
+        q.subquestions = subs;
+        questions[qIndex] = q;
+        newSections[section] = questions;
       }
+      return newSections;
+    });
+
+    setAddingSubFor(null);
+    setSubpromptText('');
+  };
+
+  const deleteSubquestion = (section, itemId, subId) => {
+    if (isReadOnly || activeEvaluationView !== 'my_draft') return;
+    if (!window.confirm("¿Seguro que deseas eliminar esta pregunta sugerida?")) return;
+    setCustomSections(prev => {
+      const newSections = { ...prev };
+      const questions = [...(newSections[section] || [])];
+      const qIndex = questions.findIndex(q => q.id === itemId);
+      if (qIndex !== -1) {
+        const q = { ...questions[qIndex] };
+        q.subquestions = (q.subquestions || []).filter(sub => sub.id !== subId);
+        questions[qIndex] = q;
+        newSections[section] = questions;
+      }
+      return newSections;
+    });
+  };
+
+  const updateSubquestionResponse = (section, itemId, subId, respuestaVal) => {
+    if (isReadOnly || activeEvaluationView !== 'my_draft') return;
+    setCustomSections(prev => {
+      const newSections = { ...prev };
+      const questions = [...(newSections[section] || [])];
+      const qIndex = questions.findIndex(q => q.id === itemId);
+      if (qIndex !== -1) {
+        const q = { ...questions[qIndex] };
+        const subs = (q.subquestions || []).map(sub => {
+          if (sub.id === subId) {
+            return { ...sub, respuesta: respuestaVal };
+          }
+          return sub;
+        });
+        q.subquestions = subs;
+        questions[qIndex] = q;
+        newSections[section] = questions;
+      }
+      return newSections;
+    });
+  };
+
+  const handleSaveQuickEditQuestion = (e) => {
+    if (e) e.preventDefault();
+    if (isReadOnly || activeEvaluationView !== 'my_draft') return;
+    if (!editingQuestionData) return;
+    const { section, id, pregunta, requisito, evidencia, nota, escalaEvaluacion } = editingQuestionData;
+    setCustomSections(prev => {
+      const updated = { ...prev };
+      const list = [...(updated[section] || [])];
+      const idx = list.findIndex(q => q.id === id);
+      if (idx !== -1) {
+        list[idx] = {
+          ...list[idx],
+          pregunta: (pregunta || '').trim(),
+          requisito: (requisito || '').trim(),
+          evidencia: (evidencia || '').trim(),
+          nota: (nota || '').trim(),
+          escalaEvaluacion: Array.isArray(escalaEvaluacion)
+            ? escalaEvaluacion.map(s => (s || '').trim())
+            : list[idx].escalaEvaluacion
+        };
+        updated[section] = list;
+      }
+      return updated;
+    });
+    setEditingQuestionData(null);
+  };
+
+  const startInlineDictation = (section, id) => {
+    const key = `${section}-${id}`;
+
+    if (dictatingKey === key) {
+      setDictatingKey(null);
+      if (window.inlineRecognition) window.inlineRecognition.stop();
+      return;
     }
-    if (finalChunk) {
-      setResponses(prev => {
-         const current = prev[key]?.observaciones || '';
-         const separator = current && !current.endsWith(' ') ? ' ' : '';
-         return {
-           ...prev,
-           [key]: {
-             ...prev[key],
-             observaciones: current + separator + finalChunk.trim()
-           }
-         }
-      });
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) return alert("Dictado no soportado en este navegador.");
+
+    if (window.inlineRecognition) {
+      window.inlineRecognition.stop();
     }
-  };
 
-  recognition.onerror = () => {
-    setDictatingKey(null);
-  };
+    const recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.lang = 'es-MX';
 
-  recognition.onend = () => {
-    setDictatingKey(null);
-  };
+    setDictatingKey(key);
 
-  recognition.start();
-  window.inlineRecognition = recognition;
-};
+    recognition.onresult = (event) => {
+      let finalChunk = '';
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          finalChunk += event.results[i][0].transcript + ' ';
+        }
+      }
+      if (finalChunk) {
+        setResponses(prev => {
+          const current = prev[key]?.observaciones || '';
+          const separator = current && !current.endsWith(' ') ? ' ' : '';
+          return {
+            ...prev,
+            [key]: {
+              ...prev[key],
+              observaciones: current + separator + finalChunk.trim()
+            }
+          }
+        });
+      }
+    };
+
+    recognition.onerror = () => {
+      setDictatingKey(null);
+    };
+
+    recognition.onend = () => {
+      setDictatingKey(null);
+    };
+
+    recognition.start();
+    window.inlineRecognition = recognition;
+  };
 
 
 
@@ -1701,7 +1689,7 @@ const startInlineDictation = (section, id) => {
           lastActive: new Date().toISOString()
         }
       }, { merge: true });
-      
+
       console.log("Bloqueo de edición adquirido.");
       return true;
     } catch (e) {
@@ -1754,32 +1742,10 @@ const startInlineDictation = (section, id) => {
       }
     }
 
-    const activeProgress = calculateProgressFromAnswers(safeResponses, currentState.customSections || customSections);
-    const updatedDrafts = {
-      ...(currentState.drafts || drafts || {}),
-      [currentAuditorUid]: {
-        answers: safeResponses,
-        progress: activeProgress,
-        updatedAt: new Date().toISOString()
-      }
-    };
-
-    const currentAuditorsPayload = (auditorsList && auditorsList.length > 0) ? auditorsList : [
-      { uid: currentAuditorUid, name: currentAuditorName, email: user?.email || '', role: currentAuditorRole }
-    ];
-
-    const currentOfficialPayload = officialVersion || { isPublished: false, mergedAt: null, mergedBy: null, answers: {} };
-
     const auditData = {
       id: targetId,
-      companyName: companyName || 'Empresa sin nombre',
-      nombreEmpresa: companyName || 'Empresa sin nombre',
-      mode: auditMode || 'single',
-      maxAuditors: maxAuditors || (auditMode === 'collaborative' ? 2 : 1),
-      auditors: currentAuditorsPayload,
-      drafts: updatedDrafts,
-      officialVersion: currentOfficialPayload,
       lastModified: new Date().toISOString(),
+      nombreEmpresa: companyName || 'Empresa sin nombre',
       data: {
         introData: currentState.introData || introData,
         responses: safeResponses,
@@ -1792,11 +1758,8 @@ const startInlineDictation = (section, id) => {
         deletedQuestions: currentState.deletedQuestions || deletedQuestions || [],
         evaluations: currentState.evaluations || evaluations || {},
         finalAudit: currentState.finalAudit || finalAudit || { status: 'draft', answers: {} },
-        mode: auditMode || 'single',
-        maxAuditors: maxAuditors || (auditMode === 'collaborative' ? 2 : 1),
-        auditors: currentAuditorsPayload,
-        drafts: updatedDrafts,
-        officialVersion: currentOfficialPayload
+        evaluationCriteria: currentState.evaluationCriteria || evaluationCriteria || DEFAULT_EVALUATION_CRITERIA,
+        auditConfig: currentState.auditConfig || auditConfig || DEFAULT_TEMPLATE_CONFIG
       }
     };
 
@@ -1839,7 +1802,7 @@ const startInlineDictation = (section, id) => {
           await updateDoc(docRef, {
             [`activeSessions.${clientId}`]: null
           });
-        } catch (e) {}
+        } catch (e) { }
       }
 
       // 3. Guardar inmediatamente la auditoría activa antes de salir (únicamente si está en modo editor)
@@ -2008,51 +1971,21 @@ const startInlineDictation = (section, id) => {
         }
       };
     });
-
-    // 3. Almacenar en estructura canónica drafts[currentAuditorUid] aislada
-    setDrafts(prev => {
-      const myDraft = prev[currentAuditorUid] || { answers: {}, progress: 0 };
-      const currentAns = myDraft.answers?.[key] || {};
-      const scoreVal = field === 'evaluacion' ? value : (currentAns.score ?? currentAns.evaluacion);
-      const notesVal = field === 'observaciones' ? value : (currentAns.notes ?? currentAns.comment);
-
-      const updatedAnswers = {
-        ...myDraft.answers,
-        [key]: {
-          ...currentAns,
-          [field]: value,
-          score: scoreVal,
-          evaluacion: scoreVal,
-          notes: notesVal,
-          comment: notesVal,
-          updatedAt: new Date().toISOString()
-        }
-      };
-
-      return {
-        ...prev,
-        [currentAuditorUid]: {
-          answers: updatedAnswers,
-          progress: calculateProgressFromAnswers(updatedAnswers, customSections),
-          updatedAt: new Date().toISOString()
-        }
-      };
-    });
   };
 
   // Alternar vista de evaluación entre Mi Borrador, Borrador de colega o Versión Oficial
   const handleChangeEvaluationView = (viewKey) => {
     setActiveEvaluationView(viewKey);
     if (viewKey === 'my_draft') {
-      const myAnswers = drafts[currentAuditorUid]?.answers || evaluations[currentAuditorUid]?.answers;
+      const myAnswers = evaluations[currentAuditorUid]?.answers;
       if (myAnswers && Object.keys(myAnswers).length > 0) {
         setResponses(myAnswers);
       }
     } else if (viewKey === 'official') {
-      setResponses(officialVersion.answers || finalAudit.answers || {});
+      setResponses(finalAudit.answers || {});
     } else {
       // Borrador de un colega
-      const otherAnswers = drafts[viewKey]?.answers || evaluations[viewKey]?.answers || {};
+      const otherAnswers = evaluations[viewKey]?.answers || {};
       setResponses(otherAnswers);
     }
   };
@@ -2068,15 +2001,7 @@ const startInlineDictation = (section, id) => {
       answers: consolidatedAnswers
     };
 
-    const updatedOfficialVersion = {
-      isPublished: true,
-      mergedAt: new Date().toISOString(),
-      mergedBy: currentAuditorName,
-      answers: consolidatedAnswers
-    };
-
     setFinalAudit(updatedFinalAudit);
-    setOfficialVersion(updatedOfficialVersion);
     setResponses(consolidatedAnswers);
     setActiveEvaluationView('official');
     setShowMergeModal(false);
@@ -2095,7 +2020,7 @@ const startInlineDictation = (section, id) => {
     const questions = customSections[section];
     let total = 0;
     let count = 0;
-    
+
     questions.forEach(q => {
       const key = `${section}-${q.id}`;
       if (responses[key]?.evaluacion !== undefined) {
@@ -2103,7 +2028,7 @@ const startInlineDictation = (section, id) => {
         count++;
       }
     });
-    
+
     return count > 0 ? (total / count).toFixed(1) : 'N/A';
   };
 
@@ -2124,12 +2049,12 @@ const startInlineDictation = (section, id) => {
     };
 
     const areaScores = {};
-    
+
     Object.keys(areas).forEach(area => {
       let totalScore = 0;
       let totalQuestions = 0;
       let answeredQuestions = 0;
-      
+
       areas[area].forEach(section => {
         if (customSections[section]) {
           customSections[section].forEach(q => {
@@ -2143,7 +2068,7 @@ const startInlineDictation = (section, id) => {
         }
       });
 
-      
+
       areaScores[area] = {
         score: answeredQuestions > 0 ? (totalScore / answeredQuestions).toFixed(2) : 0,
         percentage: answeredQuestions > 0 ? ((totalScore / answeredQuestions) * 25).toFixed(1) : 0,
@@ -2151,14 +2076,14 @@ const startInlineDictation = (section, id) => {
         total: totalQuestions
       };
     });
-    
+
     return areaScores;
   };
 
   const calculateTotalScore = () => {
     let total = 0;
     let count = 0;
-    
+
     Object.keys(customSections).forEach(section => {
       customSections[section].forEach(q => {
         const key = `${section}-${q.id}`;
@@ -2168,7 +2093,7 @@ const startInlineDictation = (section, id) => {
         }
       });
     });
-    
+
     return count > 0 ? (total / count) : 0;
   };
 
@@ -2291,7 +2216,7 @@ const startInlineDictation = (section, id) => {
     }
   };
 
- 
+
 
 
   if (authChecking || (isGuestMode && auditsLoading)) {
@@ -2308,7 +2233,7 @@ const startInlineDictation = (section, id) => {
 
   if (guestAuditToLoad) {
     return (
-      <GuestPinScreen 
+      <GuestPinScreen
         targetAudit={guestAuditToLoad}
         onAccessGranted={(audit) => {
           sessionStorage.setItem(`guest_granted_${audit.id}`, 'true');
@@ -2326,7 +2251,7 @@ const startInlineDictation = (section, id) => {
               setPositiveComments(audit.data.positiveComments || '');
               setNegativeComments(audit.data.negativeComments || '');
               setRecommendations(audit.data.recommendations || '');
-              setActor(audit.data.actor || { nombreAuditor:'', rol:'', contrasenaHash: audit.data?.actor?.contrasenaHash || '' });
+              setActor(audit.data.actor || { nombreAuditor: '', rol: '', contrasenaHash: audit.data?.actor?.contrasenaHash || '' });
               setGuestAuditToLoad(null);
               setStep('form');
             }
@@ -2340,72 +2265,72 @@ const startInlineDictation = (section, id) => {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
         <div className="max-w-md w-full bg-white p-8 border border-slate-200 border-t-4 border-t-amber-500 shadow-sm text-center">
-           <div className="w-16 h-16 bg-slate-900 rounded-none flex items-center justify-center mx-auto mb-6">
-              <KeyRound size={32} className="text-amber-500" />
-           </div>
-           <h1 className="text-2xl font-extrabold text-slate-800">Auditoría en Edición</h1>
-           <p className="text-slate-600 mt-4 text-sm leading-relaxed">
-             Esta auditoría está siendo editada actualmente por: <br/>
-             <strong className="text-slate-900 break-all">{blockedBy || 'Otro usuario/auditor'}</strong>.
-           </p>
-           <p className="text-slate-500 mt-2 text-xs font-medium">
-             Por seguridad y para evitar pérdida de datos, por favor espera un momento o regresa al panel principal.
-           </p>
-           
-           <div className="mt-8 space-y-3">
-             <button
-               onClick={async () => {
-                 if (blockedAuditToLoad) {
-                   const docRef = doc(db, "auditorias", blockedAuditToLoad.id);
-                   const docSnap = await getDoc(docRef);
-                   if (docSnap.exists()) {
-                     const freshAudit = docSnap.data();
-                     const success = await acquireLock(freshAudit.id, freshAudit);
-                     if (success) {
-                       setCurrentAuditId(freshAudit.id);
-                       setIntroData(freshAudit.data.introData || {});
-                       setResponses(freshAudit.data.responses || {});
-                       setCustomSections(sortSections(freshAudit.data.customSections || getDefaultSections()));
-                       setDeletedQuestions(freshAudit.data?.deletedQuestions || []);
-                       setEvaluations(freshAudit.data?.evaluations || {});
-                       setFinalAudit(freshAudit.data?.finalAudit || { status: 'draft', answers: {} });
-                       setActiveEvaluationView('my_draft');
-                       setGeneralComments(freshAudit.data.generalComments || '');
-                       setPositiveComments(freshAudit.data.positiveComments || '');
-                       setNegativeComments(freshAudit.data.negativeComments || '');
-                       setRecommendations(freshAudit.data.recommendations || '');
-                       setActor(freshAudit.data.actor || { nombreAuditor:'', rol:'', contrasenaHash: freshAudit.data?.actor?.contrasenaHash || '' });
-                       setStep('form');
-                     }
-                   } else {
-                     alert("La auditoría ya no existe.");
-                     if (isGuestMode) {
-                       window.location.href = window.location.origin + window.location.pathname;
-                     } else {
-                       setStep('dashboard');
-                     }
-                   }
-                 }
-               }}
-               className="w-full bg-slate-900 text-white font-semibold border border-slate-900 hover:bg-slate-800 px-6 py-3 rounded-none transition-all cursor-pointer"
-             >
-               Intentar de nuevo
-             </button>
-             
-             {!isGuestMode && (
-               <button
-                 onClick={() => {
-                   resetToInitialState();
-                   setStep('dashboard');
-                   setBlockedBy(null);
-                   setBlockedAuditToLoad(null);
-                 }}
-                 className="w-full bg-white text-slate-700 font-semibold border border-slate-300 hover:bg-slate-50 px-6 py-3 rounded-none transition-all cursor-pointer"
-               >
-                 Volver al Panel
-               </button>
-             )}
-           </div>
+          <div className="w-16 h-16 bg-slate-900 rounded-none flex items-center justify-center mx-auto mb-6">
+            <KeyRound size={32} className="text-amber-500" />
+          </div>
+          <h1 className="text-2xl font-extrabold text-slate-800">Auditoría en Edición</h1>
+          <p className="text-slate-600 mt-4 text-sm leading-relaxed">
+            Esta auditoría está siendo editada actualmente por: <br />
+            <strong className="text-slate-900 break-all">{blockedBy || 'Otro usuario/auditor'}</strong>.
+          </p>
+          <p className="text-slate-500 mt-2 text-xs font-medium">
+            Por seguridad y para evitar pérdida de datos, por favor espera un momento o regresa al panel principal.
+          </p>
+
+          <div className="mt-8 space-y-3">
+            <button
+              onClick={async () => {
+                if (blockedAuditToLoad) {
+                  const docRef = doc(db, "auditorias", blockedAuditToLoad.id);
+                  const docSnap = await getDoc(docRef);
+                  if (docSnap.exists()) {
+                    const freshAudit = docSnap.data();
+                    const success = await acquireLock(freshAudit.id, freshAudit);
+                    if (success) {
+                      setCurrentAuditId(freshAudit.id);
+                      setIntroData(freshAudit.data.introData || {});
+                      setResponses(freshAudit.data.responses || {});
+                      setCustomSections(sortSections(freshAudit.data.customSections || getDefaultSections()));
+                      setDeletedQuestions(freshAudit.data?.deletedQuestions || []);
+                      setEvaluations(freshAudit.data?.evaluations || {});
+                      setFinalAudit(freshAudit.data?.finalAudit || { status: 'draft', answers: {} });
+                      setActiveEvaluationView('my_draft');
+                      setGeneralComments(freshAudit.data.generalComments || '');
+                      setPositiveComments(freshAudit.data.positiveComments || '');
+                      setNegativeComments(freshAudit.data.negativeComments || '');
+                      setRecommendations(freshAudit.data.recommendations || '');
+                      setActor(freshAudit.data.actor || { nombreAuditor: '', rol: '', contrasenaHash: freshAudit.data?.actor?.contrasenaHash || '' });
+                      setStep('form');
+                    }
+                  } else {
+                    alert("La auditoría ya no existe.");
+                    if (isGuestMode) {
+                      window.location.href = window.location.origin + window.location.pathname;
+                    } else {
+                      setStep('dashboard');
+                    }
+                  }
+                }
+              }}
+              className="w-full bg-slate-900 text-white font-semibold border border-slate-900 hover:bg-slate-800 px-6 py-3 rounded-none transition-all cursor-pointer"
+            >
+              Intentar de nuevo
+            </button>
+
+            {!isGuestMode && (
+              <button
+                onClick={() => {
+                  resetToInitialState();
+                  setStep('dashboard');
+                  setBlockedBy(null);
+                  setBlockedAuditToLoad(null);
+                }}
+                className="w-full bg-white text-slate-700 font-semibold border border-slate-300 hover:bg-slate-50 px-6 py-3 rounded-none transition-all cursor-pointer"
+              >
+                Volver al Panel
+              </button>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -2587,11 +2512,10 @@ const startInlineDictation = (section, id) => {
                       console.error("Error al copiar enlace:", err);
                     }
                   }}
-                  className={`px-3.5 py-2 text-xs font-semibold rounded-lg transition-colors inline-flex items-center gap-1.5 cursor-pointer shrink-0 shadow-xs ${
-                    copiedLink
-                      ? 'bg-emerald-600 text-white'
-                      : 'bg-blue-600 hover:bg-blue-700 text-white'
-                  }`}
+                  className={`px-3.5 py-2 text-xs font-semibold rounded-lg transition-colors inline-flex items-center gap-1.5 cursor-pointer shrink-0 shadow-xs ${copiedLink
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-blue-600 hover:bg-blue-700 text-white'
+                    }`}
                 >
                   {copiedLink ? <Check size={14} /> : <Copy size={14} />}
                   <span>{copiedLink ? '¡Copiado!' : 'Copiar'}</span>
@@ -2667,13 +2591,12 @@ const startInlineDictation = (section, id) => {
 
               {/* Botón de Ajustes con Dropdown */}
               <div className="relative" ref={settingsMenuRef}>
-                <button 
+                <button
                   onClick={() => setShowSettingsDropdown(prev => !prev)}
-                  className={`w-9 h-9 rounded-lg border transition-all flex items-center justify-center cursor-pointer ${
-                    showSettingsDropdown 
-                      ? 'border-blue-400 text-blue-600 bg-blue-50/70 shadow-2xs' 
-                      : 'border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                  }`}
+                  className={`w-9 h-9 rounded-lg border transition-all flex items-center justify-center cursor-pointer ${showSettingsDropdown
+                    ? 'border-blue-400 text-blue-600 bg-blue-50/70 shadow-2xs'
+                    : 'border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                    }`}
                   title="Configuración y herramientas"
                   aria-label="Configuración"
                 >
@@ -2728,8 +2651,8 @@ const startInlineDictation = (section, id) => {
               </div>
 
               {/* Botón de Logout */}
-              <button 
-                onClick={() => { signOut(auth); resetToInitialState(); setStep('dashboard'); }} 
+              <button
+                onClick={() => { signOut(auth); resetToInitialState(); setStep('dashboard'); }}
                 className="w-9 h-9 rounded-lg border border-slate-200 text-slate-500 hover:text-rose-600 hover:bg-rose-50 hover:border-rose-200 flex items-center justify-center transition-all shadow-2xs cursor-pointer"
                 title="Cerrar sesión"
                 aria-label="Cerrar sesión"
@@ -2844,13 +2767,12 @@ const startInlineDictation = (section, id) => {
                       const isPinned = isAuditPinned(audit);
 
                       return (
-                        <tr 
-                          key={audit.id} 
-                          className={`transition-colors ${
-                            isPinned 
-                              ? 'bg-blue-50/25 hover:bg-blue-50/50' 
-                              : 'hover:bg-slate-50/60'
-                          }`}
+                        <tr
+                          key={audit.id}
+                          className={`transition-colors ${isPinned
+                            ? 'bg-blue-50/25 hover:bg-blue-50/50'
+                            : 'hover:bg-slate-50/60'
+                            }`}
                         >
                           {/* Empresa / Entidad */}
                           <td className="p-4">
@@ -2860,20 +2782,19 @@ const startInlineDictation = (section, id) => {
                               </div>
                               <div className="flex flex-col min-w-0">
                                 <div className="flex items-center gap-2">
-                                  <span 
-                                    className="text-sm font-semibold text-slate-800 hover:text-blue-600 transition-colors cursor-pointer truncate max-w-sm xl:max-w-md" 
+                                  <span
+                                    className="text-sm font-semibold text-slate-800 hover:text-blue-600 transition-colors cursor-pointer truncate max-w-sm xl:max-w-md"
                                     onClick={() => handleLoadAudit(audit)}
                                     title={nombreEmpresa}
                                   >
                                     {nombreEmpresa}
                                   </span>
                                   {tienePin && (
-                                    <span 
-                                      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium shrink-0 ${
-                                        canBypassPin
-                                          ? 'bg-blue-50 text-blue-700 border border-blue-200/60'
-                                          : 'bg-slate-100 text-slate-600'
-                                      }`} 
+                                    <span
+                                      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium shrink-0 ${canBypassPin
+                                        ? 'bg-blue-50 text-blue-700 border border-blue-200/60'
+                                        : 'bg-slate-100 text-slate-600'
+                                        }`}
                                       title={canBypassPin ? "Auditoría protegida con PIN (Acceso directo sin PIN habilitado)" : "Auditoría protegida con PIN"}
                                     >
                                       {canBypassPin ? (
@@ -2929,8 +2850,8 @@ const startInlineDictation = (section, id) => {
                                 <span className="font-semibold text-blue-600">{summary.percentage}%</span>
                               </div>
                               <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
-                                <div 
-                                  className="bg-blue-600 h-1.5 rounded-full transition-all duration-300" 
+                                <div
+                                  className="bg-blue-600 h-1.5 rounded-full transition-all duration-300"
                                   style={{ width: `${summary.percentage}%` }}
                                 />
                               </div>
@@ -2961,17 +2882,16 @@ const startInlineDictation = (section, id) => {
                               {/* Botón PIN */}
                               <button
                                 onClick={(e) => togglePinAudit(audit.id, e)}
-                                className={`p-2 rounded-lg transition-colors cursor-pointer ${
-                                  isPinned 
-                                    ? 'text-blue-600 bg-blue-50 hover:bg-blue-100' 
-                                    : 'text-slate-400 hover:text-amber-500 hover:bg-slate-100'
-                                }`}
+                                className={`p-2 rounded-lg transition-colors cursor-pointer ${isPinned
+                                  ? 'text-blue-600 bg-blue-50 hover:bg-blue-100'
+                                  : 'text-slate-400 hover:text-amber-500 hover:bg-slate-100'
+                                  }`}
                                 title={isPinned ? "Desanclar del inicio" : "Fijar auditoría al inicio"}
                                 aria-label="Fijar auditoría"
                               >
                                 <Pin size={16} className={isPinned ? "fill-blue-600 rotate-45" : ""} />
                               </button>
-                              
+
                               {/* Botón Compartir */}
                               <button
                                 onClick={(e) => handleOpenShareModal(audit, e)}
@@ -3017,17 +2937,17 @@ const startInlineDictation = (section, id) => {
 
                                 {openDropdownAuditId === audit.id && (
                                   <>
-                                    <div 
-                                      className="fixed inset-0 z-40 bg-transparent" 
+                                    <div
+                                      className="fixed inset-0 z-40 bg-transparent"
                                       onClick={(e) => { e.stopPropagation(); setOpenDropdownAuditId(null); }}
                                     />
-                                    <div 
+                                    <div
                                       style={{ top: `${openDropdownCoords.top}px`, right: `${openDropdownCoords.right}px` }}
                                       className="fixed w-52 sm:w-56 bg-white rounded-xl shadow-xl border border-slate-100 py-1.5 z-50 text-left animate-in fade-in zoom-in-95 duration-100"
                                       onClick={(e) => e.stopPropagation()}
                                     >
                                       {/* Opción 1: Mi Borrador */}
-                                      <button 
+                                      <button
                                         type="button"
                                         onClick={() => {
                                           setOpenDropdownAuditId(null);
@@ -3050,7 +2970,7 @@ const startInlineDictation = (section, id) => {
                                         const colUid = colleagueEntry ? colleagueEntry.uid : null;
 
                                         return (
-                                          <button 
+                                          <button
                                             type="button"
                                             disabled={!hasColleague}
                                             onClick={() => {
@@ -3058,9 +2978,8 @@ const startInlineDictation = (section, id) => {
                                               setOpenDropdownAuditId(null);
                                               handleOpenAuditWithOptions(audit, 'colleague', colUid);
                                             }}
-                                            className={`w-full flex items-center justify-between px-3.5 py-2 text-xs text-slate-700 transition-colors ${
-                                              hasColleague ? 'hover:bg-slate-50 hover:text-blue-600 cursor-pointer group' : 'opacity-40 cursor-not-allowed'
-                                            }`}
+                                            className={`w-full flex items-center justify-between px-3.5 py-2 text-xs text-slate-700 transition-colors ${hasColleague ? 'hover:bg-slate-50 hover:text-blue-600 cursor-pointer group' : 'opacity-40 cursor-not-allowed'
+                                              }`}
                                           >
                                             <div className="flex items-center gap-2.5 min-w-0">
                                               <Eye size={15} className="text-slate-400 group-hover:text-blue-600 transition-colors shrink-0" />
@@ -3080,7 +2999,7 @@ const startInlineDictation = (section, id) => {
                                         const isConsolidated = audit.data?.finalAudit?.status === 'consolidated' || audit.finalAudit?.status === 'consolidated';
 
                                         return (
-                                          <button 
+                                          <button
                                             type="button"
                                             disabled={!isConsolidated}
                                             onClick={() => {
@@ -3088,17 +3007,15 @@ const startInlineDictation = (section, id) => {
                                               setOpenDropdownAuditId(null);
                                               handleOpenAuditWithOptions(audit, 'official');
                                             }}
-                                            className={`w-full flex items-center justify-between px-3.5 py-2 text-xs text-slate-700 transition-colors ${
-                                              isConsolidated ? 'hover:bg-slate-50 hover:text-emerald-700 cursor-pointer group' : 'opacity-40 cursor-not-allowed'
-                                            }`}
+                                            className={`w-full flex items-center justify-between px-3.5 py-2 text-xs text-slate-700 transition-colors ${isConsolidated ? 'hover:bg-slate-50 hover:text-emerald-700 cursor-pointer group' : 'opacity-40 cursor-not-allowed'
+                                              }`}
                                           >
                                             <div className="flex items-center gap-2.5">
                                               <ShieldCheck size={15} className={`transition-colors ${isConsolidated ? 'text-slate-400 group-hover:text-emerald-600' : 'text-slate-300'}`} />
                                               <span>Versión Oficial</span>
                                             </div>
-                                            <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                                              isConsolidated ? 'text-emerald-700 bg-emerald-50' : 'text-slate-400'
-                                            }`}>
+                                            <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${isConsolidated ? 'text-emerald-700 bg-emerald-50' : 'text-slate-400'
+                                              }`}>
                                               {isConsolidated ? 'Oficial' : 'Pendiente'}
                                             </span>
                                           </button>
@@ -3107,7 +3024,7 @@ const startInlineDictation = (section, id) => {
 
                                       {/* Opción 4: Comparar y Fusionar (Merge) */}
                                       {(currentUserRole === 'admin' || currentUserRole === 'auditor') && (
-                                        <button 
+                                        <button
                                           type="button"
                                           onClick={() => {
                                             setOpenDropdownAuditId(null);
@@ -3177,7 +3094,7 @@ const startInlineDictation = (section, id) => {
         {/* Modal de Auditorías Archivadas */}
         {showArchivedModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
-            <div 
+            <div
               className="w-full max-w-3xl bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden flex flex-col max-h-[85vh] animate-in zoom-in-95 duration-200"
               onClick={(e) => e.stopPropagation()}
             >
@@ -3194,7 +3111,7 @@ const startInlineDictation = (section, id) => {
                     </p>
                   </div>
                 </div>
-                <button 
+                <button
                   onClick={() => setShowArchivedModal(false)}
                   className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
                   title="Cerrar"
@@ -3278,7 +3195,7 @@ const startInlineDictation = (section, id) => {
         {/* Modal de Historial de Cambios */}
         {showLogsModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
-            <div 
+            <div
               className="w-full max-w-3xl bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden flex flex-col max-h-[85vh] animate-in zoom-in-95 duration-200"
               onClick={(e) => e.stopPropagation()}
             >
@@ -3295,7 +3212,7 @@ const startInlineDictation = (section, id) => {
                     </p>
                   </div>
                 </div>
-                <button 
+                <button
                   onClick={() => setShowLogsModal(false)}
                   className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
                   title="Cerrar"
@@ -3321,7 +3238,7 @@ const startInlineDictation = (section, id) => {
                     {auditLogs.map((log) => {
                       const date = new Date(log.timestamp || 0);
                       const formattedDate = date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                      
+
                       let badgeColor = 'bg-slate-100 text-slate-700 border-slate-200';
                       let dotColor = 'bg-slate-400';
                       let actionLabel = 'Modificación';
@@ -3414,13 +3331,12 @@ const startInlineDictation = (section, id) => {
 
               {/* Botón de Ajustes con Dropdown */}
               <div className="relative" ref={settingsMenuRef}>
-                <button 
+                <button
                   onClick={() => setShowSettingsDropdown(prev => !prev)}
-                  className={`w-9 h-9 rounded-lg border transition-all flex items-center justify-center cursor-pointer ${
-                    showSettingsDropdown 
-                      ? 'border-blue-400 text-blue-600 bg-blue-50/70 shadow-2xs' 
-                      : 'border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                  }`}
+                  className={`w-9 h-9 rounded-lg border transition-all flex items-center justify-center cursor-pointer ${showSettingsDropdown
+                    ? 'border-blue-400 text-blue-600 bg-blue-50/70 shadow-2xs'
+                    : 'border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                    }`}
                   title="Configuración y herramientas"
                 >
                   <Settings size={18} strokeWidth={1.8} className={`transition-transform duration-200 ${showSettingsDropdown ? 'rotate-45 text-blue-600' : ''}`} />
@@ -3464,8 +3380,8 @@ const startInlineDictation = (section, id) => {
               </div>
 
               {/* Botón de Logout */}
-              <button 
-                onClick={() => { signOut(auth); resetToInitialState(); setStep('dashboard'); }} 
+              <button
+                onClick={() => { signOut(auth); resetToInitialState(); setStep('dashboard'); }}
                 className="w-9 h-9 rounded-lg border border-slate-200 text-slate-500 hover:text-rose-600 hover:bg-rose-50 hover:border-rose-200 flex items-center justify-center transition-all shadow-2xs cursor-pointer"
                 title="Cerrar sesión"
               >
@@ -3479,11 +3395,11 @@ const startInlineDictation = (section, id) => {
         <main className="flex-1 py-10 px-4">
           {/* Botón Volver al Panel */}
           <div className="max-w-4xl mx-auto mb-6">
-            <button 
+            <button
               onClick={() => {
                 resetToInitialState();
                 setStep('dashboard');
-              }} 
+              }}
               className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors cursor-pointer"
             >
               <ArrowLeft size={16} />
@@ -3577,116 +3493,6 @@ const startInlineDictation = (section, id) => {
               </div>
             </div>
 
-            {/* Modalidad de Trabajo: Individual vs Colaborativa (Máx. 2 auditores) */}
-            <div className="mb-8">
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-2.5">
-                Modalidad de Trabajo de la Auditoría *
-              </label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                {/* Opción 1: Individual */}
-                <div
-                  onClick={() => setCreationAuditMode('single')}
-                  className={`p-4 rounded-xl border transition-all cursor-pointer flex items-start gap-3.5 ${
-                    creationAuditMode === 'single'
-                      ? 'border-blue-600 bg-blue-50/30 ring-2 ring-blue-100 shadow-xs'
-                      : 'border-slate-200 hover:border-slate-300 bg-white'
-                  }`}
-                >
-                  <div className={`p-2.5 rounded-lg shrink-0 ${
-                    creationAuditMode === 'single' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500'
-                  }`}>
-                    <User size={18} />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-slate-800">Individual</span>
-                      <span className="text-[10px] font-medium bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">
-                        1 Auditor
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-                      Evaluación directa conducida por un solo auditor. Sin necesidad de consolidación o fusiones.
-                    </p>
-                  </div>
-                </div>
-
-                {/* Opción 2: Colaborativa */}
-                <div
-                  onClick={() => setCreationAuditMode('collaborative')}
-                  className={`p-4 rounded-xl border transition-all cursor-pointer flex items-start gap-3.5 ${
-                    creationAuditMode === 'collaborative'
-                      ? 'border-indigo-600 bg-indigo-50/30 ring-2 ring-indigo-100 shadow-xs'
-                      : 'border-slate-200 hover:border-slate-300 bg-white'
-                  }`}
-                >
-                  <div className={`p-2.5 rounded-lg shrink-0 ${
-                    creationAuditMode === 'collaborative' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'
-                  }`}>
-                    <Users size={18} />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-slate-800">Colaborativa</span>
-                      <span className="text-[10px] font-medium bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">
-                        Máx. 2 Auditores
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-                      Borradores aislados en paralelo por auditor y panel de fusión (Merge) para la Versión Oficial.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Campos para el Co-Auditor si la modalidad es colaborativa */}
-              {creationAuditMode === 'collaborative' && (
-                <div className="mt-4 p-4 bg-indigo-50/40 border border-indigo-100 rounded-xl animate-in fade-in duration-200">
-                  <div className="text-xs font-semibold text-indigo-900 mb-3 flex items-center gap-1.5">
-                    <Users size={15} className="text-indigo-600" />
-                    <span>Datos del Co-Auditor Asignado (Auditor 2)</span>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div>
-                      <label className="block text-[11px] font-medium text-slate-600 mb-1">
-                        Nombre del Co-Auditor *
-                      </label>
-                      <input
-                        type="text"
-                        value={colleagueNameInput}
-                        onChange={(e) => setColleagueNameInput(e.target.value)}
-                        placeholder="Ej. Flavio Covarrubias"
-                        className="w-full text-xs rounded-lg border border-slate-200 px-3 py-2 bg-white text-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200 outline-none"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-medium text-slate-600 mb-1">
-                        Correo del Co-Auditor
-                      </label>
-                      <input
-                        type="email"
-                        value={colleagueEmailInput}
-                        onChange={(e) => setColleagueEmailInput(e.target.value)}
-                        placeholder="ejemplo@empresa.com"
-                        className="w-full text-xs rounded-lg border border-slate-200 px-3 py-2 bg-white text-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200 outline-none"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-medium text-slate-600 mb-1">
-                        Rol Asignado
-                      </label>
-                      <input
-                        type="text"
-                        value={colleagueRoleInput}
-                        onChange={(e) => setColleagueRoleInput(e.target.value)}
-                        placeholder="Co-Auditor"
-                        className="w-full text-xs rounded-lg border border-slate-200 px-3 py-2 bg-white text-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200 outline-none"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
             {/* Selector de Metodología / Estructura del Cuestionario */}
             <div className="mb-6">
               <div className="flex items-center justify-between mb-3">
@@ -3700,11 +3506,10 @@ const startInlineDictation = (section, id) => {
                 {/* Opción 1: Base */}
                 <div
                   onClick={() => setCreationMode('base')}
-                  className={`relative rounded-xl p-5 cursor-pointer transition-all ${
-                    creationMode === 'base'
-                      ? 'border-2 border-blue-600 bg-blue-50/20 ring-2 ring-blue-100 shadow-xs'
-                      : 'border border-slate-200 hover:border-blue-400 bg-white'
-                  }`}
+                  className={`relative rounded-xl p-5 cursor-pointer transition-all ${creationMode === 'base'
+                    ? 'border-2 border-blue-600 bg-blue-50/20 ring-2 ring-blue-100 shadow-xs'
+                    : 'border border-slate-200 hover:border-blue-400 bg-white'
+                    }`}
                 >
                   <div className="flex items-center justify-between mb-3">
                     <span className="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-sm">
@@ -3723,11 +3528,10 @@ const startInlineDictation = (section, id) => {
                 {/* Opción 2: Desde Cero */}
                 <div
                   onClick={() => setCreationMode('blank')}
-                  className={`relative rounded-xl p-5 cursor-pointer transition-all ${
-                    creationMode === 'blank'
-                      ? 'border-2 border-blue-600 bg-blue-50/20 ring-2 ring-blue-100 shadow-xs'
-                      : 'border border-slate-200 hover:border-blue-400 bg-white'
-                  }`}
+                  className={`relative rounded-xl p-5 cursor-pointer transition-all ${creationMode === 'blank'
+                    ? 'border-2 border-blue-600 bg-blue-50/20 ring-2 ring-blue-100 shadow-xs'
+                    : 'border border-slate-200 hover:border-blue-400 bg-white'
+                    }`}
                 >
                   <div className="flex items-center justify-between mb-3">
                     <span className="w-8 h-8 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center font-bold text-sm">
@@ -3746,11 +3550,10 @@ const startInlineDictation = (section, id) => {
                 {/* Opción 3: Importación */}
                 <div
                   onClick={() => setCreationMode('import')}
-                  className={`relative rounded-xl p-5 cursor-pointer transition-all ${
-                    creationMode === 'import'
-                      ? 'border-2 border-blue-600 bg-blue-50/20 ring-2 ring-blue-100 shadow-xs'
-                      : 'border border-slate-200 hover:border-blue-400 bg-white'
-                  }`}
+                  className={`relative rounded-xl p-5 cursor-pointer transition-all ${creationMode === 'import'
+                    ? 'border-2 border-blue-600 bg-blue-50/20 ring-2 ring-blue-100 shadow-xs'
+                    : 'border border-slate-200 hover:border-blue-400 bg-white'
+                    }`}
                 >
                   <div className="flex items-center justify-between mb-3">
                     <span className="w-8 h-8 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center font-bold text-sm">
@@ -3774,21 +3577,34 @@ const startInlineDictation = (section, id) => {
                     <div>
                       <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                         <FileSpreadsheet size={16} className="text-emerald-600" />
-                        <span>Plantilla oficial en Excel (.xlsx)</span>
+                        <span>Plantilla Oficial de Auditoría Estructurada</span>
                       </div>
                       <p className="text-xs text-slate-500 mt-0.5">
-                        Descarga la plantilla con las preguntas base como ejemplo, modifícala en Excel y súbela aquí.
+                        Incluye 3 hojas: <strong>1_Configuración</strong>, <strong>2_Criterios_Evaluación</strong> y <strong>3_Cuestionario_Auditoria</strong> con validaciones.
                       </p>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => downloadExcelTemplate()}
-                      className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg transition shrink-0 flex items-center gap-1.5 shadow-2xs cursor-pointer"
-                    >
-                      <Download size={14} />
-                      <span>Descargar Plantilla Excel</span>
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => downloadExcelTemplate()}
+                        className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg transition shrink-0 flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                        title="Descargar libro Excel con las 3 hojas configuradas"
+                      >
+                        <Download size={14} />
+                        <span>Plantilla Excel (.xlsx)</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => downloadJsonTemplate()}
+                        className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition shrink-0 flex items-center gap-1.5 border border-slate-300 cursor-pointer"
+                        title="Descargar esquema equivalente en formato JSON"
+                      >
+                        <FileCode size={14} />
+                        <span>Esquema JSON</span>
+                      </button>
+                    </div>
                   </div>
 
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-1">
@@ -3798,7 +3614,7 @@ const startInlineDictation = (section, id) => {
                         <span>Subir cuestionario diligenciado</span>
                       </div>
                       <p className="text-xs text-slate-500 mt-0.5">
-                        Formatos admitidos: <strong>.xlsx</strong>, <strong>.xls</strong> o <strong>.json</strong>.
+                        Formatos admitidos: <strong>.xlsx</strong>, <strong>.xls</strong> o <strong>.json</strong> con las 3 hojas o esquema estructurado.
                       </p>
                     </div>
 
@@ -3810,14 +3626,26 @@ const startInlineDictation = (section, id) => {
                   </div>
 
                   {importedFileName && importSummary && (
-                    <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-lg flex items-center justify-between">
-                      <div className="flex items-center gap-2 truncate">
-                        <CheckCircle size={16} className="text-emerald-600 shrink-0" />
-                        <span className="font-semibold truncate">{importedFileName}</span>
+                    <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs rounded-xl space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 truncate font-semibold text-emerald-800">
+                          <CheckCircle size={16} className="text-emerald-600 shrink-0" />
+                          <span className="truncate">{importedFileName}</span>
+                        </div>
+                        <span className="text-[11px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-md shrink-0">
+                          Detectado
+                        </span>
                       </div>
-                      <span className="text-[11px] font-bold bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-md shrink-0 ml-2">
-                        {importSummary.areasCount} áreas / {importSummary.questionsCount} preguntas detectadas
-                      </span>
+
+                      <div className="text-[11px] text-emerald-700 flex flex-wrap items-center gap-x-3 gap-y-1 pt-1 border-t border-emerald-200/60">
+                        <span><strong>Plantilla:</strong> {importSummary.templateName}</span>
+                        {importSummary.framework && <span>• <strong>Marco:</strong> {importSummary.framework}</span>}
+                        <span>• <strong>Estructura:</strong> {importSummary.areasCount} Dominios, {importSummary.questionsCount} Controles</span>
+                        <span>• <strong>Rúbrica:</strong> {importSummary.criteriaCount} niveles</span>
+                        {importSummary.initialResponsesCount > 0 && (
+                          <span className="text-blue-700 font-semibold">• {importSummary.initialResponsesCount} respuestas pre-cargadas</span>
+                        )}
+                      </div>
                     </div>
                   )}
 
@@ -3860,6 +3688,12 @@ const startInlineDictation = (section, id) => {
                       return;
                     }
                     initialSecs = sortSections(importedSections);
+                    if (importedCriteria && importedCriteria.length > 0) {
+                      setEvaluationCriteria(importedCriteria);
+                    }
+                    if (importedConfig) {
+                      setAuditConfig(importedConfig);
+                    }
                   }
 
                   try {
@@ -3868,132 +3702,22 @@ const startInlineDictation = (section, id) => {
                     const newId = Date.now().toString();
                     const lockAcquired = await acquireLock(newId);
                     if (lockAcquired) {
-                      const isCollab = creationAuditMode === 'collaborative';
-                      const leadAuditor = {
-                        uid: currentAuditorUid,
-                        name: actor.nombreAuditor.trim(),
-                        email: user?.email || '',
-                        role: actor.rol || 'Auditor Líder'
-                      };
-                      const auditors = [leadAuditor];
-                      const initialDrafts = {
-                        [currentAuditorUid]: {
-                          answers: {},
-                          progress: 0,
-                          updatedAt: new Date().toISOString()
-                        }
-                      };
-                      const initialEvaluations = {
-                        [currentAuditorUid]: {
-                          auditorName: actor.nombreAuditor.trim(),
-                          role: actor.rol || 'Auditor Líder',
-                          updatedAt: new Date().toISOString(),
-                          answers: {}
-                        }
-                      };
-
-                      if (isCollab) {
-                        const coName = (colleagueNameInput || '').trim() || 'Co-Auditor';
-                        const coUid = colleagueEmailInput.trim() 
-                          ? `auditor_${colleagueEmailInput.trim().replace(/[^a-zA-Z0-9]/g, '_')}`
-                          : `coauditor_${Date.now()}`;
-                        const coAuditor = {
-                          uid: coUid,
-                          name: coName,
-                          email: colleagueEmailInput.trim() || '',
-                          role: colleagueRoleInput.trim() || 'Co-Auditor'
-                        };
-                        auditors.push(coAuditor);
-                        initialDrafts[coUid] = {
-                          answers: {},
-                          progress: 0,
-                          updatedAt: new Date().toISOString()
-                        };
-                        initialEvaluations[coUid] = {
-                          auditorName: coName,
-                          role: colleagueRoleInput.trim() || 'Co-Auditor',
-                          updatedAt: new Date().toISOString(),
-                          answers: {}
-                        };
-                      }
-
-                      const initialOfficialVersion = {
-                        isPublished: false,
-                        mergedAt: null,
-                        mergedBy: null,
-                        answers: {}
-                      };
-
                       setCurrentAuditId(newId);
-                      setAuditMode(isCollab ? 'collaborative' : 'single');
-                      setMaxAuditors(isCollab ? 2 : 1);
-                      setAuditorsList(auditors);
-                      setDrafts(initialDrafts);
-                      setOfficialVersion(initialOfficialVersion);
-                      setEvaluations(initialEvaluations);
-                      setFinalAudit({ status: 'draft', answers: {} });
-                      setActiveEvaluationView('my_draft');
-
                       setIntroData({
                         ...INITIAL_INTRO_DATA,
                         nombreEmpresa: actor.nombreEmpresa.trim(),
                         nombre: actor.nombreAuditor.trim()
                       });
-                      setResponses({});
+                      const initialResponsesMap = (creationMode === 'import' && importedInitialResponses && Object.keys(importedInitialResponses).length > 0)
+                        ? importedInitialResponses
+                        : {};
+                      setResponses(initialResponsesMap);
                       setGeneralComments('');
                       setCustomSections(initialSecs);
                       setExpandedSections({ 'Información General': true });
-                      setActiveSection(creationMode === 'blank' ? 'Área Inicial' : 'Información General');
+                      setActiveSection(creationMode === 'blank' ? 'Área Inicial' : (Object.keys(initialSecs)[0] || 'Información General'));
                       setActor(prev => ({ ...prev, contrasenaHash: hashed, contrasena: '' }));
-
-                      // Persistir documento canónico inicial en Firebase Firestore
-                      if (db) {
-                        try {
-                          const docRef = doc(db, "auditorias", newId);
-                          const initialAuditDoc = {
-                            id: newId,
-                            companyName: actor.nombreEmpresa.trim(),
-                            nombreEmpresa: actor.nombreEmpresa.trim(),
-                            mode: isCollab ? 'collaborative' : 'single',
-                            maxAuditors: isCollab ? 2 : 1,
-                            auditors,
-                            drafts: initialDrafts,
-                            officialVersion: initialOfficialVersion,
-                            lastModified: new Date().toISOString(),
-                            data: {
-                              introData: {
-                                ...INITIAL_INTRO_DATA,
-                                nombreEmpresa: actor.nombreEmpresa.trim(),
-                                nombre: actor.nombreAuditor.trim()
-                              },
-                              responses: {},
-                              generalComments: '',
-                              positiveComments: '',
-                              negativeComments: '',
-                              recommendations: '',
-                              actor: {
-                                ...actor,
-                                contrasenaHash: hashed,
-                                contrasena: ''
-                              },
-                              customSections: initialSecs,
-                              deletedQuestions: [],
-                              evaluations: initialEvaluations,
-                              finalAudit: { status: 'draft', answers: {} },
-                              mode: isCollab ? 'collaborative' : 'single',
-                              maxAuditors: isCollab ? 2 : 1,
-                              auditors,
-                              drafts: initialDrafts,
-                              officialVersion: initialOfficialVersion
-                            }
-                          };
-                          await setDoc(docRef, initialAuditDoc);
-                        } catch (e) {
-                          console.warn("Error guardando documento inicial en Firebase:", e);
-                        }
-                      }
-
-                      logAuditEvent('create', `Nueva auditoría creada para "${actor.nombreEmpresa.trim()}" (${isCollab ? 'Colaborativa' : 'Individual'})`, actor.nombreEmpresa.trim(), newId);
+                      logAuditEvent('create', `Nueva auditoría creada para "${actor.nombreEmpresa.trim()}"`, actor.nombreEmpresa.trim(), newId);
                       setStep('form');
                     }
                   } finally {
@@ -4022,7 +3746,7 @@ const startInlineDictation = (section, id) => {
   // Métricas duales para visualización en paralelo entre evaluadores (cálculo directo sin hooks condicionales)
   const calculateDualMetrics = () => {
     const totalQ = getTotalQuestions();
-    const myAnswersMap = drafts[currentAuditorUid]?.answers || evaluations[currentAuditorUid]?.answers || responses || {};
+    const myAnswersMap = evaluations[currentAuditorUid]?.answers || responses || {};
     let myScoreSum = 0;
     let myAnsweredCount = 0;
 
@@ -4040,67 +3764,19 @@ const startInlineDictation = (section, id) => {
     const myAvg = myAnsweredCount > 0 ? (myScoreSum / myAnsweredCount) : 0;
     const myProgress = totalQ > 0 ? Math.round((myAnsweredCount / totalQ) * 100) : 0;
 
-    // Si la auditoría está configurada como individual (1 auditor), no calcular métricas duales
-    if (auditMode === 'single') {
-      return {
-        totalQ,
-        hasColleague: false,
-        colleagueUid: null,
-        colleagueName: '',
-        my: {
-          name: currentAuditorName || 'Mi Evaluación',
-          avg: myAvg,
-          answered: myAnsweredCount,
-          progress: myProgress
-        },
-        colleague: {
-          name: '',
-          avg: 0,
-          answered: 0,
-          progress: 0
-        },
-        hasBothEvaluated: false,
-        delta: null
-      };
-    }
+    // Identificar colega evaluador secundario
+    const otherEntries = Object.entries(evaluations).filter(([uid, ev]) => {
+      if (uid !== currentAuditorUid) return true;
+      const name = ev.auditorName || '';
+      return name && currentAuditorName && name.toLowerCase() !== currentAuditorName.toLowerCase();
+    });
 
-    // Identificar colega evaluador secundario garantizando que NUNCA sea el usuario actual
-    let colleagueUid = null;
-    let colleagueName = '';
-    let colleagueAnswersMap = {};
-
-    // 1. Buscar en la lista oficial de auditores configurada
-    if (auditorsList && auditorsList.length > 0) {
-      const col = auditorsList.find(a => !isSameAuditor(a.uid, a.name, currentAuditorUid, user?.email, currentAuditorName));
-      if (col) {
-        colleagueUid = col.uid;
-        colleagueName = col.name;
-        colleagueAnswersMap = drafts[col.uid]?.answers || evaluations[col.uid]?.answers || {};
-      }
-    }
-
-    // 2. Si no se encontró en auditorsList, buscar en evaluations o drafts registrados
-    if (!colleagueName) {
-      const otherDraftEntries = Object.entries(drafts || {}).filter(([uid]) => {
-        return !isSameAuditor(uid, '', currentAuditorUid, user?.email, currentAuditorName);
-      });
-      const otherEvalEntries = Object.entries(evaluations || {}).filter(([uid, ev]) => {
-        const name = ev.auditorName || '';
-        return !isSameAuditor(uid, name, currentAuditorUid, user?.email, currentAuditorName);
-      });
-
-      if (otherEvalEntries.length > 0) {
-        const [uid, ev] = otherEvalEntries[0];
-        colleagueUid = uid;
-        colleagueName = ev.auditorName || 'Co-Auditor';
-        colleagueAnswersMap = ev.answers || drafts[uid]?.answers || {};
-      } else if (otherDraftEntries.length > 0) {
-        const [uid, d] = otherDraftEntries[0];
-        colleagueUid = uid;
-        colleagueName = 'Co-Auditor';
-        colleagueAnswersMap = d.answers || {};
-      }
-    }
+    const hasColleague = otherEntries.length > 0;
+    const colleagueEntry = hasColleague ? otherEntries[0] : null;
+    const colleagueUid = colleagueEntry ? colleagueEntry[0] : null;
+    const colleagueData = colleagueEntry ? colleagueEntry[1] : null;
+    const colleagueName = colleagueData?.auditorName || (actor.nombreAuditor && actor.nombreAuditor !== currentAuditorName ? actor.nombreAuditor : null);
+    const colleagueAnswersMap = colleagueData?.answers || {};
 
     let colleagueScoreSum = 0;
     let colleagueAnsweredCount = 0;
@@ -4126,7 +3802,7 @@ const startInlineDictation = (section, id) => {
       totalQ,
       hasColleague: !!colleagueName,
       colleagueUid,
-      colleagueName: colleagueName || 'Co-Auditor',
+      colleagueName: colleagueName || 'Auditor 2',
       my: {
         name: currentAuditorName || 'Mi Evaluación',
         avg: myAvg,
@@ -4134,7 +3810,7 @@ const startInlineDictation = (section, id) => {
         progress: myProgress
       },
       colleague: {
-        name: colleagueName || 'Co-Auditor',
+        name: colleagueName || 'Auditor 2',
         avg: colleagueAvg,
         answered: colleagueAnsweredCount,
         progress: colleagueProgress
@@ -4149,9 +3825,9 @@ const startInlineDictation = (section, id) => {
 
   return (
     <div className="min-h-screen relative bg-slate-50 p-4 md:p-8 text-slate-900">
-      
-      
-      
+
+
+
       {showScrollTop && (
         <button
           type="button"
@@ -4215,177 +3891,177 @@ const startInlineDictation = (section, id) => {
 
             {/* Botones de Acción Rápida en la esquina superior derecha */}
             <div className="flex items-center gap-2 self-end sm:self-center">
-                  {step === 'form' && !isGuestMode && (
-                    <button
-                      onClick={handleReturnToDashboard}
-                      className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200/80 cursor-pointer"
-                      title="Guardar y volver al panel"
-                    >
-                      <Home size={18} />
-                    </button>
-                  )}
-                  {/* Botón Consolidar y Fusionar (Merge) - Solo para auditores autenticados en modo edición */}
-                  {!isGuestMode && !isReadOnly && auditMode !== 'single' && (dualMetrics.hasColleague || Object.keys(evaluations).length > 1) && (
-                    <button
-                      onClick={() => setShowMergeModal(true)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200/70 rounded-lg transition-colors cursor-pointer shadow-2xs"
-                      title="Comparar respuestas de evaluadores y generar versión oficial"
-                    >
-                      <GitMerge size={14} className="text-indigo-600" />
-                      <span className="hidden sm:inline">Fusionar</span>
-                    </button>
-                  )}
-                  {/* Botón Compartir - Oculto en enlaces compartidos y modo solo lectura */}
-                  {!isGuestMode && !isReadOnly && (
-                    <button
-                      onClick={(e) => {
-                        const currentObj = savedAudits.find(a => a.id === currentAuditId) || {
-                          id: currentAuditId,
-                          nombreEmpresa: introData.nombreEmpresa,
-                          data: { actor, introData }
-                        };
-                        handleOpenShareModal(currentObj, e);
-                      }}
-                      className="p-2 text-slate-500 hover:text-blue-600 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200/80 cursor-pointer"
-                      title="Compartir enlace seguro de auditoría"
-                    >
-                      <Share2 size={18} />
-                    </button>
-                  )}
-                  {/* Botón Descargar Informe - Oculto en enlaces compartidos y modo solo lectura */}
-                  {!isGuestMode && !isReadOnly && (
-                    <div className="relative">
-                      <button
-                        onClick={() => { setShowExportMenu(!showExportMenu); setShowSettings(false); }}
-                        className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200/80 cursor-pointer"
-                        title="Descargar informe"
-                      >
-                        <Download size={18} />
-                      </button>
-                      {showExportMenu && (
-                        <>
-                          <div className="fixed inset-0 z-40" onClick={() => setShowExportMenu(false)}></div>
-                          <div className="absolute right-0 mt-2 w-52 bg-white rounded-xl shadow-lg border border-slate-100 py-1.5 z-50 text-sm animate-in fade-in zoom-in-95 duration-150">
-                            <button
-                              onClick={() => { exportToDocxPro(); setShowExportMenu(false); }}
-                              className="w-full flex items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-slate-50 transition-colors text-left cursor-pointer"
-                            >
-                              <FileText size={16} className="text-slate-400" />
-                              <span>Descargar en Word (.docx)</span>
-                            </button>
-                            <button
-                              onClick={() => { exportToExcel(); setShowExportMenu(false); }}
-                              className="w-full flex items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-slate-50 transition-colors text-left cursor-pointer"
-                            >
-                              <FileSpreadsheet size={16} className="text-slate-400" />
-                              <span>Descargar en Excel (.xlsx)</span>
-                            </button>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  )}
-                  {/* Botón Ajustes de Auditoría - Oculto en enlaces compartidos y modo solo lectura */}
-                  {!isGuestMode && !isReadOnly && (
-                    <div className="relative inline-block text-left">
-                      <button
-                        onClick={() => { setShowSettings(!showSettings); setShowExportMenu(false); }}
-                        className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200/80 cursor-pointer"
-                        title="Ajustes de auditoría"
-                      >
-                        <Settings size={18} />
-                      </button>
-                      {showSettings && (
-                        <>
-                          <div className="fixed inset-0 z-40" onClick={() => setShowSettings(false)}></div>
-                          <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-lg border border-slate-100 py-1.5 z-50 text-sm animate-in fade-in zoom-in-95 duration-150">
-                            <button
-                              onClick={async () => {
-                                setShowSettings(false);
-                                const currentObj = savedAudits.find(a => a.id === currentAuditId) || {
-                                  id: currentAuditId,
-                                  nombreEmpresa: introData.nombreEmpresa,
-                                  data: { actor, introData }
-                                };
-                                handleOpenShareModal(currentObj);
-                              }}
-                              className="w-full flex items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-slate-50 transition-colors text-left cursor-pointer"
-                            >
-                              <Share2 size={16} className="text-slate-400" />
-                              <span>Compartir Enlace</span>
-                            </button>
-                            <button
-                              onClick={async () => {
-                                setShowSettings(false);
-                                const oldPin = await showPrompt({
-                                  title: 'Verificación de Seguridad',
-                                  message: 'Ingresa tu PIN actual para autorizar el cambio:',
-                                  inputType: 'password',
-                                  placeholder: 'PIN actual...',
-                                  confirmText: 'Verificar'
-                                });
-                                if (oldPin === null) return;
-                                const oldHash = await hashPassword(oldPin);
-                                if (oldHash !== actor.contrasenaHash) {
-                                  await showAlert({
-                                    type: 'error',
-                                    title: 'PIN Incorrecto',
-                                    message: 'El PIN actual ingresado no coincide. No se puede cambiar el PIN.'
-                                  });
-                                  return;
-                                }
-                                const newPin = await showPrompt({
-                                  title: 'Nuevo PIN de Seguridad',
-                                  message: 'Ingresa el nuevo PIN para proteger esta auditoría:',
-                                  inputType: 'password',
-                                  placeholder: 'Nuevo PIN...',
-                                  confirmText: 'Guardar Nuevo PIN'
-                                });
-                                if (newPin) {
-                                  const newHash = await hashPassword(newPin);
-                                  setActor(prev => ({...prev, contrasenaHash: newHash}));
-                                  await showAlert({
-                                    type: 'success',
-                                    title: 'PIN Actualizado',
-                                    message: 'El PIN de seguridad ha sido actualizado exitosamente.'
-                                  });
-                                }
-                              }}
-                              className="w-full flex items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-slate-50 transition-colors text-left cursor-pointer"
-                            >
-                              <KeyRound size={16} className="text-slate-400" />
-                              <span>Cambiar PIN</span>
-                            </button>
-                            <button
-                              onClick={() => { setShowEditModal(true); setShowSettings(false); }}
-                              className="w-full flex items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-slate-50 transition-colors text-left cursor-pointer"
-                            >
-                              <FileCode size={16} className="text-slate-400" />
-                              <span>Editar Cuestionario</span>
-                            </button>
-                            <div className="border-t border-slate-100 my-1"></div>
-                            <button
-                              onClick={async () => {
-                                setShowSettings(false);
-                                const currentObj = savedAudits.find(a => a.id === currentAuditId) || {
-                                  id: currentAuditId,
-                                  nombreEmpresa: introData.nombreEmpresa,
-                                  data: { actor, introData }
-                                };
-                                await handleArchiveAudit(currentObj);
-                                handleReturnToDashboard();
-                              }}
-                              className="w-full flex items-center gap-2.5 px-4 py-2 text-red-600 hover:bg-red-50 transition-colors text-left font-medium cursor-pointer"
-                            >
-                              <Trash2 size={16} className="text-red-500" />
-                              <span>Eliminar Auditoría</span>
-                            </button>
-                          </div>
-                        </>
-                      )}
-                    </div>
+              {step === 'form' && !isGuestMode && (
+                <button
+                  onClick={handleReturnToDashboard}
+                  className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200/80 cursor-pointer"
+                  title="Guardar y volver al panel"
+                >
+                  <Home size={18} />
+                </button>
+              )}
+              {/* Botón Consolidar y Fusionar (Merge) - Solo para auditores autenticados en modo edición */}
+              {!isGuestMode && !isReadOnly && (dualMetrics.hasColleague || Object.keys(evaluations).length > 1) && (
+                <button
+                  onClick={() => setShowMergeModal(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200/70 rounded-lg transition-colors cursor-pointer shadow-2xs"
+                  title="Comparar respuestas de evaluadores y generar versión oficial"
+                >
+                  <GitMerge size={14} className="text-indigo-600" />
+                  <span className="hidden sm:inline">Fusionar</span>
+                </button>
+              )}
+              {/* Botón Compartir - Oculto en enlaces compartidos y modo solo lectura */}
+              {!isGuestMode && !isReadOnly && (
+                <button
+                  onClick={(e) => {
+                    const currentObj = savedAudits.find(a => a.id === currentAuditId) || {
+                      id: currentAuditId,
+                      nombreEmpresa: introData.nombreEmpresa,
+                      data: { actor, introData }
+                    };
+                    handleOpenShareModal(currentObj, e);
+                  }}
+                  className="p-2 text-slate-500 hover:text-blue-600 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200/80 cursor-pointer"
+                  title="Compartir enlace seguro de auditoría"
+                >
+                  <Share2 size={18} />
+                </button>
+              )}
+              {/* Botón Descargar Informe - Oculto en enlaces compartidos y modo solo lectura */}
+              {!isGuestMode && !isReadOnly && (
+                <div className="relative">
+                  <button
+                    onClick={() => { setShowExportMenu(!showExportMenu); setShowSettings(false); }}
+                    className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200/80 cursor-pointer"
+                    title="Descargar informe"
+                  >
+                    <Download size={18} />
+                  </button>
+                  {showExportMenu && (
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={() => setShowExportMenu(false)}></div>
+                      <div className="absolute right-0 mt-2 w-52 bg-white rounded-xl shadow-lg border border-slate-100 py-1.5 z-50 text-sm animate-in fade-in zoom-in-95 duration-150">
+                        <button
+                          onClick={() => { exportToDocxPro(); setShowExportMenu(false); }}
+                          className="w-full flex items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-slate-50 transition-colors text-left cursor-pointer"
+                        >
+                          <FileText size={16} className="text-slate-400" />
+                          <span>Descargar en Word (.docx)</span>
+                        </button>
+                        <button
+                          onClick={() => { exportToExcel(); setShowExportMenu(false); }}
+                          className="w-full flex items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-slate-50 transition-colors text-left cursor-pointer"
+                        >
+                          <FileSpreadsheet size={16} className="text-slate-400" />
+                          <span>Descargar en Excel (.xlsx)</span>
+                        </button>
+                      </div>
+                    </>
                   )}
                 </div>
+              )}
+              {/* Botón Ajustes de Auditoría - Oculto en enlaces compartidos y modo solo lectura */}
+              {!isGuestMode && !isReadOnly && (
+                <div className="relative inline-block text-left">
+                  <button
+                    onClick={() => { setShowSettings(!showSettings); setShowExportMenu(false); }}
+                    className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200/80 cursor-pointer"
+                    title="Ajustes de auditoría"
+                  >
+                    <Settings size={18} />
+                  </button>
+                  {showSettings && (
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={() => setShowSettings(false)}></div>
+                      <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-lg border border-slate-100 py-1.5 z-50 text-sm animate-in fade-in zoom-in-95 duration-150">
+                        <button
+                          onClick={async () => {
+                            setShowSettings(false);
+                            const currentObj = savedAudits.find(a => a.id === currentAuditId) || {
+                              id: currentAuditId,
+                              nombreEmpresa: introData.nombreEmpresa,
+                              data: { actor, introData }
+                            };
+                            handleOpenShareModal(currentObj);
+                          }}
+                          className="w-full flex items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-slate-50 transition-colors text-left cursor-pointer"
+                        >
+                          <Share2 size={16} className="text-slate-400" />
+                          <span>Compartir Enlace</span>
+                        </button>
+                        <button
+                          onClick={async () => {
+                            setShowSettings(false);
+                            const oldPin = await showPrompt({
+                              title: 'Verificación de Seguridad',
+                              message: 'Ingresa tu PIN actual para autorizar el cambio:',
+                              inputType: 'password',
+                              placeholder: 'PIN actual...',
+                              confirmText: 'Verificar'
+                            });
+                            if (oldPin === null) return;
+                            const oldHash = await hashPassword(oldPin);
+                            if (oldHash !== actor.contrasenaHash) {
+                              await showAlert({
+                                type: 'error',
+                                title: 'PIN Incorrecto',
+                                message: 'El PIN actual ingresado no coincide. No se puede cambiar el PIN.'
+                              });
+                              return;
+                            }
+                            const newPin = await showPrompt({
+                              title: 'Nuevo PIN de Seguridad',
+                              message: 'Ingresa el nuevo PIN para proteger esta auditoría:',
+                              inputType: 'password',
+                              placeholder: 'Nuevo PIN...',
+                              confirmText: 'Guardar Nuevo PIN'
+                            });
+                            if (newPin) {
+                              const newHash = await hashPassword(newPin);
+                              setActor(prev => ({ ...prev, contrasenaHash: newHash }));
+                              await showAlert({
+                                type: 'success',
+                                title: 'PIN Actualizado',
+                                message: 'El PIN de seguridad ha sido actualizado exitosamente.'
+                              });
+                            }
+                          }}
+                          className="w-full flex items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-slate-50 transition-colors text-left cursor-pointer"
+                        >
+                          <KeyRound size={16} className="text-slate-400" />
+                          <span>Cambiar PIN</span>
+                        </button>
+                        <button
+                          onClick={() => { setShowEditModal(true); setShowSettings(false); }}
+                          className="w-full flex items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-slate-50 transition-colors text-left cursor-pointer"
+                        >
+                          <FileCode size={16} className="text-slate-400" />
+                          <span>Editar Cuestionario</span>
+                        </button>
+                        <div className="border-t border-slate-100 my-1"></div>
+                        <button
+                          onClick={async () => {
+                            setShowSettings(false);
+                            const currentObj = savedAudits.find(a => a.id === currentAuditId) || {
+                              id: currentAuditId,
+                              nombreEmpresa: introData.nombreEmpresa,
+                              data: { actor, introData }
+                            };
+                            await handleArchiveAudit(currentObj);
+                            handleReturnToDashboard();
+                          }}
+                          className="w-full flex items-center gap-2.5 px-4 py-2 text-red-600 hover:bg-red-50 transition-colors text-left font-medium cursor-pointer"
+                        >
+                          <Trash2 size={16} className="text-red-500" />
+                          <span>Eliminar Auditoría</span>
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -4421,11 +4097,10 @@ const startInlineDictation = (section, id) => {
                 Calificación en Paralelo
               </span>
               {dualMetrics.hasBothEvaluated && dualMetrics.delta !== null && (
-                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
-                  Number(dualMetrics.delta) >= 0.5 
-                    ? 'bg-amber-50 text-amber-700 border-amber-200' 
-                    : 'bg-blue-50 text-blue-700 border-blue-100'
-                }`} title={`Diferencia de criterio de ${dualMetrics.delta} pts entre ambos evaluadores`}>
+                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${Number(dualMetrics.delta) >= 0.5
+                  ? 'bg-amber-50 text-amber-700 border-amber-200'
+                  : 'bg-blue-50 text-blue-700 border-blue-100'
+                  }`} title={`Diferencia de criterio de ${dualMetrics.delta} pts entre ambos evaluadores`}>
                   Δ {dualMetrics.delta} pts diff
                 </span>
               )}
@@ -4552,7 +4227,7 @@ const startInlineDictation = (section, id) => {
               <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">
                 Desglose por Áreas
               </span>
-              {!isGuestMode && !isReadOnly && auditMode !== 'single' && (dualMetrics.hasColleague || Object.keys(evaluations).length > 1) && (
+              {(dualMetrics.hasColleague || Object.keys(evaluations).length > 1) && (
                 <button
                   type="button"
                   onClick={() => setShowMergeModal(true)}
@@ -4601,25 +4276,23 @@ const startInlineDictation = (section, id) => {
           {/* Menú Lateral (Sidebar) */}
           <div className="w-full md:w-1/4 flex-shrink-0 space-y-1.5 md:sticky md:top-4 md:self-start max-h-[200px] md:max-h-[90vh] overflow-y-auto pr-2 custom-scrollbar">
             <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2.5 ml-1">Navegación</h3>
-            
+
             <button
               onClick={() => setActiveSection('Información General')}
-              className={`w-full text-left px-3.5 py-2.5 rounded-lg text-sm transition-colors flex items-center justify-between cursor-pointer ${
-                activeSection === 'Información General' 
-                ? 'bg-blue-50 text-blue-700 font-semibold' 
+              className={`w-full text-left px-3.5 py-2.5 rounded-lg text-sm transition-colors flex items-center justify-between cursor-pointer ${activeSection === 'Información General'
+                ? 'bg-blue-50 text-blue-700 font-semibold'
                 : 'text-slate-600 hover:bg-slate-50 font-medium'
-              }`}
+                }`}
             >
               <span className="truncate">Información General</span>
             </button>
 
             <button
               onClick={() => setActiveSection('Preliminar de la Empresa')}
-              className={`w-full text-left px-3.5 py-2.5 rounded-lg text-sm transition-colors flex items-center justify-between cursor-pointer ${
-                activeSection === 'Preliminar de la Empresa' 
-                ? 'bg-blue-50 text-blue-700 font-semibold' 
+              className={`w-full text-left px-3.5 py-2.5 rounded-lg text-sm transition-colors flex items-center justify-between cursor-pointer ${activeSection === 'Preliminar de la Empresa'
+                ? 'bg-blue-50 text-blue-700 font-semibold'
                 : 'text-slate-600 hover:bg-slate-50 font-medium'
-              }`}
+                }`}
             >
               <div className="flex items-center gap-2 truncate">
                 <Sparkles size={16} className={introData.preliminarEmpresa ? "text-blue-600" : "text-slate-400"} />
@@ -4648,16 +4321,14 @@ const startInlineDictation = (section, id) => {
                 <button
                   key={section}
                   onClick={() => setActiveSection(section)}
-                  className={`w-full text-left px-3.5 py-2.5 rounded-lg text-sm transition-colors flex items-center justify-between cursor-pointer ${
-                    activeSection === section 
-                    ? 'bg-blue-50 text-blue-700 font-semibold' 
+                  className={`w-full text-left px-3.5 py-2.5 rounded-lg text-sm transition-colors flex items-center justify-between cursor-pointer ${activeSection === section
+                    ? 'bg-blue-50 text-blue-700 font-semibold'
                     : 'text-slate-600 hover:bg-slate-50 font-medium'
-                  }`}
+                    }`}
                 >
                   <span className="truncate mr-2" title={section}>{section}</span>
-                  <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${
-                    isComplete ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'
-                  }`}>
+                  <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${isComplete ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'
+                    }`}>
                     {answered}/{questions.length}
                   </span>
                 </button>
@@ -4666,11 +4337,10 @@ const startInlineDictation = (section, id) => {
 
             <button
               onClick={() => setActiveSection('Reporte Final')}
-              className={`w-full text-left px-3.5 py-2.5 rounded-lg text-sm font-semibold transition-colors flex items-center justify-between mt-4 cursor-pointer ${
-                activeSection === 'Reporte Final' 
-                ? 'bg-slate-900 text-white shadow-xs' 
+              className={`w-full text-left px-3.5 py-2.5 rounded-lg text-sm font-semibold transition-colors flex items-center justify-between mt-4 cursor-pointer ${activeSection === 'Reporte Final'
+                ? 'bg-slate-900 text-white shadow-xs'
                 : 'text-slate-700 bg-white hover:bg-slate-50 border border-slate-200/80'
-              }`}
+                }`}
             >
               <div className="flex items-center gap-2 truncate">
                 <Sparkles size={16} className={activeSection === 'Reporte Final' ? 'text-blue-400' : 'text-slate-400'} />
@@ -4684,7 +4354,7 @@ const startInlineDictation = (section, id) => {
 
           {/* Área de Contenido Principal */}
           <div className="w-full md:w-3/4 flex-grow">
-            
+
             {/* Sección de Información General Activa */}
             {activeSection === 'Información General' && (
               <div className="mb-8 bg-white rounded-none shadow-sm overflow-hidden border border-slate-200 border-t-2 border-t-[#00d4ff] animate-in fade-in slide-in-from-bottom-4 duration-300">
@@ -4695,267 +4365,254 @@ const startInlineDictation = (section, id) => {
                   </div>
                 </div>
                 <div className="p-6 space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Nombre de la empresa *
-                  </label>
-                  <input
-                    type="text"
-                    disabled={isFormDisabled}
-                    value={introData.nombreEmpresa}
-                    onChange={(e) => updateIntroData('nombreEmpresa', e.target.value)}
-                    placeholder="Razón social o nombre comercial"
-                    className={`w-full px-4 py-2 border-2 rounded-none font-semibold transition ${
-                      isFormDisabled
-                        ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
-                        : 'border-cyan-300 focus:ring-2 focus:ring-cyan-500 focus:border-transparent'
-                    }`}
-                  />
-                </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        Nombre de la empresa *
+                      </label>
+                      <input
+                        type="text"
+                        disabled={isFormDisabled}
+                        value={introData.nombreEmpresa}
+                        onChange={(e) => updateIntroData('nombreEmpresa', e.target.value)}
+                        placeholder="Razón social o nombre comercial"
+                        className={`w-full px-4 py-2 border-2 rounded-none font-semibold transition ${isFormDisabled
+                          ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
+                          : 'border-cyan-300 focus:ring-2 focus:ring-cyan-500 focus:border-transparent'
+                          }`}
+                      />
+                    </div>
 
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="block text-sm font-semibold text-gray-700">
-                      Página web oficial de la empresa
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setActiveSection('Preliminar de la Empresa')}
-                      className="text-xs text-cyan-700 hover:text-cyan-900 font-bold flex items-center gap-1 cursor-pointer"
-                    >
-                      <Sparkles size={13} className="text-[#00d4ff]" /> Ver Preliminar
-                    </button>
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="block text-sm font-semibold text-gray-700">
+                          Página web oficial de la empresa
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setActiveSection('Preliminar de la Empresa')}
+                          className="text-xs text-cyan-700 hover:text-cyan-900 font-bold flex items-center gap-1 cursor-pointer"
+                        >
+                          <Sparkles size={13} className="text-[#00d4ff]" /> Ver Preliminar
+                        </button>
+                      </div>
+                      <div className="relative">
+                        <input
+                          type="url"
+                          disabled={isFormDisabled}
+                          value={introData.sitioWeb || ''}
+                          onChange={(e) => updateIntroData('sitioWeb', e.target.value)}
+                          placeholder="https://empresa.com"
+                          className={`w-full px-4 py-2 border rounded-none transition ${isFormDisabled
+                            ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
+                            : 'border-gray-300 focus:ring-2 focus:ring-cyan-500 focus:border-transparent'
+                            }`}
+                        />
+                      </div>
+                    </div>
                   </div>
-                  <div className="relative">
-                    <input
-                      type="url"
-                      disabled={isFormDisabled}
-                      value={introData.sitioWeb || ''}
-                      onChange={(e) => updateIntroData('sitioWeb', e.target.value)}
-                      placeholder="https://empresa.com"
-                      className={`w-full px-4 py-2 border rounded-none transition ${
-                        isFormDisabled
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        Nombre de la persona auditada
+                      </label>
+                      <input
+                        type="text"
+                        disabled={isFormDisabled}
+                        value={introData.nombre}
+                        onChange={(e) => updateIntroData('nombre', e.target.value)}
+                        placeholder="Nombre completo"
+                        className={`w-full px-4 py-2 border rounded-none transition ${isFormDisabled
                           ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
                           : 'border-gray-300 focus:ring-2 focus:ring-cyan-500 focus:border-transparent'
-                      }`}
+                          }`}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        Puesto
+                      </label>
+                      <input
+                        type="text"
+                        disabled={isFormDisabled}
+                        value={introData.puesto}
+                        onChange={(e) => updateIntroData('puesto', e.target.value)}
+                        placeholder="Cargo o posición"
+                        className={`w-full px-4 py-2 border rounded-none transition ${isFormDisabled
+                          ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
+                          : 'border-gray-300 focus:ring-2 focus:ring-cyan-500 focus:border-transparent'
+                          }`}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        Correo o teléfono
+                      </label>
+                      <input
+                        type="text"
+                        disabled={isFormDisabled}
+                        value={introData.contacto}
+                        onChange={(e) => updateIntroData('contacto', e.target.value)}
+                        placeholder="email@ejemplo.com o +52 123 456 7890"
+                        className={`w-full px-4 py-2 border rounded-none transition ${isFormDisabled
+                          ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
+                          : 'border-gray-300 focus:ring-2 focus:ring-cyan-500 focus:border-transparent'
+                          }`}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        Giro de la empresa
+                      </label>
+                      <input
+                        type="text"
+                        disabled={isFormDisabled}
+                        value={introData.giro}
+                        onChange={(e) => updateIntroData('giro', e.target.value)}
+                        placeholder="Sector o industria"
+                        className={`w-full px-4 py-2 border rounded-none transition ${isFormDisabled
+                          ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
+                          : 'border-gray-300 focus:ring-2 focus:ring-cyan-500 focus:border-transparent'
+                          }`}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        ¿Cuántos colaboradores utilizan equipo de cómputo?
+                      </label>
+                      <input
+                        type="text"
+                        disabled={isFormDisabled}
+                        value={introData.colaboradores}
+                        onChange={(e) => updateIntroData('colaboradores', e.target.value)}
+                        placeholder="Número aproximado"
+                        className={`w-full px-4 py-2 border rounded-none transition ${isFormDisabled
+                          ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
+                          : 'border-gray-300 focus:ring-2 focus:ring-cyan-500 focus:border-transparent'
+                          }`}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        ¿Cuál es la modalidad predominante?
+                      </label>
+                      <select
+                        disabled={isFormDisabled}
+                        value={introData.modalidad}
+                        onChange={(e) => updateIntroData('modalidad', e.target.value)}
+                        className={`w-full px-4 py-2 border rounded-none transition ${isFormDisabled
+                          ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
+                          : 'border-gray-300 focus:ring-2 focus:ring-cyan-500 focus:border-transparent'
+                          }`}
+                      >
+                        <option value="">Seleccionar...</option>
+                        <option value="Presencial">Presencial</option>
+                        <option value="Remoto">Remoto</option>
+                        <option value="Híbrido">Híbrido</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        ¿La empresa proporciona los equipos?
+                      </label>
+                      <select
+                        disabled={isFormDisabled}
+                        value={introData.proporcionaEquipos}
+                        onChange={(e) => updateIntroData('proporcionaEquipos', e.target.value)}
+                        className={`w-full px-4 py-2 border rounded-none transition ${isFormDisabled
+                          ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
+                          : 'border-gray-300 focus:ring-2 focus:ring-cyan-500 focus:border-transparent'
+                          }`}
+                      >
+                        <option value="">Seleccionar...</option>
+                        <option value="Sí, todos">Sí, todos</option>
+                        <option value="Parcialmente">Parcialmente</option>
+                        <option value="No, BYOD">No, BYOD (traen su propio equipo)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        ¿Qué equipo entrega la empresa?
+                      </label>
+                      <input
+                        type="text"
+                        disabled={isFormDisabled}
+                        value={introData.tipoEquipos}
+                        onChange={(e) => updateIntroData('tipoEquipos', e.target.value)}
+                        placeholder="Laptops, desktops, tablets, smartphones..."
+                        className={`w-full px-4 py-2 border rounded-none transition ${isFormDisabled
+                          ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
+                          : 'border-gray-300 focus:ring-2 focus:ring-cyan-500 focus:border-transparent'
+                          }`}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      ¿Cuál es la estructura organizacional del área de TI?
+                    </label>
+                    <textarea
+                      disabled={isFormDisabled}
+                      value={introData.estructuraTI}
+                      onChange={(e) => updateIntroData('estructuraTI', e.target.value)}
+                      placeholder="Ej: Gerente TI, 2 analistas de soporte, 1 administrador de redes, outsourcing para desarrollo..."
+                      rows="3"
+                      className={`w-full px-4 py-2 border rounded-none resize-none transition ${isFormDisabled
+                        ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
+                        : 'border-gray-300 focus:ring-2 focus:ring-cyan-500 focus:border-transparent'
+                        }`}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      ¿Qué tan dependientes son de la red/internet para realizar su trabajo?
+                    </label>
+                    <select
+                      disabled={isFormDisabled}
+                      value={introData.dependenciaRed}
+                      onChange={(e) => updateIntroData('dependenciaRed', e.target.value)}
+                      className={`w-full px-4 py-2 border rounded-none transition ${isFormDisabled
+                        ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
+                        : 'border-gray-300 focus:ring-2 focus:ring-cyan-500 focus:border-transparent'
+                        }`}
+                    >
+                      <option value="">Seleccionar...</option>
+                      <option value="Totalmente dependiente - sin internet no hay operación">Totalmente dependiente - sin internet no hay operación</option>
+                      <option value="Alta dependencia - mayoría de procesos requieren conectividad">Alta dependencia - mayoría de procesos requieren conectividad</option>
+                      <option value="Dependencia moderada - algunos procesos offline">Dependencia moderada - algunos procesos offline</option>
+                      <option value="Baja dependencia - principalmente local">Baja dependencia - principalmente local</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      En los últimos 12 meses, ¿han ocurrido incidencias que frenaron la operación?
+                    </label>
+                    <textarea
+                      disabled={isFormDisabled}
+                      value={introData.incidenciasRecientes}
+                      onChange={(e) => updateIntroData('incidenciasRecientes', e.target.value)}
+                      placeholder="Descripción de incidentes: ransomware, caídas de red, pérdida de datos, ataques phishing, fallas de hardware, etc."
+                      rows="3"
+                      className={`w-full px-4 py-2 border rounded-none resize-none transition ${isFormDisabled
+                        ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
+                        : 'border-gray-300 focus:ring-2 focus:ring-cyan-500 focus:border-transparent'
+                        }`}
                     />
                   </div>
                 </div>
               </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Nombre de la persona auditada
-                  </label>
-                  <input
-                    type="text"
-                    disabled={isFormDisabled}
-                    value={introData.nombre}
-                    onChange={(e) => updateIntroData('nombre', e.target.value)}
-                    placeholder="Nombre completo"
-                    className={`w-full px-4 py-2 border rounded-none transition ${
-                      isFormDisabled
-                        ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
-                        : 'border-gray-300 focus:ring-2 focus:ring-cyan-500 focus:border-transparent'
-                    }`}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Puesto
-                  </label>
-                  <input
-                    type="text"
-                    disabled={isFormDisabled}
-                    value={introData.puesto}
-                    onChange={(e) => updateIntroData('puesto', e.target.value)}
-                    placeholder="Cargo o posición"
-                    className={`w-full px-4 py-2 border rounded-none transition ${
-                      isFormDisabled
-                        ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
-                        : 'border-gray-300 focus:ring-2 focus:ring-cyan-500 focus:border-transparent'
-                    }`}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Correo o teléfono
-                  </label>
-                  <input
-                    type="text"
-                    disabled={isFormDisabled}
-                    value={introData.contacto}
-                    onChange={(e) => updateIntroData('contacto', e.target.value)}
-                    placeholder="email@ejemplo.com o +52 123 456 7890"
-                    className={`w-full px-4 py-2 border rounded-none transition ${
-                      isFormDisabled
-                        ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
-                        : 'border-gray-300 focus:ring-2 focus:ring-cyan-500 focus:border-transparent'
-                    }`}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Giro de la empresa
-                  </label>
-                  <input
-                    type="text"
-                    disabled={isFormDisabled}
-                    value={introData.giro}
-                    onChange={(e) => updateIntroData('giro', e.target.value)}
-                    placeholder="Sector o industria"
-                    className={`w-full px-4 py-2 border rounded-none transition ${
-                      isFormDisabled
-                        ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
-                        : 'border-gray-300 focus:ring-2 focus:ring-cyan-500 focus:border-transparent'
-                    }`}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    ¿Cuántos colaboradores utilizan equipo de cómputo?
-                  </label>
-                  <input
-                    type="text"
-                    disabled={isFormDisabled}
-                    value={introData.colaboradores}
-                    onChange={(e) => updateIntroData('colaboradores', e.target.value)}
-                    placeholder="Número aproximado"
-                    className={`w-full px-4 py-2 border rounded-none transition ${
-                      isFormDisabled
-                        ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
-                        : 'border-gray-300 focus:ring-2 focus:ring-cyan-500 focus:border-transparent'
-                    }`}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    ¿Cuál es la modalidad predominante?
-                  </label>
-                  <select
-                    disabled={isFormDisabled}
-                    value={introData.modalidad}
-                    onChange={(e) => updateIntroData('modalidad', e.target.value)}
-                    className={`w-full px-4 py-2 border rounded-none transition ${
-                      isFormDisabled
-                        ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
-                        : 'border-gray-300 focus:ring-2 focus:ring-cyan-500 focus:border-transparent'
-                    }`}
-                  >
-                    <option value="">Seleccionar...</option>
-                    <option value="Presencial">Presencial</option>
-                    <option value="Remoto">Remoto</option>
-                    <option value="Híbrido">Híbrido</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    ¿La empresa proporciona los equipos?
-                  </label>
-                  <select
-                    disabled={isFormDisabled}
-                    value={introData.proporcionaEquipos}
-                    onChange={(e) => updateIntroData('proporcionaEquipos', e.target.value)}
-                    className={`w-full px-4 py-2 border rounded-none transition ${
-                      isFormDisabled
-                        ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
-                        : 'border-gray-300 focus:ring-2 focus:ring-cyan-500 focus:border-transparent'
-                    }`}
-                  >
-                    <option value="">Seleccionar...</option>
-                    <option value="Sí, todos">Sí, todos</option>
-                    <option value="Parcialmente">Parcialmente</option>
-                    <option value="No, BYOD">No, BYOD (traen su propio equipo)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    ¿Qué equipo entrega la empresa?
-                  </label>
-                  <input
-                    type="text"
-                    disabled={isFormDisabled}
-                    value={introData.tipoEquipos}
-                    onChange={(e) => updateIntroData('tipoEquipos', e.target.value)}
-                    placeholder="Laptops, desktops, tablets, smartphones..."
-                    className={`w-full px-4 py-2 border rounded-none transition ${
-                      isFormDisabled
-                        ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
-                        : 'border-gray-300 focus:ring-2 focus:ring-cyan-500 focus:border-transparent'
-                    }`}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  ¿Cuál es la estructura organizacional del área de TI?
-                </label>
-                <textarea
-                  disabled={isFormDisabled}
-                  value={introData.estructuraTI}
-                  onChange={(e) => updateIntroData('estructuraTI', e.target.value)}
-                  placeholder="Ej: Gerente TI, 2 analistas de soporte, 1 administrador de redes, outsourcing para desarrollo..."
-                  rows="3"
-                  className={`w-full px-4 py-2 border rounded-none resize-none transition ${
-                    isFormDisabled
-                      ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
-                      : 'border-gray-300 focus:ring-2 focus:ring-cyan-500 focus:border-transparent'
-                  }`}
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  ¿Qué tan dependientes son de la red/internet para realizar su trabajo?
-                </label>
-                <select
-                  disabled={isFormDisabled}
-                  value={introData.dependenciaRed}
-                  onChange={(e) => updateIntroData('dependenciaRed', e.target.value)}
-                  className={`w-full px-4 py-2 border rounded-none transition ${
-                    isFormDisabled
-                      ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
-                      : 'border-gray-300 focus:ring-2 focus:ring-cyan-500 focus:border-transparent'
-                  }`}
-                >
-                  <option value="">Seleccionar...</option>
-                  <option value="Totalmente dependiente - sin internet no hay operación">Totalmente dependiente - sin internet no hay operación</option>
-                  <option value="Alta dependencia - mayoría de procesos requieren conectividad">Alta dependencia - mayoría de procesos requieren conectividad</option>
-                  <option value="Dependencia moderada - algunos procesos offline">Dependencia moderada - algunos procesos offline</option>
-                  <option value="Baja dependencia - principalmente local">Baja dependencia - principalmente local</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  En los últimos 12 meses, ¿han ocurrido incidencias que frenaron la operación?
-                </label>
-                <textarea
-                  disabled={isFormDisabled}
-                  value={introData.incidenciasRecientes}
-                  onChange={(e) => updateIntroData('incidenciasRecientes', e.target.value)}
-                  placeholder="Descripción de incidentes: ransomware, caídas de red, pérdida de datos, ataques phishing, fallas de hardware, etc."
-                  rows="3"
-                  className={`w-full px-4 py-2 border rounded-none resize-none transition ${
-                    isFormDisabled
-                      ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
-                      : 'border-gray-300 focus:ring-2 focus:ring-cyan-500 focus:border-transparent'
-                  }`}
-                />
-              </div>
-            </div>
-          </div>
-        )}
+            )}
 
             {/* Sección de Preliminar de la Empresa Activa */}
             {activeSection === 'Preliminar de la Empresa' && (
@@ -5003,11 +4660,10 @@ const startInlineDictation = (section, id) => {
                             }
                           }}
                           placeholder="Ej: https://bytewise.mx o empresa.com"
-                          className={`w-full pl-10 pr-10 py-2.5 border text-sm transition font-medium ${
-                            isFormDisabled
-                              ? 'bg-slate-50 border-slate-200 text-slate-500 cursor-not-allowed'
-                              : 'bg-white border-slate-300 focus:border-slate-800 focus:outline-none'
-                          }`}
+                          className={`w-full pl-10 pr-10 py-2.5 border text-sm transition font-medium ${isFormDisabled
+                            ? 'bg-slate-50 border-slate-200 text-slate-500 cursor-not-allowed'
+                            : 'bg-white border-slate-300 focus:border-slate-800 focus:outline-none'
+                            }`}
                         />
                         {introData.sitioWeb && (
                           <a
@@ -5026,11 +4682,10 @@ const startInlineDictation = (section, id) => {
                         type="button"
                         onClick={() => investigateCompanyWithAI()}
                         disabled={isFormDisabled || isInvestigatingCompany}
-                        className={`px-6 py-2.5 font-bold text-sm flex items-center justify-center gap-2 transition shadow-sm shrink-0 ${
-                          isFormDisabled
-                            ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                            : 'bg-slate-900 hover:bg-slate-800 text-white cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed'
-                        }`}
+                        className={`px-6 py-2.5 font-bold text-sm flex items-center justify-center gap-2 transition shadow-sm shrink-0 ${isFormDisabled
+                          ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                          : 'bg-slate-900 hover:bg-slate-800 text-white cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed'
+                          }`}
                       >
                         {isInvestigatingCompany ? (
                           <>
@@ -5107,11 +4762,10 @@ const startInlineDictation = (section, id) => {
                           onChange={(e) => updateIntroData('preliminarEmpresa', e.target.value)}
                           rows={14}
                           placeholder="Aquí aparecerá el análisis preliminar generado con IA o puedes redactarlo manualmente..."
-                          className={`w-full px-4 py-3 border text-sm leading-relaxed font-mono transition resize-y ${
-                            isFormDisabled
-                              ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
-                              : 'bg-white border-slate-300 focus:border-slate-800 focus:outline-none text-slate-800'
-                          }`}
+                          className={`w-full px-4 py-3 border text-sm leading-relaxed font-mono transition resize-y ${isFormDisabled
+                            ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
+                            : 'bg-white border-slate-300 focus:border-slate-800 focus:outline-none text-slate-800'
+                            }`}
                         />
                       </div>
 
@@ -5164,11 +4818,10 @@ const startInlineDictation = (section, id) => {
                         <button
                           type="button"
                           onClick={() => setReportLayout('grid')}
-                          className={`px-2.5 py-1.5 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
-                            reportLayout === 'grid'
-                              ? 'bg-slate-900 text-white shadow-xs'
-                              : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-                          }`}
+                          className={`px-2.5 py-1.5 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${reportLayout === 'grid'
+                            ? 'bg-slate-900 text-white shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                            }`}
                           title="Vista de 3 Columnas en paralelo"
                         >
                           <LayoutGrid size={14} />
@@ -5177,11 +4830,10 @@ const startInlineDictation = (section, id) => {
                         <button
                           type="button"
                           onClick={() => setReportLayout('stack')}
-                          className={`px-2.5 py-1.5 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
-                            reportLayout === 'stack'
-                              ? 'bg-slate-900 text-white shadow-xs'
-                              : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-                          }`}
+                          className={`px-2.5 py-1.5 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${reportLayout === 'stack'
+                            ? 'bg-slate-900 text-white shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                            }`}
                           title="Vista apilada a todo lo ancho"
                         >
                           <List size={14} />
@@ -5190,11 +4842,10 @@ const startInlineDictation = (section, id) => {
                         <button
                           type="button"
                           onClick={() => setReportLayout('tabs')}
-                          className={`px-2.5 py-1.5 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
-                            reportLayout === 'tabs'
-                              ? 'bg-slate-900 text-white shadow-xs'
-                              : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-                          }`}
+                          className={`px-2.5 py-1.5 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${reportLayout === 'tabs'
+                            ? 'bg-slate-900 text-white shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                            }`}
                           title="Vista en pestañas para enfocar un apartado a la vez"
                         >
                           <Layers size={14} />
@@ -5208,11 +4859,10 @@ const startInlineDictation = (section, id) => {
                         <button
                           type="button"
                           onClick={() => setCommentHeightMode('compact')}
-                          className={`px-2 py-1 text-xs font-bold transition cursor-pointer ${
-                            commentHeightMode === 'compact'
-                              ? 'bg-white text-slate-900 shadow-xs border border-slate-300'
-                              : 'text-slate-500 hover:text-slate-800'
-                          }`}
+                          className={`px-2 py-1 text-xs font-bold transition cursor-pointer ${commentHeightMode === 'compact'
+                            ? 'bg-white text-slate-900 shadow-xs border border-slate-300'
+                            : 'text-slate-500 hover:text-slate-800'
+                            }`}
                           title="Altura compacta (160px)"
                         >
                           S
@@ -5220,11 +4870,10 @@ const startInlineDictation = (section, id) => {
                         <button
                           type="button"
                           onClick={() => setCommentHeightMode('normal')}
-                          className={`px-2 py-1 text-xs font-bold transition cursor-pointer ${
-                            commentHeightMode === 'normal'
-                              ? 'bg-white text-slate-900 shadow-xs border border-slate-300'
-                              : 'text-slate-500 hover:text-slate-800'
-                          }`}
+                          className={`px-2 py-1 text-xs font-bold transition cursor-pointer ${commentHeightMode === 'normal'
+                            ? 'bg-white text-slate-900 shadow-xs border border-slate-300'
+                            : 'text-slate-500 hover:text-slate-800'
+                            }`}
                           title="Altura estándar (260px)"
                         >
                           M
@@ -5232,11 +4881,10 @@ const startInlineDictation = (section, id) => {
                         <button
                           type="button"
                           onClick={() => setCommentHeightMode('tall')}
-                          className={`px-2 py-1 text-xs font-bold transition cursor-pointer ${
-                            commentHeightMode === 'tall'
-                              ? 'bg-white text-slate-900 shadow-xs border border-slate-300'
-                              : 'text-slate-500 hover:text-slate-800'
-                          }`}
+                          className={`px-2 py-1 text-xs font-bold transition cursor-pointer ${commentHeightMode === 'tall'
+                            ? 'bg-white text-slate-900 shadow-xs border border-slate-300'
+                            : 'text-slate-500 hover:text-slate-800'
+                            }`}
                           title="Altura amplia (420px)"
                         >
                           L
@@ -5251,11 +4899,10 @@ const startInlineDictation = (section, id) => {
                       <button
                         type="button"
                         onClick={() => setActiveReportTab('positive')}
-                        className={`flex items-center gap-2 px-5 py-2.5 text-xs font-bold border-b-2 transition cursor-pointer ${
-                          activeReportTab === 'positive'
-                            ? 'border-emerald-600 text-emerald-800 bg-emerald-50/50'
-                            : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
-                        }`}
+                        className={`flex items-center gap-2 px-5 py-2.5 text-xs font-bold border-b-2 transition cursor-pointer ${activeReportTab === 'positive'
+                          ? 'border-emerald-600 text-emerald-800 bg-emerald-50/50'
+                          : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+                          }`}
                       >
                         <ThumbsUp size={15} className="text-emerald-600" />
                         <span>Comentarios Positivos</span>
@@ -5265,11 +4912,10 @@ const startInlineDictation = (section, id) => {
                       <button
                         type="button"
                         onClick={() => setActiveReportTab('negative')}
-                        className={`flex items-center gap-2 px-5 py-2.5 text-xs font-bold border-b-2 transition cursor-pointer ${
-                          activeReportTab === 'negative'
-                            ? 'border-rose-600 text-rose-800 bg-rose-50/50'
-                            : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
-                        }`}
+                        className={`flex items-center gap-2 px-5 py-2.5 text-xs font-bold border-b-2 transition cursor-pointer ${activeReportTab === 'negative'
+                          ? 'border-rose-600 text-rose-800 bg-rose-50/50'
+                          : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+                          }`}
                       >
                         <AlertTriangle size={15} className="text-rose-600" />
                         <span>Comentarios Negativos</span>
@@ -5279,11 +4925,10 @@ const startInlineDictation = (section, id) => {
                       <button
                         type="button"
                         onClick={() => setActiveReportTab('recommendations')}
-                        className={`flex items-center gap-2 px-5 py-2.5 text-xs font-bold border-b-2 transition cursor-pointer ${
-                          activeReportTab === 'recommendations'
-                            ? 'border-[#00d4ff] text-cyan-950 bg-cyan-50/50'
-                            : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
-                        }`}
+                        className={`flex items-center gap-2 px-5 py-2.5 text-xs font-bold border-b-2 transition cursor-pointer ${activeReportTab === 'recommendations'
+                          ? 'border-[#00d4ff] text-cyan-950 bg-cyan-50/50'
+                          : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+                          }`}
                       >
                         <Lightbulb size={15} className="text-cyan-600" />
                         <span>Recomendaciones</span>
@@ -5298,8 +4943,8 @@ const startInlineDictation = (section, id) => {
                   reportLayout === 'grid'
                     ? "grid grid-cols-1 lg:grid-cols-3 gap-6"
                     : reportLayout === 'stack'
-                    ? "space-y-6"
-                    : "space-y-6"
+                      ? "space-y-6"
+                      : "space-y-6"
                 }>
                   {/* 1. COMENTARIOS POSITIVOS */}
                   {(reportLayout !== 'tabs' || activeReportTab === 'positive') && (
@@ -5325,11 +4970,10 @@ const startInlineDictation = (section, id) => {
                           onClick={() => rewriteReportCommentWithAI('positive')}
                           disabled={isFormDisabled || rewritingField === 'positive'}
                           title="Optimizar redacción o generar fortalezas con IA"
-                          className={`px-3 py-1.5 border text-xs font-bold flex items-center gap-1.5 transition shadow-2xs shrink-0 ${
-                            isFormDisabled
-                              ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
-                              : 'bg-white hover:bg-emerald-50 border-emerald-300 text-emerald-700 cursor-pointer disabled:opacity-50'
-                          }`}
+                          className={`px-3 py-1.5 border text-xs font-bold flex items-center gap-1.5 transition shadow-2xs shrink-0 ${isFormDisabled
+                            ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
+                            : 'bg-white hover:bg-emerald-50 border-emerald-300 text-emerald-700 cursor-pointer disabled:opacity-50'
+                            }`}
                         >
                           {rewritingField === 'positive' ? (
                             <>
@@ -5354,11 +4998,10 @@ const startInlineDictation = (section, id) => {
                           style={{
                             height: commentHeightMode === 'compact' ? '160px' : commentHeightMode === 'tall' ? '420px' : '260px'
                           }}
-                          className={`w-full p-3 text-xs md:text-sm border rounded-none resize-y leading-relaxed transition ${
-                            isFormDisabled
-                              ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
-                              : 'bg-white border-slate-300 focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 focus:outline-none text-slate-800'
-                          }`}
+                          className={`w-full p-3 text-xs md:text-sm border rounded-none resize-y leading-relaxed transition ${isFormDisabled
+                            ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
+                            : 'bg-white border-slate-300 focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 focus:outline-none text-slate-800'
+                            }`}
                         />
                         <div className="flex items-center justify-between mt-2 text-[11px] text-slate-400">
                           <span>↕ Puedes redimensionar arrastrando la esquina</span>
@@ -5392,11 +5035,10 @@ const startInlineDictation = (section, id) => {
                           onClick={() => rewriteReportCommentWithAI('negative')}
                           disabled={isFormDisabled || rewritingField === 'negative'}
                           title="Optimizar redacción o generar hallazgos con IA"
-                          className={`px-3 py-1.5 border text-xs font-bold flex items-center gap-1.5 transition shadow-2xs shrink-0 ${
-                            isFormDisabled
-                              ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
-                              : 'bg-white hover:bg-rose-50 border-rose-300 text-rose-700 cursor-pointer disabled:opacity-50'
-                          }`}
+                          className={`px-3 py-1.5 border text-xs font-bold flex items-center gap-1.5 transition shadow-2xs shrink-0 ${isFormDisabled
+                            ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
+                            : 'bg-white hover:bg-rose-50 border-rose-300 text-rose-700 cursor-pointer disabled:opacity-50'
+                            }`}
                         >
                           {rewritingField === 'negative' ? (
                             <>
@@ -5421,11 +5063,10 @@ const startInlineDictation = (section, id) => {
                           style={{
                             height: commentHeightMode === 'compact' ? '160px' : commentHeightMode === 'tall' ? '420px' : '260px'
                           }}
-                          className={`w-full p-3 text-xs md:text-sm border rounded-none resize-y leading-relaxed transition ${
-                            isFormDisabled
-                              ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
-                              : 'bg-white border-slate-300 focus:border-rose-600 focus:ring-1 focus:ring-rose-600 focus:outline-none text-slate-800'
-                          }`}
+                          className={`w-full p-3 text-xs md:text-sm border rounded-none resize-y leading-relaxed transition ${isFormDisabled
+                            ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
+                            : 'bg-white border-slate-300 focus:border-rose-600 focus:ring-1 focus:ring-rose-600 focus:outline-none text-slate-800'
+                            }`}
                         />
                         <div className="flex items-center justify-between mt-2 text-[11px] text-slate-400">
                           <span>↕ Puedes redimensionar arrastrando la esquina</span>
@@ -5459,11 +5100,10 @@ const startInlineDictation = (section, id) => {
                           onClick={() => rewriteReportCommentWithAI('recommendations')}
                           disabled={isFormDisabled || rewritingField === 'recommendations'}
                           title="Optimizar redacción o generar recomendaciones con IA"
-                          className={`px-3 py-1.5 border text-xs font-bold flex items-center gap-1.5 transition shadow-2xs shrink-0 ${
-                            isFormDisabled
-                              ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
-                              : 'bg-white hover:bg-cyan-50 border-cyan-300 text-cyan-800 cursor-pointer disabled:opacity-50'
-                          }`}
+                          className={`px-3 py-1.5 border text-xs font-bold flex items-center gap-1.5 transition shadow-2xs shrink-0 ${isFormDisabled
+                            ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
+                            : 'bg-white hover:bg-cyan-50 border-cyan-300 text-cyan-800 cursor-pointer disabled:opacity-50'
+                            }`}
                         >
                           {rewritingField === 'recommendations' ? (
                             <>
@@ -5488,11 +5128,10 @@ const startInlineDictation = (section, id) => {
                           style={{
                             height: commentHeightMode === 'compact' ? '160px' : commentHeightMode === 'tall' ? '420px' : '260px'
                           }}
-                          className={`w-full p-3 text-xs md:text-sm border rounded-none resize-y leading-relaxed transition ${
-                            isFormDisabled
-                              ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
-                              : 'bg-white border-slate-300 focus:border-[#00d4ff] focus:ring-1 focus:ring-[#00d4ff] focus:outline-none text-slate-800'
-                          }`}
+                          className={`w-full p-3 text-xs md:text-sm border rounded-none resize-y leading-relaxed transition ${isFormDisabled
+                            ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
+                            : 'bg-white border-slate-300 focus:border-[#00d4ff] focus:ring-1 focus:ring-[#00d4ff] focus:outline-none text-slate-800'
+                            }`}
                         />
                         <div className="flex items-center justify-between mt-2 text-[11px] text-slate-400">
                           <span>↕ Puedes redimensionar arrastrando la esquina</span>
@@ -5523,22 +5162,20 @@ const startInlineDictation = (section, id) => {
                       onChange={(e) => setGeneralComments(e.target.value)}
                       rows={4}
                       placeholder="Espacio adicional para observaciones de cierre, firmas, alcance específico o notas que desees incluir en el dictamen final..."
-                      className={`w-full p-3 text-xs border resize-y transition ${
-                        isFormDisabled
-                          ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
-                          : 'bg-slate-50 border-slate-300 focus:bg-white focus:border-slate-800 focus:outline-none'
-                      }`}
+                      className={`w-full p-3 text-xs border resize-y transition ${isFormDisabled
+                        ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed'
+                        : 'bg-slate-50 border-slate-300 focus:bg-white focus:border-slate-800 focus:outline-none'
+                        }`}
                     />
                     <div className="flex justify-end mt-2">
                       <button
                         type="button"
                         onClick={() => rewriteReportCommentWithAI('general')}
                         disabled={isFormDisabled || rewritingField === 'general'}
-                        className={`px-3 py-1 border text-xs font-bold flex items-center gap-1.5 transition ${
-                          isFormDisabled
-                            ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
-                            : 'bg-white hover:bg-slate-100 border-slate-300 text-slate-700 cursor-pointer'
-                        }`}
+                        className={`px-3 py-1 border text-xs font-bold flex items-center gap-1.5 transition ${isFormDisabled
+                          ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
+                          : 'bg-white hover:bg-slate-100 border-slate-300 text-slate-700 cursor-pointer'
+                          }`}
                       >
                         {rewritingField === 'general' ? (
                           <>
@@ -5558,7 +5195,7 @@ const startInlineDictation = (section, id) => {
               </div>
             )}
 
-        {/* Secciones de evaluación activas */}
+            {/* Secciones de evaluación activas */}
             {Object.keys(customSections).map(section => {
               if (section !== activeSection) return null;
               return (
@@ -5581,7 +5218,7 @@ const startInlineDictation = (section, id) => {
                         </div>
                         <h4 className="font-bold text-slate-800 text-base">Esta área no tiene preguntas aún</h4>
                         <p className="text-xs text-slate-500 max-w-md mt-1 mb-5">
-                          {isFormDisabled 
+                          {isFormDisabled
                             ? "No hay preguntas configuradas en esta área para esta auditoría."
                             : "Iniciaste este cuestionario en blanco o esta área es nueva. Haz clic en el botón inferior para abrir el editor y redactar preguntas personalizadas."}
                         </p>
@@ -5597,292 +5234,343 @@ const startInlineDictation = (section, id) => {
                       </div>
                     ) : (
                       customSections[section].map(item => {
-                  const key = `${section}-${item.id}`;
-                  const response = responses[key] || {};
-                  
-                  return (
-                    <div
-                      key={item.id}
-                      id={`question-${section}-${item.id}`}
-                      className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 hover:border-slate-200 transition-all duration-200 group/q"
-                    >
-                      <div className="flex items-start justify-between gap-3 mb-3">
-                        <div className="flex items-start gap-2.5 flex-1">
-                          <span className="bg-slate-100 text-slate-700 px-2.5 py-0.5 rounded-md text-xs font-semibold shrink-0 mt-0.5">
-                            {item.id}
-                          </span>
-                          <p className="text-slate-900 font-medium text-sm sm:text-base leading-snug flex-1">
-                            {item.pregunta}
-                          </p>
-                        </div>
+                        const key = `${section}-${item.id}`;
+                        const response = responses[key] || {};
 
-                        {/* Botón de acción rápida: Editar Pregunta */}
-                        {!isGuestMode && !isFormDisabled && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const currentScale = item.escalaEvaluacion && Array.isArray(item.escalaEvaluacion) && item.escalaEvaluacion.length > 0
-                                ? [...item.escalaEvaluacion]
-                                : [...GENERIC_EVALUATION_SCALE];
-                              while (currentScale.length < 5) {
-                                currentScale.push(GENERIC_EVALUATION_SCALE[currentScale.length] || '');
-                              }
-                              setEditingQuestionData({
-                                section,
-                                id: item.id,
-                                pregunta: item.pregunta,
-                                requisito: item.requisito || '',
-                                evidencia: item.evidencia || '',
-                                nota: item.nota || '',
-                                escalaEvaluacion: currentScale
-                              });
-                            }}
-                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors opacity-80 md:opacity-0 group-hover/q:opacity-100 cursor-pointer shrink-0"
-                            title="Editar pregunta y criterios de evaluación"
+                        return (
+                          <div
+                            key={item.id}
+                            id={`question-${section}-${item.id}`}
+                            className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 hover:border-slate-200 transition-all duration-200 group/q"
                           >
-                            <Edit2 size={15} />
-                          </button>
-                        )}
-                      </div>
-
-                      {item.requisito && (
-                        <p className="text-xs text-slate-500 italic mb-2.5 flex items-center gap-1.5 pl-0.5">
-                          <FileText size={14} className="shrink-0 text-slate-400" /> {item.requisito}
-                        </p>
-                      )}
-
-                      {item.nota && (
-                        <p className="text-xs text-emerald-800 bg-emerald-50/80 border border-emerald-100 px-3 py-2 rounded-lg mb-2.5 flex items-center gap-1.5">
-                          <CheckCircle size={14} className="shrink-0 text-emerald-600" /> {item.nota}
-                        </p>
-                      )}
-
-                      {item.evidencia && (
-                        <p className="text-xs text-blue-700 bg-blue-50/50 border border-blue-100/70 px-3 py-1.5 rounded-lg mb-3 flex items-center gap-1.5">
-                          <Search size={14} className="shrink-0 text-blue-500" /> <span className="font-medium">Evidencia sugerida:</span> {item.evidencia}
-                        </p>
-                      )}
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3 border-t border-slate-100">
-                        <div>
-                          <div className="flex items-center justify-between mb-2">
-                            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
-                              Evaluación (0-4)
-                            </label>
-                            {response.evaluacion !== undefined && (
-                              <span className="text-xs font-semibold text-blue-600">
-                                Seleccionado: {response.evaluacion}/4
-                              </span>
-                            )}
-                          </div>
-                          
-                          <div className="bg-slate-50 border border-slate-200/80 rounded-lg p-2.5 mb-2.5 text-[11px] text-slate-600">
-                            <div className="font-semibold text-slate-700 mb-0.5">Criterio de Evaluación:</div>
-                            {(item.escalaEvaluacion || GENERIC_EVALUATION_SCALE).map((line, index) => (
-                              <div key={`${item.id}-${index}`} className="leading-tight">{line}</div>
-                            ))}
-                          </div>
-
-                          <div className="flex gap-2">
-                            {[0, 1, 2, 3, 4].map(score => (
-                              <button
-                                key={score}
-                                type="button"
-                                disabled={isReadOnly || activeEvaluationView !== 'my_draft'}
-                                onClick={() => updateResponse(section, item.id, 'evaluacion', score)}
-                                className={`w-11 h-11 rounded-lg font-bold text-sm transition-all flex items-center justify-center ${
-                                  isReadOnly || activeEvaluationView !== 'my_draft'
-                                    ? 'opacity-80 cursor-not-allowed'
-                                    : 'cursor-pointer'
-                                } ${
-                                  response.evaluacion === score
-                                    ? 'bg-blue-600 text-white shadow-xs ring-2 ring-blue-600 ring-offset-2'
-                                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200/80'
-                                }`}
-                                title={item.escalaEvaluacion?.[score] || GENERIC_EVALUATION_SCALE[score]}
-                              >
-                                {score}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
-                            Evidencia Documental
-                          </label>
-                          <input
-                            type="text"
-                            disabled={isReadOnly || activeEvaluationView !== 'my_draft'}
-                            value={response.evidencia || ''}
-                            onChange={(e) => updateResponse(section, item.id, 'evidencia', e.target.value)}
-                            placeholder="Documentos, capturas, políticas, tickets..."
-                            className="w-full px-3.5 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-blue-600 transition disabled:bg-slate-50 disabled:text-slate-500 disabled:cursor-not-allowed"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="mt-4 pt-3 border-t border-slate-100">
-                        <div className="flex justify-between items-center mb-2">
-                          <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
-                            Observaciones y Hallazgos
-                          </label>
-                          <div className="flex gap-2">
-                            <button
-                              type="button"
-                              disabled={isReadOnly || activeEvaluationView !== 'my_draft'}
-                              onClick={() => startInlineDictation(section, item.id)}
-                              className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1.5 text-xs font-medium ${
-                                isReadOnly || activeEvaluationView !== 'my_draft' ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'
-                              } ${
-                                dictatingKey === key 
-                                  ? 'bg-red-500 text-white animate-pulse' 
-                                  : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
-                              }`}
-                              title={dictatingKey === key ? "Detener dictado" : "Dictar observación por voz"}
-                            >
-                              <Mic size={14} /> {dictatingKey === key ? "Escuchando..." : "Dictar"}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => rewriteObservationWithAI(section, item)}
-                              disabled={isReadOnly || activeEvaluationView !== 'my_draft' || rewritingKey === key || !response.observaciones}
-                              className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1.5 text-xs font-medium ${
-                                isReadOnly || activeEvaluationView !== 'my_draft' || !response.observaciones
-                                  ? 'bg-slate-100 text-slate-400 cursor-not-allowed' 
-                                  : rewritingKey === key 
-                                    ? 'bg-blue-100 text-blue-700 animate-pulse' 
-                                    : 'bg-slate-900 text-white hover:bg-slate-800 cursor-pointer'
-                              }`}
-                              title="Mejorar redacción con IA"
-                            >
-                              <Sparkles size={14} /> {rewritingKey === key ? 'Optimizando...' : 'Mejorar con IA'}
-                            </button>
-                          </div>
-                        </div>
-                        <textarea
-                          disabled={isReadOnly || activeEvaluationView !== 'my_draft'}
-                          value={response.observaciones || ''}
-                          onChange={(e) => updateResponse(section, item.id, 'observaciones', e.target.value)}
-                          placeholder="Escribe o dicta los hallazgos observados..."
-                          rows="3"
-                          className={`w-full px-3.5 py-2.5 text-sm bg-white border border-slate-200 rounded-lg resize-y transition-colors focus:ring-2 focus:ring-blue-600 focus:border-blue-600 disabled:bg-slate-50 disabled:text-slate-500 disabled:cursor-not-allowed ${
-                            dictatingKey === key ? 'border-red-400 bg-red-50/20' : ''
-                          }`}
-                        />
-                      </div>
-
-                      {/* Renderizar Subpreguntas/Preguntas Guía Guardadas al final de las observaciones */}
-                      {item.subquestions && item.subquestions.length > 0 && (
-                        <div className="mt-4 mb-3 bg-slate-50 border border-slate-200/80 rounded-lg p-3 space-y-2 animate-in fade-in duration-200">
-                          <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider block mb-1">
-                            Preguntas Guía Sugeridas (Para obtener más información):
-                          </span>
-                          {item.subquestions.map(sub => (
-                            <div key={sub.id} className="text-xs text-slate-700 space-y-1.5 pl-2.5 border-l-2 border-blue-400 pb-2 border-b border-slate-200/60 last:border-b-0 last:pb-0">
-                              <div className="flex items-start justify-between gap-2">
-                                <span className="italic font-medium flex-1">
-                                  • {sub.texto}
+                            <div className="flex items-start justify-between gap-3 mb-2.5">
+                              <div className="flex items-start gap-2.5 flex-1 min-w-0">
+                                <span className="bg-slate-100 text-slate-700 px-2.5 py-0.5 rounded-md text-xs font-semibold shrink-0 mt-0.5">
+                                  {item.id}
                                 </span>
-                                {!isGuestMode && !isFormDisabled && (
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-slate-900 font-medium text-sm sm:text-base leading-snug">
+                                    {item.pregunta}
+                                  </p>
+                                  {/* Badges de Metadatos y Clasificación */}
+                                  <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                                    {item.subdominio && (
+                                      <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-[11px] font-medium">
+                                        {item.subdominio}
+                                      </span>
+                                    )}
+                                    {item.normaReferencia && (
+                                      <span className="bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-0.5 rounded text-[11px] font-medium">
+                                        {item.normaReferencia}
+                                      </span>
+                                    )}
+                                    {item.criticidad && (
+                                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border ${
+                                        item.criticidad.toLowerCase().includes('cr')
+                                          ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                          : item.criticidad.toLowerCase().includes('alt')
+                                          ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                          : item.criticidad.toLowerCase().includes('med')
+                                          ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                          : 'bg-slate-100 text-slate-700 border-slate-200'
+                                      }`}>
+                                        Criticidad: {item.criticidad}
+                                      </span>
+                                    )}
+                                    {item.pesoPonderacion && Number(item.pesoPonderacion) > 1 && (
+                                      <span className="bg-purple-50 text-purple-700 border border-purple-200 px-2 py-0.5 rounded text-[10px] font-semibold">
+                                        Peso x{item.pesoPonderacion}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Botón de acción rápida: Editar Pregunta */}
+                              {!isGuestMode && !isFormDisabled && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const currentScale = item.escalaEvaluacion && Array.isArray(item.escalaEvaluacion) && item.escalaEvaluacion.length > 0
+                                      ? [...item.escalaEvaluacion]
+                                      : [...GENERIC_EVALUATION_SCALE];
+                                    while (currentScale.length < 5) {
+                                      currentScale.push(GENERIC_EVALUATION_SCALE[currentScale.length] || '');
+                                    }
+                                    setEditingQuestionData({
+                                      section,
+                                      id: item.id,
+                                      pregunta: item.pregunta,
+                                      requisito: item.requisito || item.criterioCumplimiento || '',
+                                      evidencia: item.evidencia || item.evidenciaEsperada || '',
+                                      nota: item.nota || '',
+                                      escalaEvaluacion: currentScale
+                                    });
+                                  }}
+                                  className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors opacity-80 md:opacity-0 group-hover/q:opacity-100 cursor-pointer shrink-0"
+                                  title="Editar pregunta y criterios de evaluación"
+                                >
+                                  <Edit2 size={15} />
+                                </button>
+                              )}
+                            </div>
+
+                            {/* Criterio de Cumplimiento Técnico */}
+                            {(item.criterioCumplimiento || item.requisito) && (
+                              <div className="text-xs text-slate-600 bg-slate-50/70 border border-slate-200/70 px-3 py-2 rounded-lg mb-2 flex items-start gap-2">
+                                <FileText size={14} className="shrink-0 text-slate-400 mt-0.5" />
+                                <div>
+                                  <span className="font-semibold text-slate-700">Criterio de Cumplimiento: </span>
+                                  <span>{item.criterioCumplimiento || item.requisito}</span>
+                                </div>
+                              </div>
+                            )}
+
+                            {item.nota && (
+                              <p className="text-xs text-emerald-800 bg-emerald-50/80 border border-emerald-100 px-3 py-2 rounded-lg mb-2 flex items-center gap-1.5">
+                                <CheckCircle size={14} className="shrink-0 text-emerald-600" /> {item.nota}
+                              </p>
+                            )}
+
+                            {/* Evidencia Esperada / Sugerida */}
+                            {(item.evidenciaEsperada || item.evidencia) && (
+                              <div className="text-xs text-blue-800 bg-blue-50/60 border border-blue-100/80 px-3 py-2 rounded-lg mb-3 flex items-start gap-2">
+                                <Search size={14} className="shrink-0 text-blue-500 mt-0.5" />
+                                <div>
+                                  <span className="font-semibold text-blue-900">Evidencia Esperada: </span>
+                                  <span>{item.evidenciaEsperada || item.evidencia}</span>
+                                </div>
+                              </div>
+                            )}
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3 border-t border-slate-100">
+                              <div>
+                                <div className="flex items-center justify-between mb-2">
+                                  <div className="flex items-center gap-2">
+                                    <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                                      Evaluación (0-4)
+                                    </label>
+                                    <button
+                                      type="button"
+                                      onClick={() => setRubricModalData({
+                                        question: item,
+                                        section,
+                                        currentScore: response.evaluacion
+                                      })}
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded text-[11px] font-medium transition cursor-pointer"
+                                      title="Ver rúbrica con la descripción técnica de cada nivel del 0 al 4"
+                                    >
+                                      <Scale size={12} />
+                                      <span>Ver Rúbrica (0-4)</span>
+                                    </button>
+                                  </div>
+                                  {response.evaluacion !== undefined && (
+                                    <span className="text-xs font-semibold text-blue-600">
+                                      Seleccionado: {response.evaluacion}/4
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div className="bg-slate-50 border border-slate-200/80 rounded-lg p-2.5 mb-2.5 text-[11px] text-slate-600">
+                                  <div className="font-semibold text-slate-700 mb-0.5">Criterio de Evaluación:</div>
+                                  {(item.escalaEvaluacion || GENERIC_EVALUATION_SCALE).map((line, index) => (
+                                    <div key={`${item.id}-${index}`} className="leading-tight">{line}</div>
+                                  ))}
+                                </div>
+
+                                <div className="flex gap-2">
+                                  {[0, 1, 2, 3, 4].map(score => (
+                                    <button
+                                      key={score}
+                                      type="button"
+                                      disabled={isReadOnly || activeEvaluationView !== 'my_draft'}
+                                      onClick={() => updateResponse(section, item.id, 'evaluacion', score)}
+                                      className={`w-11 h-11 rounded-lg font-bold text-sm transition-all flex items-center justify-center ${isReadOnly || activeEvaluationView !== 'my_draft'
+                                        ? 'opacity-80 cursor-not-allowed'
+                                        : 'cursor-pointer'
+                                        } ${response.evaluacion === score
+                                          ? 'bg-blue-600 text-white shadow-xs ring-2 ring-blue-600 ring-offset-2'
+                                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200/80'
+                                        }`}
+                                      title={item.escalaEvaluacion?.[score] || GENERIC_EVALUATION_SCALE[score]}
+                                    >
+                                      {score}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+
+                              <div>
+                                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
+                                  Evidencia Documental
+                                </label>
+                                <input
+                                  type="text"
+                                  disabled={isReadOnly || activeEvaluationView !== 'my_draft'}
+                                  value={response.evidencia || ''}
+                                  onChange={(e) => updateResponse(section, item.id, 'evidencia', e.target.value)}
+                                  placeholder="Documentos, capturas, políticas, tickets..."
+                                  className="w-full px-3.5 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-blue-600 transition disabled:bg-slate-50 disabled:text-slate-500 disabled:cursor-not-allowed"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="mt-4 pt-3 border-t border-slate-100">
+                              <div className="flex justify-between items-center mb-2">
+                                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                                  Observaciones y Hallazgos
+                                </label>
+                                <div className="flex gap-2">
                                   <button
                                     type="button"
-                                    onClick={() => deleteSubquestion(section, item.id, sub.id)}
-                                    className="text-slate-400 hover:text-red-600 transition shrink-0 bg-transparent border-0 cursor-pointer"
-                                    title="Eliminar pregunta guía"
+                                    disabled={isReadOnly || activeEvaluationView !== 'my_draft'}
+                                    onClick={() => startInlineDictation(section, item.id)}
+                                    className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1.5 text-xs font-medium ${isReadOnly || activeEvaluationView !== 'my_draft' ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'
+                                      } ${dictatingKey === key
+                                        ? 'bg-red-500 text-white animate-pulse'
+                                        : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                                      }`}
+                                    title={dictatingKey === key ? "Detener dictado" : "Dictar observación por voz"}
                                   >
-                                    <X size={12} />
+                                    <Mic size={14} /> {dictatingKey === key ? "Escuchando..." : "Dictar"}
                                   </button>
-                                )}
+                                  <button
+                                    type="button"
+                                    onClick={() => rewriteObservationWithAI(section, item)}
+                                    disabled={isReadOnly || activeEvaluationView !== 'my_draft' || rewritingKey === key || !response.observaciones}
+                                    className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1.5 text-xs font-medium ${isReadOnly || activeEvaluationView !== 'my_draft' || !response.observaciones
+                                      ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                                      : rewritingKey === key
+                                        ? 'bg-blue-100 text-blue-700 animate-pulse'
+                                        : 'bg-slate-900 text-white hover:bg-slate-800 cursor-pointer'
+                                      }`}
+                                    title="Mejorar redacción con IA"
+                                  >
+                                    <Sparkles size={14} /> {rewritingKey === key ? 'Optimizando...' : 'Mejorar con IA'}
+                                  </button>
+                                </div>
                               </div>
-                              <input
-                                type="text"
-                                disabled={isFormDisabled}
-                                value={sub.respuesta || ''}
-                                onChange={(e) => updateSubquestionResponse(section, item.id, sub.id, e.target.value)}
-                                placeholder="Escribe aquí la respuesta a esta pregunta sugerida..."
-                                className={`w-full px-2.5 py-1 text-xs border rounded-md font-normal transition ${
-                                  isFormDisabled
-                                    ? 'bg-slate-50 border-slate-200 text-slate-500 cursor-not-allowed'
-                                    : 'bg-white border-slate-200 focus:ring-1 focus:ring-blue-500 focus:border-blue-500'
-                                }`}
+                              <textarea
+                                disabled={isReadOnly || activeEvaluationView !== 'my_draft'}
+                                value={response.observaciones || ''}
+                                onChange={(e) => updateResponse(section, item.id, 'observaciones', e.target.value)}
+                                placeholder="Escribe o dicta los hallazgos observados..."
+                                rows="3"
+                                className={`w-full px-3.5 py-2.5 text-sm bg-white border border-slate-200 rounded-lg resize-y transition-colors focus:ring-2 focus:ring-blue-600 focus:border-blue-600 disabled:bg-slate-50 disabled:text-slate-500 disabled:cursor-not-allowed ${dictatingKey === key ? 'border-red-400 bg-red-50/20' : ''
+                                  }`}
                               />
                             </div>
-                          ))}
-                        </div>
-                      )}
 
-                      {/* Botón para Añadir Pregunta Guía al final del bloque de observaciones */}
-                      {!isGuestMode && !isFormDisabled && addingSubFor !== key && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setAddingSubFor(key);
-                            setSubpromptText('');
-                          }}
-                          className="mt-2.5 mb-1 inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-800 transition cursor-pointer"
-                          title="Añadir pregunta sugerida"
-                        >
-                          <Plus size={14} /> Añadir pregunta guía
-                        </button>
-                      )}
+                            {/* Renderizar Subpreguntas/Preguntas Guía Guardadas al final de las observaciones */}
+                            {item.subquestions && item.subquestions.length > 0 && (
+                              <div className="mt-4 mb-3 bg-slate-50 border border-slate-200/80 rounded-lg p-3 space-y-2 animate-in fade-in duration-200">
+                                <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider block mb-1">
+                                  Preguntas Guía Sugeridas (Para obtener más información):
+                                </span>
+                                {item.subquestions.map(sub => (
+                                  <div key={sub.id} className="text-xs text-slate-700 space-y-1.5 pl-2.5 border-l-2 border-blue-400 pb-2 border-b border-slate-200/60 last:border-b-0 last:pb-0">
+                                    <div className="flex items-start justify-between gap-2">
+                                      <span className="italic font-medium flex-1">
+                                        • {sub.texto}
+                                      </span>
+                                      {!isGuestMode && !isFormDisabled && (
+                                        <button
+                                          type="button"
+                                          onClick={() => deleteSubquestion(section, item.id, sub.id)}
+                                          className="text-slate-400 hover:text-red-600 transition shrink-0 bg-transparent border-0 cursor-pointer"
+                                          title="Eliminar pregunta guía"
+                                        >
+                                          <X size={12} />
+                                        </button>
+                                      )}
+                                    </div>
+                                    <input
+                                      type="text"
+                                      disabled={isFormDisabled}
+                                      value={sub.respuesta || ''}
+                                      onChange={(e) => updateSubquestionResponse(section, item.id, sub.id, e.target.value)}
+                                      placeholder="Escribe aquí la respuesta a esta pregunta sugerida..."
+                                      className={`w-full px-2.5 py-1 text-xs border rounded-md font-normal transition ${isFormDisabled
+                                        ? 'bg-slate-50 border-slate-200 text-slate-500 cursor-not-allowed'
+                                        : 'bg-white border-slate-200 focus:ring-1 focus:ring-blue-500 focus:border-blue-500'
+                                        }`}
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                            )}
 
-                      {/* Formulario Inline para Añadir Subpregunta */}
-                      {!isFormDisabled && addingSubFor === key && (
-                        <div className="mt-3 mb-2 bg-slate-50 border border-slate-200 rounded-xl p-4 animate-in fade-in duration-200">
-                          <label className="block text-xs font-semibold text-slate-700 mb-1.5 uppercase">
-                            ¿De qué se trata la pregunta guía sugerida?
-                          </label>
-                          <textarea
-                            value={subpromptText}
-                            onChange={(e) => setSubpromptText(e.target.value)}
-                            placeholder="Escribe el tema (ej: 'mfa en correos corporativos') o ingresa la pregunta directamente..."
-                            className="w-full text-xs px-3 py-2 bg-white border border-slate-200 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition rounded-lg mb-3 resize-y"
-                            rows={2}
-                          />
-                          <div className="flex flex-wrap gap-2 justify-end">
-                            <button
-                              type="button"
-                              onClick={() => setAddingSubFor(null)}
-                              className="bg-white text-slate-700 text-xs font-medium border border-slate-200 hover:bg-slate-100 px-3 py-1.5 rounded-lg transition cursor-pointer"
-                            >
-                              Cancelar
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => generateSubquestionWithAI(item.pregunta)}
-                              disabled={isGeneratingSub}
-                              className="bg-blue-50 text-blue-700 text-xs font-medium border border-blue-200 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1"
-                            >
-                              <Sparkles size={12} className={isGeneratingSub ? "animate-pulse" : ""} />
-                              {isGeneratingSub ? 'Generando...' : 'Mejorar con IA'}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => saveSubquestion(section, item.id)}
-                              className="bg-slate-900 text-white text-xs font-medium hover:bg-slate-800 px-3 py-1.5 rounded-lg transition cursor-pointer"
-                            >
-                              Guardar Sugerencia
-                            </button>
+                            {/* Botón para Añadir Pregunta Guía al final del bloque de observaciones */}
+                            {!isGuestMode && !isFormDisabled && addingSubFor !== key && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setAddingSubFor(key);
+                                  setSubpromptText('');
+                                }}
+                                className="mt-2.5 mb-1 inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-800 transition cursor-pointer"
+                                title="Añadir pregunta sugerida"
+                              >
+                                <Plus size={14} /> Añadir pregunta guía
+                              </button>
+                            )}
+
+                            {/* Formulario Inline para Añadir Subpregunta */}
+                            {!isFormDisabled && addingSubFor === key && (
+                              <div className="mt-3 mb-2 bg-slate-50 border border-slate-200 rounded-xl p-4 animate-in fade-in duration-200">
+                                <label className="block text-xs font-semibold text-slate-700 mb-1.5 uppercase">
+                                  ¿De qué se trata la pregunta guía sugerida?
+                                </label>
+                                <textarea
+                                  value={subpromptText}
+                                  onChange={(e) => setSubpromptText(e.target.value)}
+                                  placeholder="Escribe el tema (ej: 'mfa en correos corporativos') o ingresa la pregunta directamente..."
+                                  className="w-full text-xs px-3 py-2 bg-white border border-slate-200 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition rounded-lg mb-3 resize-y"
+                                  rows={2}
+                                />
+                                <div className="flex flex-wrap gap-2 justify-end">
+                                  <button
+                                    type="button"
+                                    onClick={() => setAddingSubFor(null)}
+                                    className="bg-white text-slate-700 text-xs font-medium border border-slate-200 hover:bg-slate-100 px-3 py-1.5 rounded-lg transition cursor-pointer"
+                                  >
+                                    Cancelar
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => generateSubquestionWithAI(item.pregunta)}
+                                    disabled={isGeneratingSub}
+                                    className="bg-blue-50 text-blue-700 text-xs font-medium border border-blue-200 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1"
+                                  >
+                                    <Sparkles size={12} className={isGeneratingSub ? "animate-pulse" : ""} />
+                                    {isGeneratingSub ? 'Generando...' : 'Mejorar con IA'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => saveSubquestion(section, item.id)}
+                                    className="bg-slate-900 text-white text-xs font-medium hover:bg-slate-800 px-3 py-1.5 rounded-lg transition cursor-pointer"
+                                  >
+                                    Guardar Sugerencia
+                                  </button>
+                                </div>
+                              </div>
+                            )}
                           </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })
-              )}
-              </div>
-            </div>
-          );
-        })}
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
-      </div>
-      
+
       {step === 'form' && !isGuestMode && !isFormDisabled && (
-        <AudioAssistant 
-          pendingQuestions={pendingQuestions} 
-          onSuggestionClick={handleSuggestionClick} 
+        <AudioAssistant
+          pendingQuestions={pendingQuestions}
+          onSuggestionClick={handleSuggestionClick}
         />
       )}
 
@@ -6064,6 +5752,130 @@ const startInlineDictation = (section, id) => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Rúbrica Detallada de Criterios (0 al 4) */}
+      {rubricModalData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-100 max-w-3xl w-full overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-150">
+            {/* Header del Modal */}
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-slate-50/70">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100/80">
+                  <Scale size={18} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-bold text-blue-600 uppercase tracking-wider">
+                      Rúbrica de Evaluación ({auditConfig?.marco_referencia || 'TI & Ciberseguridad'})
+                    </span>
+                    <span className="bg-slate-200/80 text-slate-700 px-2 py-0.2 rounded text-[10px] font-semibold">
+                      Control {rubricModalData.question.id}
+                    </span>
+                  </div>
+                  <h3 className="text-sm font-bold text-slate-900 mt-0.5 line-clamp-1">
+                    {rubricModalData.question.pregunta}
+                  </h3>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRubricModalData(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition cursor-pointer"
+                title="Cerrar"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Contenido de la Rúbrica: 5 Niveles */}
+            <div className="p-5 overflow-y-auto space-y-3 flex-1 bg-slate-50/30">
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Consulta los criterios técnicos y evidencias requeridas para cada nivel de madurez tecnológica. Puedes calificar directamente seleccionando cualquiera de los niveles:
+              </p>
+
+              <div className="space-y-2.5">
+                {(evaluationCriteria || DEFAULT_EVALUATION_CRITERIA).map((crit) => {
+                  const levelNum = Number(crit.nivel_puntaje);
+                  const isSelected = rubricModalData.currentScore === levelNum;
+                  const levelBadges = [
+                    'bg-rose-50 text-rose-700 border-rose-200',
+                    'bg-amber-50 text-amber-700 border-amber-200',
+                    'bg-blue-50 text-blue-700 border-blue-200',
+                    'bg-indigo-50 text-indigo-700 border-indigo-200',
+                    'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  ];
+
+                  return (
+                    <div
+                      key={crit.nivel_puntaje}
+                      className={`p-3.5 rounded-xl border transition-all ${
+                        isSelected
+                          ? 'bg-blue-50/40 border-blue-400 ring-2 ring-blue-100 shadow-xs'
+                          : 'bg-white border-slate-200/80 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2 border-b border-slate-100">
+                        <div className="flex items-center gap-2">
+                          <span className={`w-7 h-7 rounded-lg text-xs font-bold flex items-center justify-center shrink-0 border ${levelBadges[levelNum] || 'bg-slate-100 text-slate-700'}`}>
+                            {crit.nivel_puntaje}
+                          </span>
+                          <div>
+                            <span className="text-xs font-bold text-slate-800">
+                              Nivel {crit.nivel_puntaje}: {crit.etiqueta_nivel}
+                            </span>
+                            <span className="text-[11px] text-slate-400 ml-1.5 font-medium">
+                              ({crit.porcentaje_equivalente})
+                            </span>
+                          </div>
+                        </div>
+
+                        {!isReadOnly && activeEvaluationView === 'my_draft' && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              updateResponse(rubricModalData.section, rubricModalData.question.id, 'evaluacion', levelNum);
+                              setRubricModalData(prev => ({ ...prev, currentScore: levelNum }));
+                            }}
+                            className={`px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                              isSelected
+                                ? 'bg-blue-600 text-white shadow-xs'
+                                : 'bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-700'
+                            }`}
+                          >
+                            {isSelected ? <Check size={13} /> : null}
+                            <span>{isSelected ? 'Calificado' : `Asignar Nivel ${levelNum}`}</span>
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="mt-2 text-xs text-slate-600 leading-relaxed">
+                        <div className="text-slate-700 font-medium">{crit.criterio_tecnico_evaluacion}</div>
+                        {crit.accion_requerida && (
+                          <div className="mt-1 text-[11px] text-slate-500 italic flex items-center gap-1">
+                            <Info size={12} className="shrink-0 text-slate-400" />
+                            <span><strong>Requisito para este nivel:</strong> {crit.accion_requerida}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Footer del Modal */}
+            <div className="p-4 border-t border-slate-100 flex items-center justify-end bg-slate-50/50 shrink-0">
+              <button
+                type="button"
+                onClick={() => setRubricModalData(null)}
+                className="px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-100 rounded-lg transition cursor-pointer"
+              >
+                Cerrar Rúbrica
+              </button>
+            </div>
           </div>
         </div>
       )}

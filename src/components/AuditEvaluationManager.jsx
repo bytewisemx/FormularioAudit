@@ -175,7 +175,7 @@ const AuditEvaluationManager = ({
             <p className="truncate">
               Visualizando la <strong>Versión Oficial de Auditoría</strong>.
               {isConsolidated 
-                ? ` Consolidada el ${new Date(finalAudit.consolidatedAt || Date.now()).toLocaleDateString('es-MX')} por ${finalAudit.consolidatedBy || 'Administrador'}.`
+                ? ` Consolidada${finalAudit.consolidatedAt ? ` el ${new Date(finalAudit.consolidatedAt).toLocaleDateString('es-MX')}` : ''} por ${finalAudit.consolidatedBy || 'Administrador'}.`
                 : ' Puedes consolidarla usando el botón "Comparar y Fusionar".'
               }
             </p>
