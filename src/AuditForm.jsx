@@ -12,6 +12,15 @@ import GuestPinScreen from "./components/GuestPinScreen";
 import AuditEvaluationManager from "./components/AuditEvaluationManager";
 import AuditMergeModal from "./components/AuditMergeModal";
 import { generateExecutiveDocx } from "./utils/docxReportGenerator";
+import {
+  normalizeAudit,
+  isSameAuditor,
+  getColleagueFromAudit as getColleagueFromAuditUtil,
+  getMyDraftFromAudit,
+  calculateProgressFromAnswers,
+  autoMergeDraftAnswers,
+  getTotalQuestionsCount
+} from "./utils/auditCollaborativeUtils";
 
 import { saveAs } from "file-saver";
 import ExcelJS from "exceljs";
@@ -308,10 +317,35 @@ const AuditForm = () => {
     return localId;
   }, [user]);
 
-  const currentAuditorName = (actor?.nombreAuditor || user?.displayName || user?.email?.split('@')[0] || 'Auditor').trim();
+  const currentAuditorName = React.useMemo(() => {
+    if (user?.email?.toLowerCase() === 'thomason.mx@gmail.com') return 'Oscar Thomason';
+    if (user?.displayName && user.displayName.trim()) return user.displayName.trim();
+    if (actor?.nombreAuditor && actor.nombreAuditor.trim() && !actor.nombreAuditor.toLowerCase().includes(' y ')) {
+      return actor.nombreAuditor.trim();
+    }
+    if (user?.email) {
+      const part = user.email.split('@')[0].replace(/[._-]/g, ' ');
+      return part.replace(/\b\w/g, l => l.toUpperCase());
+    }
+    return 'Auditor';
+  }, [user, actor?.nombreAuditor]);
+
   const currentAuditorRole = actor?.rol || (currentUserRole === 'admin' ? 'Auditor Principal' : 'Auditor');
   const [isReadOnly, setIsReadOnly] = useState(false);
   const [activeCollaborators, setActiveCollaborators] = useState([]);
+
+  // Estados colaborativos y de versiones independientes (Fork & Merge)
+  const [auditMode, setAuditMode] = useState('single'); // 'single' | 'collaborative'
+  const [maxAuditors, setMaxAuditors] = useState(1);
+  const [auditorsList, setAuditorsList] = useState([]);
+  const [drafts, setDrafts] = useState({});
+  const [officialVersion, setOfficialVersion] = useState({ isPublished: false, mergedAt: null, mergedBy: null, answers: {} });
+
+  // Estados para creación de nueva auditoría
+  const [creationAuditMode, setCreationAuditMode] = useState('single'); // 'single' | 'collaborative'
+  const [colleagueNameInput, setColleagueNameInput] = useState('');
+  const [colleagueEmailInput, setColleagueEmailInput] = useState('');
+  const [colleagueRoleInput, setColleagueRoleInput] = useState('Co-Auditor');
   const [accessModalAudit, setAccessModalAudit] = useState(null);
   const [accessPinInput, setAccessPinInput] = useState('');
   const [accessPinError, setAccessPinError] = useState('');
@@ -491,64 +525,49 @@ const AuditForm = () => {
     setGlobalLoadingMessage('Cargando auditoría...');
     setIsReadOnly(readOnlyMode);
     setCurrentAuditId(audit.id);
+
+    // Normalizar estructura completa canónica (modo, auditores, drafts, officialVersion)
+    const norm = normalizeAudit(audit, user);
     const data = audit.data || audit;
     setIntroData(data.introData || audit.introData || INITIAL_INTRO_DATA);
     
-    // Cargar Evaluaciones Paralelas (Fork & Merge) y Respuestas
+    setAuditMode(norm.mode || 'single');
+    setMaxAuditors(norm.maxAuditors || 1);
+    setAuditorsList(norm.auditors || []);
+    setDrafts(norm.drafts || {});
+    setOfficialVersion(norm.officialVersion || { isPublished: false, mergedAt: null, mergedBy: null, answers: {} });
+
     let evals = data.evaluations || audit.evaluations || {};
-    const finalA = data.finalAudit || audit.finalAudit || { status: 'draft', answers: {} };
+    const finalA = data.finalAudit || audit.finalAudit || { status: norm.officialVersion?.isPublished ? 'consolidated' : 'draft', answers: norm.officialVersion?.answers || {} };
     let initialResponses = data.responses || audit.responses || {};
 
-    // Si initialResponses está vacío pero evaluations tiene respuestas, recuperarlas
-    if (Object.keys(initialResponses).length === 0 && Object.keys(evals).length > 0) {
-      const evalList = Object.values(evals);
-      const evalWithAns = evalList.find(e => e.answers && Object.keys(e.answers).length > 0);
-      if (evalWithAns) {
-        initialResponses = { ...evalWithAns.answers };
-      }
-    }
-
-    // Compatibilidad retroactiva: si la auditoría no tenía evaluations pero ya tenía responses
-    if (Object.keys(evals).length === 0 && Object.keys(initialResponses).length > 0) {
-      const fallbackUid = (data.actor?.nombreAuditor || 'auditor_base').replace(/\s+/g, '_');
-      evals = {
-        [fallbackUid]: {
-          auditorName: data.actor?.nombreAuditor || 'Auditor Inicial',
-          role: data.actor?.rol || 'Auditor',
-          updatedAt: audit.lastModified || new Date().toISOString(),
-          answers: { ...initialResponses }
-        }
-      };
-    }
-
-    setEvaluations(evals);
+    setEvaluations(norm.drafts ? { ...norm.drafts } : evals);
     setFinalAudit(finalA);
 
-    // Ajustar vista activa y respuestas correspondientes
+    // Ajustar vista activa y respuestas correspondientes según la versión seleccionada
     setActiveEvaluationView(targetView);
     if (targetView === 'official') {
-      const offAns = finalA.answers && Object.keys(finalA.answers).length > 0 ? finalA.answers : initialResponses;
+      const offAns = (norm.officialVersion?.answers && Object.keys(norm.officialVersion.answers).length > 0)
+        ? norm.officialVersion.answers
+        : (finalA.answers && Object.keys(finalA.answers).length > 0 ? finalA.answers : initialResponses);
       setResponses(offAns);
-    } else if (targetView !== 'my_draft' && evals[targetView]?.answers) {
-      setResponses(evals[targetView].answers);
-    } else {
-      // my_draft: buscar primero por currentAuditorUid, o por coincidencia de nombre, o fallback a initialResponses
-      let myAnswers = evals[currentAuditorUid]?.answers;
-      if (!myAnswers || Object.keys(myAnswers).length === 0) {
-        const evalEntries = Object.entries(evals);
-        const matched = evalEntries.find(([_, ev]) => 
-          ev.auditorName && currentAuditorName && 
-          (ev.auditorName.toLowerCase().includes(currentAuditorName.toLowerCase()) || 
-           currentAuditorName.toLowerCase().includes(ev.auditorName.toLowerCase()))
-        );
-        if (matched && matched[1]?.answers && Object.keys(matched[1].answers).length > 0) {
-          myAnswers = matched[1].answers;
-        } else if (evalEntries.length === 1 && evalEntries[0][1]?.answers) {
-          // Si solo hay un set de respuestas guardadas en evaluations, usarlo
-          myAnswers = evalEntries[0][1].answers;
-        }
+    } else if (targetView !== 'my_draft') {
+      // Vista borrador de colega
+      const colDraft = norm.drafts?.[targetView]?.answers || evals[targetView]?.answers;
+      if (colDraft && Object.keys(colDraft).length > 0) {
+        setResponses(colDraft);
+      } else {
+        const col = getColleagueFromAuditUtil(norm, currentAuditorUid, user?.email, currentAuditorName);
+        setResponses(col?.answers || {});
       }
-      setResponses(myAnswers && Object.keys(myAnswers).length > 0 ? myAnswers : initialResponses);
+    } else {
+      // "my_draft": buscar el borrador propio estrictamente aislado
+      const myDraftInfo = getMyDraftFromAudit(norm, currentAuditorUid, user?.email, currentAuditorName);
+      if (myDraftInfo.answers && Object.keys(myDraftInfo.answers).length > 0) {
+        setResponses(myDraftInfo.answers);
+      } else {
+        setResponses(initialResponses);
+      }
     }
 
     setCustomSections(sortSections(data.customSections || audit.customSections || getDefaultSections()));
@@ -559,9 +578,9 @@ const AuditForm = () => {
     setRecommendations(data.recommendations || audit.recommendations || '');
     const actorData = data.actor || audit.actor || {};
     setActor({
-      nombreEmpresa: actorData.nombreEmpresa || data.introData?.nombreEmpresa || audit.nombreEmpresa || '',
-      nombreAuditor: actorData.nombreAuditor || '',
-      rol: actorData.rol || '',
+      nombreEmpresa: norm.companyName || actorData.nombreEmpresa || data.introData?.nombreEmpresa || audit.nombreEmpresa || '',
+      nombreAuditor: actorData.nombreAuditor || currentAuditorName || '',
+      rol: actorData.rol || currentAuditorRole || '',
       contrasena: '',
       contrasenaHash: actorData.contrasenaHash || audit.contrasenaHash || ''
     });
@@ -578,39 +597,9 @@ const AuditForm = () => {
     }, 350);
   };
 
-  // Identificar colega registrado en la auditoría
+  // Identificar colega registrado en la auditoría sin riesgo de auto-referencia
   const getColleagueFromAudit = (audit) => {
-    const evals = audit.data?.evaluations || audit.evaluations || {};
-    const entries = Object.entries(evals);
-    
-    // Buscar un auditor con UID distinto al actual o nombre diferente
-    const other = entries.find(([uid, ev]) => {
-      if (uid !== currentAuditorUid) return true;
-      const name = ev.auditorName || '';
-      return name && currentAuditorName && name.toLowerCase() !== currentAuditorName.toLowerCase();
-    });
-
-    if (other) {
-      return {
-        uid: other[0],
-        auditorName: other[1]?.auditorName || 'Auditor Colega',
-        role: other[1]?.role || 'Auditor',
-        answers: other[1]?.answers || {}
-      };
-    }
-
-    // Si no está en evaluations pero la auditoría tiene un actor diferente registrado
-    const ownerName = audit.data?.actor?.nombreAuditor || audit.actor?.nombreAuditor || '';
-    if (ownerName && currentAuditorName && ownerName.toLowerCase() !== currentAuditorName.toLowerCase()) {
-      return {
-        uid: 'owner_' + ownerName.replace(/\s+/g, '_'),
-        auditorName: ownerName,
-        role: audit.data?.actor?.rol || audit.actor?.rol || 'Auditor',
-        answers: audit.data?.responses || audit.responses || {}
-      };
-    }
-
-    return null;
+    return getColleagueFromAuditUtil(audit, currentAuditorUid, user?.email, currentAuditorName);
   };
 
   // Apertura contextual desde el menú del botón "Abrir"
@@ -1068,11 +1057,50 @@ const AuditForm = () => {
       }
     }
 
+    const activeProgress = calculateProgressFromAnswers(safeResponses, customSections);
+    const updatedDrafts = {
+      ...(drafts || {}),
+      [currentAuditorUid]: {
+        answers: safeResponses,
+        progress: activeProgress,
+        updatedAt: new Date().toISOString()
+      }
+    };
+
+    const currentAuditorsPayload = (auditorsList && auditorsList.length > 0) ? auditorsList : [
+      { uid: currentAuditorUid, name: currentAuditorName, email: user?.email || '', role: currentAuditorRole }
+    ];
+
+    const currentOfficialPayload = officialVersion || { isPublished: false, mergedAt: null, mergedBy: null, answers: {} };
+
     const auditData = {
       id: currentAuditId,
-      lastModified: new Date().toISOString(),
+      companyName: companyName || 'Empresa sin nombre',
       nombreEmpresa: companyName || 'Empresa sin nombre',
-      data: { introData, responses: safeResponses, generalComments, positiveComments, negativeComments, recommendations, actor, customSections, deletedQuestions, evaluations, finalAudit }
+      mode: auditMode || 'single',
+      maxAuditors: maxAuditors || (auditMode === 'collaborative' ? 2 : 1),
+      auditors: currentAuditorsPayload,
+      drafts: updatedDrafts,
+      officialVersion: currentOfficialPayload,
+      lastModified: new Date().toISOString(),
+      data: { 
+        introData, 
+        responses: safeResponses, 
+        generalComments, 
+        positiveComments, 
+        negativeComments, 
+        recommendations, 
+        actor, 
+        customSections, 
+        deletedQuestions, 
+        evaluations, 
+        finalAudit,
+        mode: auditMode || 'single',
+        maxAuditors: maxAuditors || (auditMode === 'collaborative' ? 2 : 1),
+        auditors: currentAuditorsPayload,
+        drafts: updatedDrafts,
+        officialVersion: currentOfficialPayload
+      }
     };
     if (index >= 0) {
       newList[index] = auditData;
@@ -1726,10 +1754,32 @@ const startInlineDictation = (section, id) => {
       }
     }
 
+    const activeProgress = calculateProgressFromAnswers(safeResponses, currentState.customSections || customSections);
+    const updatedDrafts = {
+      ...(currentState.drafts || drafts || {}),
+      [currentAuditorUid]: {
+        answers: safeResponses,
+        progress: activeProgress,
+        updatedAt: new Date().toISOString()
+      }
+    };
+
+    const currentAuditorsPayload = (auditorsList && auditorsList.length > 0) ? auditorsList : [
+      { uid: currentAuditorUid, name: currentAuditorName, email: user?.email || '', role: currentAuditorRole }
+    ];
+
+    const currentOfficialPayload = officialVersion || { isPublished: false, mergedAt: null, mergedBy: null, answers: {} };
+
     const auditData = {
       id: targetId,
-      lastModified: new Date().toISOString(),
+      companyName: companyName || 'Empresa sin nombre',
       nombreEmpresa: companyName || 'Empresa sin nombre',
+      mode: auditMode || 'single',
+      maxAuditors: maxAuditors || (auditMode === 'collaborative' ? 2 : 1),
+      auditors: currentAuditorsPayload,
+      drafts: updatedDrafts,
+      officialVersion: currentOfficialPayload,
+      lastModified: new Date().toISOString(),
       data: {
         introData: currentState.introData || introData,
         responses: safeResponses,
@@ -1741,7 +1791,12 @@ const startInlineDictation = (section, id) => {
         customSections: currentState.customSections || customSections,
         deletedQuestions: currentState.deletedQuestions || deletedQuestions || [],
         evaluations: currentState.evaluations || evaluations || {},
-        finalAudit: currentState.finalAudit || finalAudit || { status: 'draft', answers: {} }
+        finalAudit: currentState.finalAudit || finalAudit || { status: 'draft', answers: {} },
+        mode: auditMode || 'single',
+        maxAuditors: maxAuditors || (auditMode === 'collaborative' ? 2 : 1),
+        auditors: currentAuditorsPayload,
+        drafts: updatedDrafts,
+        officialVersion: currentOfficialPayload
       }
     };
 
@@ -1953,21 +2008,51 @@ const startInlineDictation = (section, id) => {
         }
       };
     });
+
+    // 3. Almacenar en estructura canónica drafts[currentAuditorUid] aislada
+    setDrafts(prev => {
+      const myDraft = prev[currentAuditorUid] || { answers: {}, progress: 0 };
+      const currentAns = myDraft.answers?.[key] || {};
+      const scoreVal = field === 'evaluacion' ? value : (currentAns.score ?? currentAns.evaluacion);
+      const notesVal = field === 'observaciones' ? value : (currentAns.notes ?? currentAns.comment);
+
+      const updatedAnswers = {
+        ...myDraft.answers,
+        [key]: {
+          ...currentAns,
+          [field]: value,
+          score: scoreVal,
+          evaluacion: scoreVal,
+          notes: notesVal,
+          comment: notesVal,
+          updatedAt: new Date().toISOString()
+        }
+      };
+
+      return {
+        ...prev,
+        [currentAuditorUid]: {
+          answers: updatedAnswers,
+          progress: calculateProgressFromAnswers(updatedAnswers, customSections),
+          updatedAt: new Date().toISOString()
+        }
+      };
+    });
   };
 
   // Alternar vista de evaluación entre Mi Borrador, Borrador de colega o Versión Oficial
   const handleChangeEvaluationView = (viewKey) => {
     setActiveEvaluationView(viewKey);
     if (viewKey === 'my_draft') {
-      const myAnswers = evaluations[currentAuditorUid]?.answers;
+      const myAnswers = drafts[currentAuditorUid]?.answers || evaluations[currentAuditorUid]?.answers;
       if (myAnswers && Object.keys(myAnswers).length > 0) {
         setResponses(myAnswers);
       }
     } else if (viewKey === 'official') {
-      setResponses(finalAudit.answers || {});
+      setResponses(officialVersion.answers || finalAudit.answers || {});
     } else {
       // Borrador de un colega
-      const otherAnswers = evaluations[viewKey]?.answers || {};
+      const otherAnswers = drafts[viewKey]?.answers || evaluations[viewKey]?.answers || {};
       setResponses(otherAnswers);
     }
   };
@@ -1983,7 +2068,15 @@ const startInlineDictation = (section, id) => {
       answers: consolidatedAnswers
     };
 
+    const updatedOfficialVersion = {
+      isPublished: true,
+      mergedAt: new Date().toISOString(),
+      mergedBy: currentAuditorName,
+      answers: consolidatedAnswers
+    };
+
     setFinalAudit(updatedFinalAudit);
+    setOfficialVersion(updatedOfficialVersion);
     setResponses(consolidatedAnswers);
     setActiveEvaluationView('official');
     setShowMergeModal(false);
@@ -3484,6 +3577,116 @@ const startInlineDictation = (section, id) => {
               </div>
             </div>
 
+            {/* Modalidad de Trabajo: Individual vs Colaborativa (Máx. 2 auditores) */}
+            <div className="mb-8">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-2.5">
+                Modalidad de Trabajo de la Auditoría *
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                {/* Opción 1: Individual */}
+                <div
+                  onClick={() => setCreationAuditMode('single')}
+                  className={`p-4 rounded-xl border transition-all cursor-pointer flex items-start gap-3.5 ${
+                    creationAuditMode === 'single'
+                      ? 'border-blue-600 bg-blue-50/30 ring-2 ring-blue-100 shadow-xs'
+                      : 'border-slate-200 hover:border-slate-300 bg-white'
+                  }`}
+                >
+                  <div className={`p-2.5 rounded-lg shrink-0 ${
+                    creationAuditMode === 'single' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500'
+                  }`}>
+                    <User size={18} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-slate-800">Individual</span>
+                      <span className="text-[10px] font-medium bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">
+                        1 Auditor
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                      Evaluación directa conducida por un solo auditor. Sin necesidad de consolidación o fusiones.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Opción 2: Colaborativa */}
+                <div
+                  onClick={() => setCreationAuditMode('collaborative')}
+                  className={`p-4 rounded-xl border transition-all cursor-pointer flex items-start gap-3.5 ${
+                    creationAuditMode === 'collaborative'
+                      ? 'border-indigo-600 bg-indigo-50/30 ring-2 ring-indigo-100 shadow-xs'
+                      : 'border-slate-200 hover:border-slate-300 bg-white'
+                  }`}
+                >
+                  <div className={`p-2.5 rounded-lg shrink-0 ${
+                    creationAuditMode === 'collaborative' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'
+                  }`}>
+                    <Users size={18} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-slate-800">Colaborativa</span>
+                      <span className="text-[10px] font-medium bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">
+                        Máx. 2 Auditores
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                      Borradores aislados en paralelo por auditor y panel de fusión (Merge) para la Versión Oficial.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Campos para el Co-Auditor si la modalidad es colaborativa */}
+              {creationAuditMode === 'collaborative' && (
+                <div className="mt-4 p-4 bg-indigo-50/40 border border-indigo-100 rounded-xl animate-in fade-in duration-200">
+                  <div className="text-xs font-semibold text-indigo-900 mb-3 flex items-center gap-1.5">
+                    <Users size={15} className="text-indigo-600" />
+                    <span>Datos del Co-Auditor Asignado (Auditor 2)</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                        Nombre del Co-Auditor *
+                      </label>
+                      <input
+                        type="text"
+                        value={colleagueNameInput}
+                        onChange={(e) => setColleagueNameInput(e.target.value)}
+                        placeholder="Ej. Flavio Covarrubias"
+                        className="w-full text-xs rounded-lg border border-slate-200 px-3 py-2 bg-white text-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200 outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                        Correo del Co-Auditor
+                      </label>
+                      <input
+                        type="email"
+                        value={colleagueEmailInput}
+                        onChange={(e) => setColleagueEmailInput(e.target.value)}
+                        placeholder="ejemplo@empresa.com"
+                        className="w-full text-xs rounded-lg border border-slate-200 px-3 py-2 bg-white text-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200 outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                        Rol Asignado
+                      </label>
+                      <input
+                        type="text"
+                        value={colleagueRoleInput}
+                        onChange={(e) => setColleagueRoleInput(e.target.value)}
+                        placeholder="Co-Auditor"
+                        className="w-full text-xs rounded-lg border border-slate-200 px-3 py-2 bg-white text-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200 outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* Selector de Metodología / Estructura del Cuestionario */}
             <div className="mb-6">
               <div className="flex items-center justify-between mb-3">
@@ -3665,7 +3868,72 @@ const startInlineDictation = (section, id) => {
                     const newId = Date.now().toString();
                     const lockAcquired = await acquireLock(newId);
                     if (lockAcquired) {
+                      const isCollab = creationAuditMode === 'collaborative';
+                      const leadAuditor = {
+                        uid: currentAuditorUid,
+                        name: actor.nombreAuditor.trim(),
+                        email: user?.email || '',
+                        role: actor.rol || 'Auditor Líder'
+                      };
+                      const auditors = [leadAuditor];
+                      const initialDrafts = {
+                        [currentAuditorUid]: {
+                          answers: {},
+                          progress: 0,
+                          updatedAt: new Date().toISOString()
+                        }
+                      };
+                      const initialEvaluations = {
+                        [currentAuditorUid]: {
+                          auditorName: actor.nombreAuditor.trim(),
+                          role: actor.rol || 'Auditor Líder',
+                          updatedAt: new Date().toISOString(),
+                          answers: {}
+                        }
+                      };
+
+                      if (isCollab) {
+                        const coName = (colleagueNameInput || '').trim() || 'Co-Auditor';
+                        const coUid = colleagueEmailInput.trim() 
+                          ? `auditor_${colleagueEmailInput.trim().replace(/[^a-zA-Z0-9]/g, '_')}`
+                          : `coauditor_${Date.now()}`;
+                        const coAuditor = {
+                          uid: coUid,
+                          name: coName,
+                          email: colleagueEmailInput.trim() || '',
+                          role: colleagueRoleInput.trim() || 'Co-Auditor'
+                        };
+                        auditors.push(coAuditor);
+                        initialDrafts[coUid] = {
+                          answers: {},
+                          progress: 0,
+                          updatedAt: new Date().toISOString()
+                        };
+                        initialEvaluations[coUid] = {
+                          auditorName: coName,
+                          role: colleagueRoleInput.trim() || 'Co-Auditor',
+                          updatedAt: new Date().toISOString(),
+                          answers: {}
+                        };
+                      }
+
+                      const initialOfficialVersion = {
+                        isPublished: false,
+                        mergedAt: null,
+                        mergedBy: null,
+                        answers: {}
+                      };
+
                       setCurrentAuditId(newId);
+                      setAuditMode(isCollab ? 'collaborative' : 'single');
+                      setMaxAuditors(isCollab ? 2 : 1);
+                      setAuditorsList(auditors);
+                      setDrafts(initialDrafts);
+                      setOfficialVersion(initialOfficialVersion);
+                      setEvaluations(initialEvaluations);
+                      setFinalAudit({ status: 'draft', answers: {} });
+                      setActiveEvaluationView('my_draft');
+
                       setIntroData({
                         ...INITIAL_INTRO_DATA,
                         nombreEmpresa: actor.nombreEmpresa.trim(),
@@ -3677,7 +3945,55 @@ const startInlineDictation = (section, id) => {
                       setExpandedSections({ 'Información General': true });
                       setActiveSection(creationMode === 'blank' ? 'Área Inicial' : 'Información General');
                       setActor(prev => ({ ...prev, contrasenaHash: hashed, contrasena: '' }));
-                      logAuditEvent('create', `Nueva auditoría creada para "${actor.nombreEmpresa.trim()}"`, actor.nombreEmpresa.trim(), newId);
+
+                      // Persistir documento canónico inicial en Firebase Firestore
+                      if (db) {
+                        try {
+                          const docRef = doc(db, "auditorias", newId);
+                          const initialAuditDoc = {
+                            id: newId,
+                            companyName: actor.nombreEmpresa.trim(),
+                            nombreEmpresa: actor.nombreEmpresa.trim(),
+                            mode: isCollab ? 'collaborative' : 'single',
+                            maxAuditors: isCollab ? 2 : 1,
+                            auditors,
+                            drafts: initialDrafts,
+                            officialVersion: initialOfficialVersion,
+                            lastModified: new Date().toISOString(),
+                            data: {
+                              introData: {
+                                ...INITIAL_INTRO_DATA,
+                                nombreEmpresa: actor.nombreEmpresa.trim(),
+                                nombre: actor.nombreAuditor.trim()
+                              },
+                              responses: {},
+                              generalComments: '',
+                              positiveComments: '',
+                              negativeComments: '',
+                              recommendations: '',
+                              actor: {
+                                ...actor,
+                                contrasenaHash: hashed,
+                                contrasena: ''
+                              },
+                              customSections: initialSecs,
+                              deletedQuestions: [],
+                              evaluations: initialEvaluations,
+                              finalAudit: { status: 'draft', answers: {} },
+                              mode: isCollab ? 'collaborative' : 'single',
+                              maxAuditors: isCollab ? 2 : 1,
+                              auditors,
+                              drafts: initialDrafts,
+                              officialVersion: initialOfficialVersion
+                            }
+                          };
+                          await setDoc(docRef, initialAuditDoc);
+                        } catch (e) {
+                          console.warn("Error guardando documento inicial en Firebase:", e);
+                        }
+                      }
+
+                      logAuditEvent('create', `Nueva auditoría creada para "${actor.nombreEmpresa.trim()}" (${isCollab ? 'Colaborativa' : 'Individual'})`, actor.nombreEmpresa.trim(), newId);
                       setStep('form');
                     }
                   } finally {
@@ -3706,7 +4022,7 @@ const startInlineDictation = (section, id) => {
   // Métricas duales para visualización en paralelo entre evaluadores (cálculo directo sin hooks condicionales)
   const calculateDualMetrics = () => {
     const totalQ = getTotalQuestions();
-    const myAnswersMap = evaluations[currentAuditorUid]?.answers || responses || {};
+    const myAnswersMap = drafts[currentAuditorUid]?.answers || evaluations[currentAuditorUid]?.answers || responses || {};
     let myScoreSum = 0;
     let myAnsweredCount = 0;
 
@@ -3724,19 +4040,67 @@ const startInlineDictation = (section, id) => {
     const myAvg = myAnsweredCount > 0 ? (myScoreSum / myAnsweredCount) : 0;
     const myProgress = totalQ > 0 ? Math.round((myAnsweredCount / totalQ) * 100) : 0;
 
-    // Identificar colega evaluador secundario
-    const otherEntries = Object.entries(evaluations).filter(([uid, ev]) => {
-      if (uid !== currentAuditorUid) return true;
-      const name = ev.auditorName || '';
-      return name && currentAuditorName && name.toLowerCase() !== currentAuditorName.toLowerCase();
-    });
+    // Si la auditoría está configurada como individual (1 auditor), no calcular métricas duales
+    if (auditMode === 'single') {
+      return {
+        totalQ,
+        hasColleague: false,
+        colleagueUid: null,
+        colleagueName: '',
+        my: {
+          name: currentAuditorName || 'Mi Evaluación',
+          avg: myAvg,
+          answered: myAnsweredCount,
+          progress: myProgress
+        },
+        colleague: {
+          name: '',
+          avg: 0,
+          answered: 0,
+          progress: 0
+        },
+        hasBothEvaluated: false,
+        delta: null
+      };
+    }
 
-    const hasColleague = otherEntries.length > 0;
-    const colleagueEntry = hasColleague ? otherEntries[0] : null;
-    const colleagueUid = colleagueEntry ? colleagueEntry[0] : null;
-    const colleagueData = colleagueEntry ? colleagueEntry[1] : null;
-    const colleagueName = colleagueData?.auditorName || (actor.nombreAuditor && actor.nombreAuditor !== currentAuditorName ? actor.nombreAuditor : null);
-    const colleagueAnswersMap = colleagueData?.answers || {};
+    // Identificar colega evaluador secundario garantizando que NUNCA sea el usuario actual
+    let colleagueUid = null;
+    let colleagueName = '';
+    let colleagueAnswersMap = {};
+
+    // 1. Buscar en la lista oficial de auditores configurada
+    if (auditorsList && auditorsList.length > 0) {
+      const col = auditorsList.find(a => !isSameAuditor(a.uid, a.name, currentAuditorUid, user?.email, currentAuditorName));
+      if (col) {
+        colleagueUid = col.uid;
+        colleagueName = col.name;
+        colleagueAnswersMap = drafts[col.uid]?.answers || evaluations[col.uid]?.answers || {};
+      }
+    }
+
+    // 2. Si no se encontró en auditorsList, buscar en evaluations o drafts registrados
+    if (!colleagueName) {
+      const otherDraftEntries = Object.entries(drafts || {}).filter(([uid]) => {
+        return !isSameAuditor(uid, '', currentAuditorUid, user?.email, currentAuditorName);
+      });
+      const otherEvalEntries = Object.entries(evaluations || {}).filter(([uid, ev]) => {
+        const name = ev.auditorName || '';
+        return !isSameAuditor(uid, name, currentAuditorUid, user?.email, currentAuditorName);
+      });
+
+      if (otherEvalEntries.length > 0) {
+        const [uid, ev] = otherEvalEntries[0];
+        colleagueUid = uid;
+        colleagueName = ev.auditorName || 'Co-Auditor';
+        colleagueAnswersMap = ev.answers || drafts[uid]?.answers || {};
+      } else if (otherDraftEntries.length > 0) {
+        const [uid, d] = otherDraftEntries[0];
+        colleagueUid = uid;
+        colleagueName = 'Co-Auditor';
+        colleagueAnswersMap = d.answers || {};
+      }
+    }
 
     let colleagueScoreSum = 0;
     let colleagueAnsweredCount = 0;
@@ -3762,7 +4126,7 @@ const startInlineDictation = (section, id) => {
       totalQ,
       hasColleague: !!colleagueName,
       colleagueUid,
-      colleagueName: colleagueName || 'Auditor 2',
+      colleagueName: colleagueName || 'Co-Auditor',
       my: {
         name: currentAuditorName || 'Mi Evaluación',
         avg: myAvg,
@@ -3770,7 +4134,7 @@ const startInlineDictation = (section, id) => {
         progress: myProgress
       },
       colleague: {
-        name: colleagueName || 'Auditor 2',
+        name: colleagueName || 'Co-Auditor',
         avg: colleagueAvg,
         answered: colleagueAnsweredCount,
         progress: colleagueProgress
@@ -3861,7 +4225,7 @@ const startInlineDictation = (section, id) => {
                     </button>
                   )}
                   {/* Botón Consolidar y Fusionar (Merge) - Solo para auditores autenticados en modo edición */}
-                  {!isGuestMode && !isReadOnly && (dualMetrics.hasColleague || Object.keys(evaluations).length > 1) && (
+                  {!isGuestMode && !isReadOnly && auditMode !== 'single' && (dualMetrics.hasColleague || Object.keys(evaluations).length > 1) && (
                     <button
                       onClick={() => setShowMergeModal(true)}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200/70 rounded-lg transition-colors cursor-pointer shadow-2xs"
@@ -4188,7 +4552,7 @@ const startInlineDictation = (section, id) => {
               <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">
                 Desglose por Áreas
               </span>
-              {(dualMetrics.hasColleague || Object.keys(evaluations).length > 1) && (
+              {!isGuestMode && !isReadOnly && auditMode !== 'single' && (dualMetrics.hasColleague || Object.keys(evaluations).length > 1) && (
                 <button
                   type="button"
                   onClick={() => setShowMergeModal(true)}

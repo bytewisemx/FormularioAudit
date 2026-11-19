@@ -7,12 +7,10 @@ on:
 
 permissions:
   contents: write
-  pages: write
-  id-token: write
 
 concurrency:
   group: "pages"
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   build-and-deploy:
@@ -27,39 +25,14 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Install deps
+      - name: Install dependencies
         run: npm ci
 
-      - name: Build
+      - name: Build project
         run: npm run build
 
-      # Método 1 (Ultra fiable): Despliegue directo a rama gh-pages
       - name: Deploy to gh-pages branch
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./dist
-
-      # Método 2: Despliegue de artefacto oficial de GitHub Pages (si está habilitado en Settings -> Pages)
-      - name: Setup Pages
-        continue-on-error: true
-        uses: actions/configure-pages@v5
-
-      - name: Upload artifact
-        continue-on-error: true
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: ./dist
-
-  deploy-pages:
-    needs: build-and-deploy
-    if: always()
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy to Pages API
-        continue-on-error: true
-        id: deployment
-        uses: actions/deploy-pages@v4

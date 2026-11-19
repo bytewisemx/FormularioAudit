@@ -14,8 +14,6 @@ import {
 } from 'lucide-react';
 
 const CustomDialogModal = ({ config, onClose }) => {
-  if (!config) return null;
-
   const {
     type = 'confirm', // 'confirm' | 'danger' | 'warning' | 'prompt' | 'alert' | 'error' | 'success'
     isDanger = false,
@@ -28,21 +26,29 @@ const CustomDialogModal = ({ config, onClose }) => {
     cancelText = 'Cancelar',
     onConfirm,
     onCancel
-  } = config;
+  } = config || {};
 
   const [inputValue, setInputValue] = useState(defaultValue || '');
+  const [prevDefault, setPrevDefault] = useState(defaultValue);
   const [showPassword, setShowPassword] = useState(false);
   const inputRef = useRef(null);
 
-  useEffect(() => {
+  if (defaultValue !== prevDefault) {
+    setPrevDefault(defaultValue);
     setInputValue(defaultValue || '');
+  }
+
+  useEffect(() => {
+    if (!config) return;
     if (type === 'prompt' && inputRef.current) {
       setTimeout(() => {
         inputRef.current?.focus();
         inputRef.current?.select();
       }, 50);
     }
-  }, [config, defaultValue, type]);
+  }, [config, type]);
+
+  if (!config) return null;
 
   const handleConfirm = () => {
     if (onConfirm) {
